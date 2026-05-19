@@ -1,3 +1,6 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Imports
+// ─────────────────────────────────────────────────────────────────────────────
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -10,6 +13,9 @@ import { Packer, Document, Paragraph, HeadingLevel, AlignmentType, TextRun } fro
 import { Mark } from '@tiptap/core'
 import './App.css'
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Core project data types
+// ─────────────────────────────────────────────────────────────────────────────
 type DocNode = {
   id: number
   type: 'doc'
@@ -61,6 +67,7 @@ type ProjectStyles = {
   body: BodyStyle
 }
 
+// Default typography/style settings used for new projects and fallback loads.
 const DEFAULT_STYLES: ProjectStyles = {
   chapter: {
     font: 'Georgia',
@@ -77,8 +84,14 @@ const DEFAULT_STYLES: ProjectStyles = {
   },
 }
 
+// Runtime id counter for newly-created folders/scenes. Persisted in project.json.
 let nextId = 10
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Tree traversal helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Recursively finds a scene or folder by id.
 function findNode(nodes: TreeNode[], id: number): TreeNode | null {
   for (const n of nodes) {
     if (n.id === id) return n
@@ -90,6 +103,7 @@ function findNode(nodes: TreeNode[], id: number): TreeNode | null {
   return null
 }
 
+// Recursively finds the parent folder for a given node id.
 function findParentFolder(nodes: TreeNode[], id: number, parent: FolderNode | null = null): FolderNode | null {
   for (const n of nodes) {
     if (n.id === id) return parent
@@ -101,6 +115,7 @@ function findParentFolder(nodes: TreeNode[], id: number, parent: FolderNode | nu
   return null
 }
 
+// Flattens a folder subtree into a list of scene documents.
 function collectDocs(node: TreeNode): DocNode[] {
   if (node.type === 'doc') return [node]
   const results: DocNode[] = []
@@ -110,6 +125,7 @@ function collectDocs(node: TreeNode): DocNode[] {
   return results
 }
 
+// Removes a node from a tree in-place. Returns true when successful.
 function removeNode(nodes: TreeNode[], id: number): boolean {
   for (let i = 0; i < nodes.length; i++) {
     if (nodes[i].id === id) { nodes.splice(i, 1); return true }
@@ -120,6 +136,7 @@ function removeNode(nodes: TreeNode[], id: number): boolean {
   return false
 }
 
+// Inserts a dragged node before, after, or inside a drop target.
 function insertNode(nodes: TreeNode[], node: TreeNode, target: NonNullable<DropTarget>): TreeNode[] {
   if (target.type === 'inside') {
     return nodes.map(n => {
@@ -145,6 +162,11 @@ function insertNode(nodes: TreeNode[], node: TreeNode, target: NonNullable<DropT
   return result
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Text and HTML helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Converts editor HTML into plain paragraph lines for DOCX export.
 function htmlToPlainLines(html: string): string[] {
   const div = document.createElement('div')
   div.innerHTML = html
@@ -153,6 +175,7 @@ function htmlToPlainLines(html: string): string[] {
   return lines.length ? lines : [div.textContent ?? '']
 }
 
+// Counts words from HTML by reading its text content.
 function wordCountFromHtml(html: string): number {
   const div = document.createElement('div')
   div.innerHTML = html
@@ -160,6 +183,7 @@ function wordCountFromHtml(html: string): number {
   return text.trim() ? text.trim().split(/\s+/).length : 0
 }
 
+// Removes temporary find-and-replace highlight marks from saved HTML.
 function stripFnrHighlights(html: string): string {
   const div = document.createElement('div')
   div.innerHTML = html
@@ -169,6 +193,11 @@ function stripFnrHighlights(html: string): string {
   return div.innerHTML
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Persistence helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Writes project metadata, tree structure, style data, and last active scene.
 async function saveProjectToDisk(project: Project, activeId?: number) {
   const projectJson = {
     name: project.name,
@@ -181,6 +210,7 @@ async function saveProjectToDisk(project: Project, activeId?: number) {
   await writeTextFile(projectFile, JSON.stringify(projectJson, null, 2))
 }
 
+// Loads recently opened projects from app data.
 async function loadRecentProjects(): Promise<{ name: string; path: string }[]> {
   try {
     const appData = await appDataDir()
@@ -196,6 +226,7 @@ async function loadRecentProjects(): Promise<{ name: string; path: string }[]> {
   }
 }
 
+// Saves the recent projects list while preserving other app preferences.
 async function saveRecentProjects(recents: { name: string; path: string }[]) {
   try {
     const appData = await appDataDir()
@@ -208,6 +239,7 @@ async function saveRecentProjects(recents: { name: string; path: string }[]) {
   }
 }
 
+// Loads app-level recent project data and default style preferences.
 async function loadRecentData(): Promise<{ recents: { name: string; path: string }[]; defaultStyles: ProjectStyles }> {
   try {
     const appData = await appDataDir()
@@ -225,6 +257,7 @@ async function loadRecentData(): Promise<{ recents: { name: string; path: string
   }
 }
 
+// Saves style settings as the default for future new projects.
 async function saveDefaultStyles(styles: ProjectStyles) {
   try {
     const appData = await appDataDir()
@@ -237,6 +270,7 @@ async function saveDefaultStyles(styles: ProjectStyles) {
   }
 }
 
+// Adds or promotes a project in the recent projects list.
 async function addToRecentProjects(name: string, path: string) {
   const { recents } = await loadRecentData()
   const filtered = recents.filter(r => r.path !== path)
@@ -244,11 +278,13 @@ async function addToRecentProjects(name: string, path: string) {
   await saveRecentProjects(updated)
 }
 
+// Generates a short random file id for scene files.
 function generateFileId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
   return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
 }
 
+// Writes a scene body file under the project scenes folder.
 async function writeSceneFile(projectPath: string, fileId: string, content: string) {
   const scenesDir = await join(projectPath, 'scenes')
   await mkdir(scenesDir, { recursive: true })
@@ -256,6 +292,7 @@ async function writeSceneFile(projectPath: string, fileId: string, content: stri
   await writeTextFile(filePath, content)
 }
 
+// Reads a scene body file, returning an empty string if missing.
 async function readSceneFile(projectPath: string, fileId: string): Promise<string> {
   try {
     const filePath = await join(projectPath, 'scenes', `${fileId}.md`)
@@ -267,6 +304,7 @@ async function readSceneFile(projectPath: string, fileId: string): Promise<strin
   }
 }
 
+// Moves a scene or folder subtree into project trash with recovery metadata.
 async function trashNode(projectPath: string, node: TreeNode, originalFolderId: number) {
   try {
     const trashDir = await join(projectPath, 'trash')
@@ -294,6 +332,7 @@ async function trashNode(projectPath: string, node: TreeNode, originalFolderId: 
   }
 }
 
+// Collects manuscript folders/scenes into ordered chunks for DOCX export.
 async function collectCompileNodes(
   nodes: TreeNode[],
   projectPath: string
@@ -318,6 +357,7 @@ async function collectCompileNodes(
   return result
 }
 
+// TipTap mark used only for temporary find-and-replace highlights.
 const FnrHighlight = Mark.create({
   name: 'fnrHighlight',
   parseHTML() {
@@ -328,7 +368,12 @@ const FnrHighlight = Mark.create({
   },
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Main application component
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function App() {
+  // ── Binder drag/drop and project selection state ──
   const [dragId, setDragId] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget>(null)
   const [project, setProject] = useState<Project | null>(null)
@@ -337,6 +382,8 @@ export default function App() {
   const [renamingId, setRenamingId] = useState<number | null>(null)
   const [titleValue, setTitleValue] = useState('')
   const [saveLabel, setSaveLabel] = useState('')
+
+  // ── Project creation, menus, and style modal state ──
   const [showNewProject, setShowNewProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectParent, setNewProjectParent] = useState('')
@@ -346,6 +393,8 @@ export default function App() {
   const [showStyles, setShowStyles] = useState(false)
   const [stylesTab, setStylesTab] = useState<'chapter' | 'body'>('chapter')
   const [editMenuOpen, setEditMenuOpen] = useState(false)
+
+  // ── Editor stats and trash state ──
   const [wordCount, setWordCount] = useState(0)
   const [charCount, setCharCount] = useState(0)
   const [trashItems, setTrashItems] = useState<{
@@ -360,6 +409,8 @@ export default function App() {
   const [confirmDelete, setConfirmDelete] = useState<{ sidecarId: string; node: TreeNode } | null>(null)
   const [confirmBinDelete, setConfirmBinDelete] = useState<{ id: number; label: string } | null>(null)
 
+
+  // ── Mutable refs used by async handlers and delayed saves ──
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const projectRef = useRef<Project | null>(null)
   const treeRef = useRef<TreeNode[]>([])
@@ -370,9 +421,13 @@ export default function App() {
   const dropTargetRef = useRef<DropTarget>(null)
   const bodyHtmlRef = useRef<string>('')
 
+
+  // ── Manuscript/chapter statistics ──
   const [manuscriptWordCount, setManuscriptWordCount] = useState(0)
   const [chapterWordCount, setChapterWordCount] = useState(0)
 
+
+  // ── Project search panel state ──
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<{
@@ -388,6 +443,8 @@ export default function App() {
   const [searchLoading, setSearchLoading] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
+
+  // ── Find-and-replace panel state ──
   const [showFnR, setShowFnR] = useState(false)
   const [fnrFind, setFnrFind] = useState('')
   const [fnrReplace, setFnrReplace] = useState('')
@@ -396,6 +453,8 @@ export default function App() {
   const fnrInputRef = useRef<HTMLInputElement>(null)
   const [fnrVersion, setFnrVersion] = useState(0)
 
+
+  // ── TipTap editor configuration ──
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -428,6 +487,11 @@ export default function App() {
       triggerSave()
     },
   })
+
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Effects: refs, project loading, styles, menus, trash preview, shortcuts
+  // ───────────────────────────────────────────────────────────────────────────
 
   useEffect(() => { projectRef.current = project }, [project])
   useEffect(() => { treeRef.current = tree }, [tree])
@@ -551,6 +615,7 @@ export default function App() {
     return () => document.removeEventListener('keydown', handler, true)
   }, [])
 
+  // Saves the currently active scene and project metadata.
   const saveActive = useCallback((currentTree?: TreeNode[]) => {
     if (activeIdRef.current === null) return
     const workingTree = currentTree ?? treeRef.current
@@ -567,6 +632,7 @@ export default function App() {
     }
   }, [])
 
+  // Debounces autosave while the editor is changing.
   const triggerSave = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
     setSaveLabel('editing…')
@@ -579,6 +645,7 @@ export default function App() {
     }, 900)
   }, [saveActive])
 
+  // Opens a scene from the binder and loads its content into TipTap.
   const selectDoc = async (id: number) => {
     saveActive()
     setIsTrashPreview(false)
@@ -599,6 +666,7 @@ export default function App() {
     }
   }
 
+  // Reads trash sidecar files so deleted scenes/folders can be listed.
   const loadTrash = async () => {
     if (!projectRef.current) return
     try {
@@ -627,6 +695,7 @@ export default function App() {
     }
   }
 
+  // Restores a trashed scene/folder and moves its files back into scenes.
   const restoreFromTrash = async (sidecarId: string, node: TreeNode, originalFolderId: number) => {
     if (!projectRef.current) return
     try {
@@ -663,6 +732,7 @@ export default function App() {
     }
   }
 
+  // Searches manuscript, notes, and trash for a text query.
   const runSearch = async (query: string) => {
     if (!projectRef.current || !query.trim()) {
       setSearchResults([])
@@ -735,6 +805,7 @@ export default function App() {
     setSearchLoading(false)
   }
 
+  // Opens a selected search result, previewing trash results read-only.
   const openSearchResult = async (result: typeof searchResults[0]) => {
     if (result.isTrash) {
       // Preview trash scene
@@ -749,6 +820,7 @@ export default function App() {
     }
   }
 
+  // Local cleanup helper for temporary find-and-replace highlight marks.
   const stripFnrHighlights = (html: string): string => {
     const div = document.createElement('div')
     div.innerHTML = html
@@ -758,6 +830,7 @@ export default function App() {
     return div.innerHTML
   }
 
+  // Performs case-insensitive text replacement inside paragraph HTML.
   const replaceInHtml = (html: string, find: string, replaceWith: string, onlyFirst = false): { result: string; count: number } => {
     const div = document.createElement('div')
     div.innerHTML = html
@@ -786,6 +859,7 @@ export default function App() {
     return { result: div.innerHTML, count }
   }
 
+  // Replaces the next match in the current scene or manuscript.
   const fnrReplaceOne = async () => {
     if (!fnrFind.trim() || !projectRef.current) return
 
@@ -847,6 +921,7 @@ export default function App() {
     }
   }
 
+  // Replaces every match in the selected find-and-replace scope.
   const fnrReplaceAll = async () => {
     if (!fnrFind.trim() || !projectRef.current) return
     let totalCount = 0
@@ -884,6 +959,7 @@ export default function App() {
   }
 
 
+  // Flushes pending changes and returns to the welcome screen.
   const closeProject = () => {
     if (saveTimer.current) {
       clearTimeout(saveTimer.current)
@@ -903,6 +979,7 @@ export default function App() {
     setFileMenuOpen(false)
   }
 
+  // Exports the manuscript folder to a DOCX document.
   const compileProject = async () => {
     if (!project) return
     setFileMenuOpen(false)
@@ -948,8 +1025,8 @@ export default function App() {
               },
               alignment: styles.body.justification === 'both' ? AlignmentType.JUSTIFIED
                 : styles.body.justification === 'center' ? AlignmentType.CENTER
-                : styles.body.justification === 'right' ? AlignmentType.RIGHT
-                : AlignmentType.LEFT,
+                  : styles.body.justification === 'right' ? AlignmentType.RIGHT
+                    : AlignmentType.LEFT,
               indent: styles.body.firstLineIndent ? { firstLine: 720 } : undefined,
             })
           )
@@ -996,6 +1073,7 @@ export default function App() {
     }
   }
 
+  // Lets the user choose where a new project folder should be created.
   const pickParentFolder = async () => {
     const selectedPath = await open({
       title: 'Choose where to save your project',
@@ -1005,6 +1083,7 @@ export default function App() {
     setNewProjectParent(selectedPath as string)
   }
 
+  // Creates a new project folder, default tree, and project.json.
   const createProject = async () => {
     if (!newProjectName.trim() || !newProjectParent) return
     try {
@@ -1036,6 +1115,7 @@ export default function App() {
     }
   }
 
+  // Hydrates project state from project.json and restores the last active scene.
   const loadProjectData = async (data: Record<string, unknown>, path: string) => {
     const loadedStyles = (data.styles as ProjectStyles) ?? DEFAULT_STYLES
     const loadedTree = data.tree as TreeNode[]
@@ -1079,6 +1159,7 @@ export default function App() {
     }, 200)
   }
 
+  // Opens an existing project by asking the user for a project folder.
   const openProject = async () => {
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null }
     saveActive()
@@ -1095,6 +1176,7 @@ export default function App() {
     setRecentProjects(await loadRecentProjects())
   }
 
+  // Opens a recent project directly from its saved path.
   const openProjectByPath = async (path: string) => {
     if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null }
     saveActive()
@@ -1118,6 +1200,7 @@ export default function App() {
     }
   }
 
+  // Expands or collapses a binder folder.
   const toggleFolder = (id: number) => {
     setTree(prev => {
       const clone = JSON.parse(JSON.stringify(prev)) as TreeNode[]
@@ -1128,6 +1211,7 @@ export default function App() {
     })
   }
 
+  // Adds a new scene to the selected folder, then starts rename mode.
   const addDoc = (targetFolderId?: number) => {
     const id = nextId++
     const fileId = generateFileId()
@@ -1154,6 +1238,7 @@ export default function App() {
     editor?.commands.setContent('')
   }
 
+  // Adds a new binder folder, then starts rename mode.
   const addFolder = (targetFolderId?: number) => {
     const id = nextId++
     const newFolder: FolderNode = { id, type: 'folder', label: 'New folder', open: true, children: [] }
@@ -1172,6 +1257,7 @@ export default function App() {
     setRenamingId(id)
   }
 
+  // Moves a binder node to trash instead of deleting it permanently.
   const deleteNode = (id: number) => {
     const node = findNode(treeRef.current, id)
     if (node && projectRef.current) {
@@ -1193,6 +1279,7 @@ export default function App() {
     }
   }
 
+  // Deletes trashed files and sidecar metadata permanently.
   const permanentlyDelete = async (sidecarId: string, node: TreeNode) => {
     if (!projectRef.current) return
     try {
@@ -1211,6 +1298,7 @@ export default function App() {
     }
   }
 
+  // Loads a trashed scene into the editor in read-only preview mode.
   const previewTrashScene = async (doc: DocNode) => {
     if (!projectRef.current) return
     const content = await readSceneFile(projectRef.current.path, doc.file)
@@ -1232,6 +1320,7 @@ export default function App() {
     setCharCount(text.length)
   }
 
+  // Renames a binder item and syncs document titles for scenes.
   const renameNode = (id: number, label: string) => {
     setTree(prev => {
       const clone = JSON.parse(JSON.stringify(prev)) as TreeNode[]
@@ -1249,6 +1338,7 @@ export default function App() {
     setRenamingId(null)
   }
 
+  // Completes a drag/drop move inside the binder tree.
   const handleDrop = (targetId: number) => {
     const currentDragId = dragIdRef.current
     const currentDropTarget = dropTargetRef.current
@@ -1270,9 +1360,11 @@ export default function App() {
     setDropTarget(null)
   }
 
+  // Derived editor visibility state.
   const activeNode = activeId !== null ? findNode(tree, activeId) : null
   const showEditor = activeNode?.type === 'doc'
 
+  // Renders one trash entry, including nested deleted folders.
   const renderTrashItem = (sidecarId: string, node: TreeNode, originalFolderId: number, depth: number): React.ReactNode => {
     const isExpanded = trashExpanded.has(`${sidecarId}-${node.id}`)
     const toggleExpand = (e: React.MouseEvent) => {
@@ -1292,14 +1384,14 @@ export default function App() {
           className="tree-item"
           onClick={() => {
             if (node.type === 'doc') previewTrashScene(node)
-            else toggleExpand({ stopPropagation: () => {} } as React.MouseEvent)
+            else toggleExpand({ stopPropagation: () => { } } as React.MouseEvent)
           }}
         >
           <span style={{ width: depth * 14 + 4, flexShrink: 0, display: 'inline-block' }} />
           {node.type === 'folder'
             ? <span className="toggle" onClick={toggleExpand}>
-                <i className={`ti ti-chevron-${isExpanded ? 'down' : 'right'}`} aria-hidden="true" />
-              </span>
+              <i className={`ti ti-chevron-${isExpanded ? 'down' : 'right'}`} aria-hidden="true" />
+            </span>
             : <span style={{ width: 16, flexShrink: 0 }} />
           }
           <span className="item-icon">
@@ -1328,6 +1420,7 @@ export default function App() {
     )
   }
 
+  // Recursively renders the binder tree with drag/drop affordances.
   const renderNodes = (nodes: TreeNode[], depth: number): React.ReactNode => {
     return nodes.map(n => {
       const isProtected = n.id === 1 || n.id === 2
@@ -1393,24 +1486,24 @@ export default function App() {
             }
             <span className="item-icon">
               <i className={`ti ti-${n.id === 1 ? 'book-2' :
-                  n.id === 2 ? 'notebook' :
-                    n.type === 'folder' ? 'folder' :
-                      'file-text'
+                n.id === 2 ? 'notebook' :
+                  n.type === 'folder' ? 'folder' :
+                    'file-text'
                 }`} aria-hidden="true" />
             </span>
             {renamingId === n.id
               ? <input
-                  className="inline-rename"
-                  defaultValue={n.label}
-                  autoFocus
-                  ref={el => { if (el) { el.focus(); el.select() } }}
-                  onClick={e => e.stopPropagation()}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') renameNode(n.id, (e.target as HTMLInputElement).value || n.label)
-                    if (e.key === 'Escape') setRenamingId(null)
-                  }}
-                  onBlur={e => renameNode(n.id, e.target.value || n.label)}
-                />
+                className="inline-rename"
+                defaultValue={n.label}
+                autoFocus
+                ref={el => { if (el) { el.focus(); el.select() } }}
+                onClick={e => e.stopPropagation()}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') renameNode(n.id, (e.target as HTMLInputElement).value || n.label)
+                  if (e.key === 'Escape') setRenamingId(null)
+                }}
+                onBlur={e => renameNode(n.id, e.target.value || n.label)}
+              />
               : <span className="item-label">{n.label}</span>
             }
             {n.type === 'folder' && (
@@ -1435,7 +1528,7 @@ export default function App() {
                   </>
                 )}
               </span>
-)}
+            )}
             {n.type === 'doc' && !isProtected && (
               <span className="item-actions" onClick={e => e.stopPropagation()}>
                 <button title="Rename" onClick={e => { e.stopPropagation(); setRenamingId(n.id) }}>
@@ -1457,6 +1550,7 @@ export default function App() {
     })
   }
 
+  // Modal for adjusting chapter/body typography settings.
   const StylesModal = () => {
     const [local, setLocal] = useState<ProjectStyles>(styles)
 
@@ -1603,6 +1697,7 @@ export default function App() {
     )
   }
 
+  // Top menu: project/file actions.
   const FileMenu = () => (
     <div className={`menu-item${fileMenuOpen ? ' open' : ''}`} ref={fileMenuRef}>
       <button onClick={() => setFileMenuOpen(v => !v)}>File</button>
@@ -1621,6 +1716,7 @@ export default function App() {
     </div>
   )
 
+  // Top menu: editing, styles, search, and find/replace actions.
   const EditMenu = () => (
     <div className={`menu-item${editMenuOpen ? ' open' : ''}`} ref={editMenuRef}>
       <button onClick={() => setEditMenuOpen(v => !v)}>Edit</button>
@@ -1669,6 +1765,7 @@ export default function App() {
     </div>
   )
 
+  // Modal for creating a new project folder.
   const NewProjectModal = () => (
     <div style={{
       position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)',
@@ -1709,6 +1806,7 @@ export default function App() {
     </div>
   )
 
+  // Confirmation modal for permanent trash deletion.
   const ConfirmDeleteModal = () => {
     if (!confirmDelete) return null
     return (
@@ -1741,6 +1839,7 @@ export default function App() {
     )
   }
 
+  // Confirmation modal for moving active binder items to trash.
   const ConfirmBinDeleteModal = () => {
     if (!confirmBinDelete) return null
     return (
@@ -1772,6 +1871,7 @@ export default function App() {
     )
   }
 
+  // Recounts every scene under Manuscript.
   const computeManuscriptWordCount = useCallback(async () => {
     if (!projectRef.current) return
     const manuscript = findNode(treeRef.current, 1)
@@ -1788,6 +1888,7 @@ export default function App() {
     setManuscriptWordCount(total)
   }, [])
 
+  // Recounts the current scene's parent folder/chapter.
   const computeChapterWordCount = useCallback(async () => {
     if (!projectRef.current || activeIdRef.current === null) {
       setChapterWordCount(0)
@@ -1810,7 +1911,9 @@ export default function App() {
     setChapterWordCount(total)
   }, [])
 
-  // ── No project open: show welcome screen ──
+  // ───────────────────────────────────────────────────────────────────────────
+  // Render: welcome screen shown when no project is open
+  // ───────────────────────────────────────────────────────────────────────────
   if (!project) {
     return (
       <div id="app" style={{ position: 'relative', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
@@ -1857,7 +1960,9 @@ export default function App() {
     )
   }
 
-  // ── Project open: show main editor ──
+  // ───────────────────────────────────────────────────────────────────────────
+  // Render: main editor workspace
+  // ───────────────────────────────────────────────────────────────────────────
   return (
     <div id="app" style={{ position: 'relative' }}>
       <div id="menubar">
