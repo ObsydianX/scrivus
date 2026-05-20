@@ -222,23 +222,23 @@ function htmlToPlainLines(html: string): string[] {
   return lines.length ? lines : [div.textContent ?? '']
 }
 
-// Counts words from HTML by reading its text content.
-function wordCountFromHtml(html: string): number {
-  const div = document.createElement('div')
-  div.innerHTML = html
-  const text = div.textContent ?? ''
-  return text.trim() ? text.trim().split(/\s+/).length : 0
-}
+// // Counts words from HTML by reading its text content.
+// function wordCountFromHtml(html: string): number {
+//   const div = document.createElement('div')
+//   div.innerHTML = html
+//   const text = div.textContent ?? ''
+//   return text.trim() ? text.trim().split(/\s+/).length : 0
+// }
 
 // Removes temporary find-and-replace highlight marks from saved HTML.
-function stripFnrHighlights(html: string): string {
-  const div = document.createElement('div')
-  div.innerHTML = html
-  div.querySelectorAll('mark.fnr-highlight').forEach(mark => {
-    mark.replaceWith(mark.textContent ?? '')
-  })
-  return div.innerHTML
-}
+// function stripFnrHighlights(html: string): string {
+//   const div = document.createElement('div')
+//   div.innerHTML = html
+//   div.querySelectorAll('mark.fnr-highlight').forEach(mark => {
+//     mark.replaceWith(mark.textContent ?? '')
+//   })
+//   return div.innerHTML
+// }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Persistence helpers
@@ -506,7 +506,7 @@ export default function App() {
 
   // ── Editor stats and trash state ──
   const [wordCount, setWordCount] = useState(0)
-  const [charCount, setCharCount] = useState(0)
+  const [, setCharCount] = useState(0)
   const [trashItems, setTrashItems] = useState<{
     sidecarId: string
     label: string
@@ -632,7 +632,7 @@ export default function App() {
     content: '',
     immediatelyRender: false,
     editorProps: {
-      handleKeyDown: (_view, event) => {
+      handleKeyDown: (_view, _event) => {
         const active = document.activeElement
         const editorEl = document.querySelector('.ProseMirror')
         if (active && active !== editorEl && !editorEl?.contains(active)) {
@@ -644,7 +644,7 @@ export default function App() {
     editable: true,
     onUpdate: ({ editor }) => {
       // Strip fnr highlight marks from saved content
-      const json = editor.getJSON()
+      // const json = editor.getJSON()
       const html = editor.getHTML().replace(/<mark data-fnr="" class="fnr-highlight">(.*?)<\/mark>/g, '$1')
       bodyHtmlRef.current = html
       const div = document.createElement('div')
@@ -672,9 +672,9 @@ export default function App() {
       const node = findNode(tree, activeId)
       if (node && node.type === 'doc') {
         setTitleValue(node.title)
-        const content = node.body || ''
+        const content = ''
         bodyHtmlRef.current = content
-        editor.commands.setContent(content, false)
+        editor.commands.setContent(content, { emitUpdate: false })
         const div = document.createElement('div')
         div.innerHTML = content
         const text = div.textContent ?? ''
@@ -822,7 +822,7 @@ export default function App() {
     if (node && node.type === 'doc' && projectRef.current) {
       const content = await readSceneFile(projectRef.current.path, node.file)
       bodyHtmlRef.current = content
-      editor?.commands.setContent(content, false)
+      editor?.commands.setContent(content, { emitUpdate: false })
       const div = document.createElement('div')
       div.innerHTML = content
       const text = div.textContent ?? ''
@@ -1330,7 +1330,7 @@ export default function App() {
       const activeNode = findNode(treeRef.current, activeIdRef.current ?? -1)
       if (activeNode && activeNode.type === 'doc' && activeNode.file === fileId) {
         bodyHtmlRef.current = content
-        editor?.commands.setContent(content, false)
+        editor?.commands.setContent(content, { emitUpdate: false })
       }
     }
     setFnrUndoSnapshot([])
@@ -1385,7 +1385,7 @@ export default function App() {
       const { result, count } = replaceInHtml(cleanHtml, fnrFind, fnrReplace, true)
       if (count === 0) { setFnrStatus('No match found in current scene.'); return }
       bodyHtmlRef.current = result
-      editor?.commands.setContent(result, false)
+      editor?.commands.setContent(result, { emitUpdate: false })
 
       if (fnrReplace.trim()) {
         const q = fnrReplace.toLowerCase()
@@ -1426,7 +1426,7 @@ export default function App() {
           await writeSceneFile(projectRef.current.path, doc.file, result)
           if (activeIdRef.current === doc.id) {
             bodyHtmlRef.current = result
-            editor?.commands.setContent(result, false)
+            editor?.commands.setContent(result, { emitUpdate: false })
           }
           setFnrStatus('Replaced 1 match.')
           editor?.commands.focus()
@@ -1448,7 +1448,7 @@ export default function App() {
       const { result, count } = replaceInHtml(cleanHtml, fnrFind, fnrReplace)
       if (count === 0) { setFnrStatus('No matches found in current scene.'); return }
       bodyHtmlRef.current = result
-      editor?.commands.setContent(result, false)
+      editor?.commands.setContent(result, { emitUpdate: false })
       saveActive()
       totalCount = count
     } else {
@@ -1464,7 +1464,7 @@ export default function App() {
           await writeSceneFile(projectRef.current.path, doc.file, result)
           if (activeIdRef.current === doc.id) {
             bodyHtmlRef.current = result
-            editor?.commands.setContent(result, false)
+            editor?.commands.setContent(result, { emitUpdate: false })
           }
           totalCount += count
         }
@@ -1605,7 +1605,7 @@ export default function App() {
       if (!outputPath) return
 
       await writeFile(outputPath, uint8)
-      const exportDir = outputPath.substring(0, Math.max(outputPath.lastIndexOf('/'), outputPath.lastIndexOf('\\')))
+      // const exportDir = outputPath.substring(0, Math.max(outputPath.lastIndexOf('/'), outputPath.lastIndexOf('\\')))
       showMessage(
         `Exported to ${outputPath}`,
         'Export Complete',
@@ -1727,7 +1727,7 @@ export default function App() {
         sceneSidecarRef.current = sidecar
         const content = await readSceneFile(path, restoredNode.file)
         bodyHtmlRef.current = content
-        editor?.commands.setContent(content, false)
+        editor?.commands.setContent(content, { emitUpdate: false })
         const div = document.createElement('div')
         div.innerHTML = content
         const text = div.textContent ?? ''
@@ -1908,7 +1908,7 @@ export default function App() {
     setIsTrashPreview(true)
     setTitleValue(doc.title)
     bodyHtmlRef.current = content
-    editor?.commands.setContent(content, false)
+    editor?.commands.setContent(content, { emitUpdate: false })
     const div = document.createElement('div')
     div.innerHTML = content
     const text = div.textContent ?? ''
@@ -2106,7 +2106,7 @@ export default function App() {
               />
               : <span className="item-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {(() => {
-                  const color = SCENE_STATUSES.find(s => s.value === sceneStatuses[n.file])?.color
+                  const color = SCENE_STATUSES.find(s => s.value === sceneStatuses[(n as DocNode).file])?.color
                   return color
                     ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
                     : null
