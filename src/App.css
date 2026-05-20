@@ -33,6 +33,8 @@ body,
   background: #1e1e1e;
   color: #d4d4d4;
   font-family: 'Segoe UI', system-ui, sans-serif;
+  overflow: hidden;
+  align-items: stretch;
 }
 
 /* --------------------------------------------------------------------------
@@ -220,6 +222,33 @@ body,
   color: #d4d4d4;
 }
 
+/* Collapsed binder rail */
+#sidebar.collapsed {
+  width: 36px;
+  min-width: 36px;
+}
+
+#sidebar.collapsed #sidebar-header {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 8px 0;
+  gap: 2px;
+}
+
+/* Vertical divider between icon group and collapse button (expanded state) */
+.sidebar-sep {
+  width: 1px;
+  height: 14px;
+  background: #3c3c3c;
+  margin: 0 3px;
+}
+
+#sidebar.collapsed .sidebar-sep {
+  width: 16px;
+  height: 1px;
+}
+
 /* --------------------------------------------------------------------------
    04. Binder tree items, drag/drop, and inline rename
    -------------------------------------------------------------------------- */
@@ -228,11 +257,12 @@ body,
 #tree {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 4px 0;
 }
 
 #tree::-webkit-scrollbar {
-  width: 4px;
+  width: 8px;
 }
 
 #tree::-webkit-scrollbar-track {
@@ -412,7 +442,7 @@ body,
 }
 
 #editor-scroll::-webkit-scrollbar {
-  width: 8px;
+  width: 16px;
 }
 
 #editor-scroll::-webkit-scrollbar-track {
@@ -702,7 +732,7 @@ mark.fnr-highlight {
 }
 
 #search-results::-webkit-scrollbar {
-  width: 4px;
+  width: 8px;
 }
 
 #search-results::-webkit-scrollbar-track {
@@ -898,4 +928,407 @@ mark.fnr-highlight {
   color: #858585;
   font-style: italic;
   min-height: 28px;
+}
+
+/* --------------------------------------------------------------------------
+   11. Inspector (right panel)
+   -------------------------------------------------------------------------- */
+
+#inspector {
+  width: 220px;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  background: #252526;
+  border-left: 1px solid #111;
+  padding-top: 36px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+#inspector.collapsed {
+  width: 36px;
+  min-width: 36px;
+}
+
+#inspector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #858585;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+#inspector.collapsed #inspector-header {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 8px 0;
+  gap: 2px;
+}
+
+#inspector-header button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: 4px;
+  color: #858585;
+  font-size: 15px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+
+#inspector-header button:hover {
+  background: #3c3c3c;
+  color: #d4d4d4;
+}
+
+#inspector-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 4px 0;
+}
+
+#inspector-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+#inspector-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#inspector-body::-webkit-scrollbar-thumb {
+  background: #3c3c3c;
+  border-radius: 2px;
+}
+
+/* Inspector drawers */
+.inspector-drawer {
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.inspector-drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #858585;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  user-select: none;
+}
+
+.inspector-drawer-header:hover {
+  background: #2a2d2e;
+  color: #d4d4d4;
+}
+
+.inspector-drawer-header i {
+  font-size: 11px;
+  color: #4a4a4a;
+}
+
+.inspector-drawer-body {
+  padding: 8px 12px 12px;
+}
+
+/* Checklist drawer */
+.checklist-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  cursor: default;
+}
+
+.checklist-item:hover {
+  background: #2a2d2e;
+}
+
+.checklist-checkbox {
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: #007acc;
+}
+
+.checklist-label {
+  flex: 1;
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.checklist-rename {
+  flex: 1;
+  font-size: 12px;
+  font-family: inherit;
+  background: #3c3c3c;
+  border: 1px solid #007acc;
+  border-radius: 3px;
+  color: #d4d4d4;
+  padding: 1px 5px;
+  outline: none;
+}
+
+.checklist-delete {
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: 3px;
+  color: #858585;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.checklist-delete:hover {
+  background: #3c3c3c;
+  color: #cc8888;
+}
+
+.checklist-add {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 4px 4px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #4a4a4a;
+  font-family: inherit;
+}
+
+.checklist-add:hover {
+  background: #2a2d2e;
+  color: #858585;
+}
+
+.checklist-drop-line {
+  height: 2px;
+  background: #007acc;
+  margin: 0 4px;
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* Character and Location cards */
+.cards-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.character-card {
+  border: 1px solid #2a2d2e;
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 2px;
+}
+
+.character-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  user-select: none;
+  background: #2a2d2e;
+}
+
+.character-card-header:hover {
+  background: #333637;
+}
+
+.character-card-name {
+  flex: 1;
+  font-size: 12px;
+  color: #cccccc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-actions {
+  display: none;
+  gap: 2px;
+}
+
+.character-card-header:hover .card-actions {
+  display: flex;
+}
+
+.card-actions button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 2px 3px;
+  border-radius: 3px;
+  color: #858585;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+}
+
+.card-actions button:hover {
+  background: #3c3c3c;
+  color: #cc8888;
+}
+
+.character-card-body {
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #1e1e1e;
+}
+
+.card-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #4a4a4a;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 4px;
+}
+
+.card-select {
+  background: #2a2d2e;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  color: #c8c8c8;
+  font-size: 12px;
+  padding: 5px 8px;
+  font-family: inherit;
+  outline: none;
+  width: 100%;
+}
+
+.card-select:focus {
+  border-color: #007acc;
+}
+
+.card-textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  background: #2a2d2e;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  color: #c8c8c8;
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 1.5;
+  padding: 6px 8px;
+  outline: none;
+  box-sizing: border-box;
+  resize: none;
+}
+
+.card-textarea:focus {
+  border-color: #007acc;
+}
+
+.card-textarea-tall {
+  min-height: 140px;
+}
+
+.card-rename {
+  font-size: 12px;
+  font-family: inherit;
+  background: #3c3c3c;
+  border: 1px solid #007acc;
+  border-radius: 3px;
+  color: #d4d4d4;
+  padding: 1px 5px;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.card-drag-handle {
+  display: flex;
+  align-items: center;
+  cursor: grab;
+  color: #4a4a4a;
+  font-size: 12px;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+.card-drag-handle:hover {
+  color: #858585;
+}
+
+.card-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Scrollbars for inspector textareas and free text fields */
+.inspector-drawer-body textarea::-webkit-scrollbar {
+  width: 16px;
+}
+
+.inspector-drawer-body textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.inspector-drawer-body textarea::-webkit-scrollbar-thumb {
+  background: #3c3c3c;
+  border-radius: 2px;
+}
+
+.inspector-drawer-body textarea::-webkit-scrollbar-thumb:hover {
+  background: #555555;
+}
+
+/* Theme the textarea resize handle */
+.inspector-drawer-body textarea {
+  accent-color: #3c3c3c;
+}
+
+/* Shared style for inspector freetext areas */
+.inspector-textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: none;
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  color: #c8c8c8;
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 1.5;
+  padding: 6px 8px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.inspector-textarea:focus {
+  border-color: #007acc;
+}
+
+.inspector-textarea-tall {
+  min-height: 120px;
 }
