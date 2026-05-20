@@ -25,6 +25,7 @@
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save",
+    "dialog:allow-message",
     "fs:allow-appdata-write",
     "fs:allow-appdata-write-recursive",
     "fs:allow-appdata-read",
@@ -32,6 +33,7 @@
     "fs:allow-rename",
     "fs:allow-remove",
     "process:default",
-    "process:allow-exit"
+    "process:allow-exit",
+    "opener:allow-reveal-item-in-dir"
   ]
 }

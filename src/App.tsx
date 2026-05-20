@@ -11,6 +11,7 @@ import { join, appDataDir } from '@tauri-apps/api/path'
 import { exit } from '@tauri-apps/plugin-process'
 import { Packer, Document, Paragraph, HeadingLevel, AlignmentType, TextRun } from 'docx'
 import { Mark } from '@tiptap/core'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import './App.css'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -373,6 +374,14 @@ const FnrHighlight = Mark.create({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  // ── App Message system ──
+  const [appMessage, setAppMessage] = useState<{
+    title: string
+    body: string
+    kind: 'info' | 'warning' | 'error'
+    action?: { label: string; onClick: () => void }
+  } | null>(null)
+
   // ── Binder drag/drop and project selection state ──
   const [dragId, setDragId] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget>(null)
@@ -666,6 +675,16 @@ export default function App() {
     }
   }
 
+  // Show Message helper.
+  const showMessage = (
+    body: string,
+    title: string,
+    kind: 'info' | 'warning' | 'error' = 'info',
+    action?: { label: string; onClick: () => void }
+  ) => {
+    setAppMessage({ title, body, kind, action })
+  }
+
   // Reads trash sidecar files so deleted scenes/folders can be listed.
   const loadTrash = async () => {
     if (!projectRef.current) return
@@ -728,7 +747,7 @@ export default function App() {
       saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
       setTrashItems(prev => prev.filter(i => i.sidecarId !== sidecarId))
     } catch (e) {
-      alert('Failed to restore: ' + String(e))
+      showMessage('Failed to restore: ' + String(e), 'Error', 'error' )
     }
   }
 
@@ -986,7 +1005,7 @@ export default function App() {
 
     const nodes = await collectCompileNodes(tree, project.path)
     if (nodes.length === 0) {
-      alert('Nothing to export — add some content first.')
+      showMessage('Nothing to export — add some content first.', 'Nothing to Export', 'warning')
       return
     }
 
@@ -1067,9 +1086,18 @@ export default function App() {
       if (!outputPath) return
 
       await writeFile(outputPath, uint8)
-      alert(`Exported to ${outputPath}`)
+      const exportDir = outputPath.substring(0, Math.max(outputPath.lastIndexOf('/'), outputPath.lastIndexOf('\\')))
+      showMessage(
+        `Exported to ${outputPath}`,
+        'Export Complete',
+        'info',
+        {
+          label: 'Show in Folder',
+          onClick: () => revealItemInDir(outputPath)
+        }
+      )
     } catch (e) {
-      alert('Export failed: ' + String(e))
+      showMessage('Export failed: ' + String(e), 'Export Failed', 'error')
     }
   }
 
@@ -1111,7 +1139,7 @@ export default function App() {
       setNewProjectParent('')
       setRecentProjects(await loadRecentProjects())
     } catch (e) {
-      alert('Failed to create project: ' + String(e))
+      showMessage('Failed to create project: ' + String(e), 'Error', 'error')
     }
   }
 
@@ -1168,7 +1196,7 @@ export default function App() {
     if (!selectedPath || Array.isArray(selectedPath)) return
     const projectFile = await join(selectedPath as string, 'project.json')
     const fileExists = await exists(projectFile)
-    if (!fileExists) { alert('That folder does not contain a Scrivus project.'); return }
+    if (!fileExists) { showMessage('That folder does not contain a Scrivus project.', 'Invalid Project', 'warning' ); return }
     const raw = await readTextFile(projectFile)
     const data = JSON.parse(raw)
     await loadProjectData(data, selectedPath as string)
@@ -1184,7 +1212,7 @@ export default function App() {
       const projectFile = await join(path, 'project.json')
       const fileExists = await exists(projectFile)
       if (!fileExists) {
-        alert('That project could not be found. It may have been moved or deleted.')
+        showMessage('That project could not be found. It may have been moved or deleted.', 'Project Not Found','warning')
         const updated = recentProjects.filter(r => r.path !== path)
         setRecentProjects(updated)
         await saveRecentProjects(updated)
@@ -1196,7 +1224,7 @@ export default function App() {
       await addToRecentProjects(data.name, path)
       setRecentProjects(await loadRecentProjects())
     } catch (e) {
-      alert('Failed to open project: ' + String(e))
+      showMessage('Failed to open project: ' + String(e), 'Error', 'error')
     }
   }
 
@@ -1294,7 +1322,7 @@ export default function App() {
       setTrashItems(prev => prev.filter(i => i.sidecarId !== sidecarId))
       setConfirmDelete(null)
     } catch (e) {
-      alert('Failed to delete: ' + String(e))
+      showMessage('Failed to delete: ' + String(e), 'Error', 'error')
     }
   }
 
@@ -1871,6 +1899,45 @@ export default function App() {
     )
   }
 
+  // App Message modal for showing custom alert prompts
+  const AppMessageModal = () => {
+    if (!appMessage) return null
+    const colors = {
+      info: { border: '#1f6a9a', icon: 'ti-info-circle', iconColor: '#4fc3f7' },
+      warning: { border: '#9a7a1f', icon: 'ti-alert-triangle', iconColor: '#ffd54f' },
+      error: { border: '#9a1f1f', icon: 'ti-circle-x', iconColor: '#ef9a9a' },
+    }
+    const c = colors[appMessage.kind]
+    return (
+      <div style={{
+        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200
+      }}>
+        <div style={{
+          background: '#252526', border: `1px solid ${c.border}`, borderRadius: 8,
+          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <i className={`ti ${c.icon}`} style={{ fontSize: 20, color: c.iconColor }} aria-hidden="true" />
+            <p style={{ fontSize: 14, fontWeight: 500, color: '#d4d4d4' }}>{appMessage.title}</p>
+          </div>
+          <p style={{ fontSize: 13, color: '#858585', lineHeight: 1.5 }}>{appMessage.body}</p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            {appMessage.action && (
+              <button className="welcome-btn" onClick={() => {
+                appMessage.action!.onClick()
+                setAppMessage(null)
+              }}>
+                {appMessage.action.label}
+              </button>
+            )}
+            <button className="welcome-btn" onClick={() => setAppMessage(null)}>OK</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // Recounts every scene under Manuscript.
   const computeManuscriptWordCount = useCallback(async () => {
     if (!projectRef.current) return
@@ -1926,6 +1993,7 @@ export default function App() {
         {showStyles && <StylesModal />}
         {confirmDelete && <ConfirmDeleteModal />}
         {confirmBinDelete && <ConfirmBinDeleteModal />}
+        {appMessage && <AppMessageModal />}
         <i className="ti ti-feather" aria-hidden="true" style={{ fontSize: 48, color: '#4a4a4a', marginTop: 36 }} />
         <p style={{ color: '#858585', fontSize: 14, marginBottom: 8 }}>No project open</p>
         <div style={{ display: 'flex', gap: 10, marginBottom: recentProjects.length ? 32 : 0 }}>
@@ -2258,6 +2326,7 @@ export default function App() {
       {showStyles && <StylesModal />}
       {confirmDelete && <ConfirmDeleteModal />}
       {confirmBinDelete && <ConfirmBinDeleteModal />}
+      {appMessage && <AppMessageModal />}
     </div>
   )
 }
