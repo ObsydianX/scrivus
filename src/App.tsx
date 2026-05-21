@@ -437,6 +437,11 @@ async function trashNode(projectPath: string, node: TreeNode, originalFolderId: 
       const to = await join(trashDir, `${doc.file}.md`)
       const fileExists = await exists(from)
       if (fileExists) await rename(from, to)
+
+      const fromJson = await join(projectPath, 'scenes', `${doc.file}.json`)
+      const toJson = await join(trashDir, `${doc.file}.json`)
+      const jsonExists = await exists(fromJson)
+      if (jsonExists) await rename(fromJson, toJson)
     }
 
     // Write a single sidecar for the whole subtree
@@ -548,6 +553,7 @@ export default function App() {
   const [isTrashPreview, setIsTrashPreview] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<{ sidecarId: string; node: TreeNode } | null>(null)
   const [confirmBinDelete, setConfirmBinDelete] = useState<{ id: number; label: string } | null>(null)
+  const [confirmEmptyTrash, setConfirmEmptyTrash] = useState(false)
 
   // ── Scene Sidecar states ──
   const [sceneSidecar, setSceneSidecar] = useState<SceneSidecar>({ status: 'outline', synopsis: '' })
@@ -1377,6 +1383,27 @@ export default function App() {
     }
   }
 
+  // Empties trash completely.
+  const emptyTrash = async () => {
+    if (!projectRef.current) return
+    try {
+      const trashDir = await join(projectRef.current.path, 'trash')
+      const dirExists = await exists(trashDir)
+      if (!dirExists) return
+      const entries = await readDir(trashDir)
+      for (const entry of entries) {
+        if (entry.name) {
+          const filePath = await join(trashDir, entry.name)
+          await remove(filePath)
+        }
+      }
+      setTrashItems([])
+      setTrashOpen(false)
+    } catch (e) {
+      showMessage('Failed to empty trash: ' + String(e), 'Error', 'error')
+    }
+  }
+
   // #endregion
 
   // #region === HANDLERS: SEARCH ===
@@ -2093,42 +2120,46 @@ export default function App() {
   }
 
   // Duplicates a node in the binder tree.
-  const duplicateNode = (id: number) => {
-    const cloneNode = (n: TreeNode): TreeNode => {
+  const duplicateNode = async (id: number) => {
+    const cloneNode = async (n: TreeNode): Promise<TreeNode> => {
       const newId = nextId++
       if (n.type === 'doc') {
         const newFileId = generateFileId()
         if (projectRef.current) {
-          // Copy the scene file content
-          readTextFile(join(projectRef.current.path, 'scenes', `${n.file}.md`) as unknown as string)
-            .then(content => writeSceneFile(projectRef.current!.path, newFileId, content))
-            .catch(() => writeSceneFile(projectRef.current!.path, newFileId, ''))
-          writeSceneSidecar(projectRef.current.path, newFileId, { status: sceneStatuses[n.file] ?? 'outline', synopsis: '' })
+          try {
+            const srcPath = await join(projectRef.current.path, 'scenes', `${n.file}.md`)
+            const content = await readTextFile(srcPath)
+            await writeSceneFile(projectRef.current.path, newFileId, content)
+          } catch {
+            await writeSceneFile(projectRef.current.path, newFileId, '')
+          }
+          await writeSceneSidecar(projectRef.current.path, newFileId, { status: sceneStatuses[n.file] ?? 'outline', synopsis: '' })
           setSceneStatuses(prev => ({ ...prev, [newFileId]: sceneStatuses[n.file] ?? 'outline' }))
         }
         return { ...n, id: newId, file: newFileId, label: `${n.label} (copy)`, title: `${n.title} (copy)` }
       } else {
-        return { ...n, id: newId, label: `${n.label} (copy)`, children: (n as FolderNode).children.map(cloneNode) }
+        const clonedChildren = await Promise.all((n as FolderNode).children.map(cloneNode))
+        return { ...n, id: newId, label: `${n.label} (copy)`, children: clonedChildren }
       }
     }
 
     const newTree = JSON.parse(JSON.stringify(treeRef.current)) as TreeNode[]
 
-    const insertAfter = (nodes: TreeNode[]): boolean => {
+    const insertAfter = async (nodes: TreeNode[]): Promise<boolean> => {
       for (let i = 0; i < nodes.length; i++) {
         if (nodes[i].id === id) {
-          const clone = cloneNode(nodes[i])
+          const clone = await cloneNode(nodes[i])
           nodes.splice(i + 1, 0, clone)
           return true
         }
         if (nodes[i].type === 'folder') {
-          if (insertAfter((nodes[i] as FolderNode).children)) return true
+          if (await insertAfter((nodes[i] as FolderNode).children)) return true
         }
       }
       return false
     }
 
-    insertAfter(newTree)
+    await insertAfter(newTree)
     setTree(newTree)
     treeRef.current = newTree
     if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
@@ -2675,7 +2706,8 @@ export default function App() {
       }}>
         <div style={{
           background: '#252526', border: '1px solid #6b3333', borderRadius: 8,
-          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16
+          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16,
+          userSelect: 'none'
         }}>
           <p style={{ fontSize: 14, fontWeight: 500, color: '#d4d4d4' }}>Permanently delete?</p>
           <p style={{ fontSize: 13, color: '#858585', lineHeight: 1.5 }}>
@@ -2708,7 +2740,8 @@ export default function App() {
       }}>
         <div style={{
           background: '#252526', border: '1px solid #3c3c3c', borderRadius: 8,
-          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16
+          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16,
+          userSelect: 'none'
         }}>
           <p style={{ fontSize: 14, fontWeight: 500, color: '#d4d4d4' }}>Move to trash?</p>
           <p style={{ fontSize: 13, color: '#858585', lineHeight: 1.5 }}>
@@ -2740,7 +2773,8 @@ export default function App() {
       }}>
         <div style={{
           background: '#252526', border: '1px solid #6b3333', borderRadius: 8,
-          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16
+          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16,
+          userSelect: 'none'
         }}>
           <p style={{ fontSize: 14, fontWeight: 500, color: '#d4d4d4' }}>Delete character?</p>
           <p style={{ fontSize: 13, color: '#858585', lineHeight: 1.5 }}>
@@ -2773,7 +2807,8 @@ export default function App() {
       }}>
         <div style={{
           background: '#252526', border: '1px solid #6b3333', borderRadius: 8,
-          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16
+          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16,
+          userSelect: 'none'
         }}>
           <p style={{ fontSize: 14, fontWeight: 500, color: '#d4d4d4' }}>Delete location?</p>
           <p style={{ fontSize: 13, color: '#858585', lineHeight: 1.5 }}>
@@ -2789,6 +2824,46 @@ export default function App() {
               style={{ borderColor: '#6b3333', color: '#cc8888' }}
             >
               Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Confirmation modal for permanently emptying trash.
+  const ConfirmEmptyTrashModal = () => {
+    if (!confirmEmptyTrash) return null
+    return (
+      <div style={{
+        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
+      }}>
+        <div style={{
+          background: '#252526', border: '1px solid #6b3333', borderRadius: 8,
+          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16,
+          userSelect: 'none'
+        }}>
+          <p style={{ fontSize: 14, fontWeight: 500, color: '#d4d4d4' }}>Empty Trash?</p>
+          <p style={{ fontSize: 13, color: '#858585', lineHeight: 1.5 }}>
+            {(() => {
+              const total = trashItems.reduce((acc, item) => {
+                if (item.node.type === 'folder') return acc + 1 + collectDocs(item.node).length
+                return acc + 1
+              }, 0)
+              return <>All <strong style={{ color: '#cc8888' }}>{total} {total === 1 ? 'item' : 'items'}</strong> in the trash will be permanently deleted and cannot be recovered.</>
+            })()}
+          </p>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <button className="welcome-btn" onClick={() => setConfirmEmptyTrash(false)}>
+              Cancel
+            </button>
+            <button
+              className="welcome-btn"
+              onClick={() => { emptyTrash(); setConfirmEmptyTrash(false) }}
+              style={{ borderColor: '#6b3333', color: '#cc8888' }}
+            >
+              Empty Trash
             </button>
           </div>
         </div>
@@ -2812,7 +2887,8 @@ export default function App() {
       }}>
         <div style={{
           background: '#252526', border: `1px solid ${c.border}`, borderRadius: 8,
-          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16
+          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16,
+          userSelect: 'none'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <i className={`ti ${c.icon}`} style={{ fontSize: 20, color: c.iconColor }} aria-hidden="true" />
@@ -2900,6 +2976,7 @@ export default function App() {
         {appMessage && <AppMessageModal />}
         {confirmDeleteCharacter && <ConfirmDeleteCharacterModal />}
         {confirmDeleteLocation && <ConfirmDeleteLocationModal />}
+        {confirmEmptyTrash && <ConfirmEmptyTrashModal />}
         <i className="ti ti-feather" aria-hidden="true" style={{ fontSize: 48, color: '#4a4a4a', marginTop: 36 }} />
         <p style={{ color: '#858585', fontSize: 14, marginBottom: 8 }}>No project open</p>
         <div style={{ display: 'flex', gap: 10, marginBottom: recentProjects.length ? 32 : 0 }}>
@@ -3046,6 +3123,16 @@ export default function App() {
               <i className="ti ti-trash" aria-hidden="true" />
             </span>
             <span className="item-label">Trash</span>
+            {trashItems.length > 0 && (
+              <span className="item-actions" onClick={e => e.stopPropagation()}>
+                <button
+                  title="Empty Trash"
+                  onClick={e => { e.stopPropagation(); setConfirmEmptyTrash(true) }}
+                >
+                  <i className="ti ti-trash-x" aria-hidden="true" />
+                </button>
+              </span>
+            )}
           </div>
           {trashOpen && (
             <div>
@@ -3764,8 +3851,9 @@ export default function App() {
 
           {/* Duplicate — not for protected nodes */}
           {contextMenu.node.id !== 1 && contextMenu.node.id !== 2 && (
-            <button className="ctx-menu-item" onClick={() => {
-              duplicateNode(contextMenu.node.id)
+            <button className="ctx-menu-item" onClick={async () => {
+              console.log('duplicate clicked, node:', contextMenu.node)
+              await duplicateNode(contextMenu.node.id)
               setContextMenu(null)
             }}>
               <i className="ti ti-copy" /> Duplicate
@@ -3856,6 +3944,8 @@ export default function App() {
       {appMessage && <AppMessageModal />}
       {confirmDeleteCharacter && <ConfirmDeleteCharacterModal />}
       {confirmDeleteLocation && <ConfirmDeleteLocationModal />}
+      {confirmEmptyTrash && <ConfirmEmptyTrashModal />}
+      
     </div>
   )
 
