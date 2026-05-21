@@ -1,10 +1,10 @@
 /* ==========================================================================
    Scrivus App Styles
    --------------------------------------------------------------------------
-   Organization only: selectors and visual behavior are preserved from the
-   original stylesheet. Sections are grouped by app region/component.
+   Sections are grouped by app region/component.
    ========================================================================== */
 
+/* #region === 01. GLOBAL RESET & APP SHELL === */
 /* --------------------------------------------------------------------------
    01. Global reset and app shell
    -------------------------------------------------------------------------- */
@@ -37,6 +37,9 @@ body,
   align-items: stretch;
 }
 
+/* #endregion */
+
+/* #region === 02. TOP BARS & MENUS === */
 /* --------------------------------------------------------------------------
    02. Top bars and menus
    -------------------------------------------------------------------------- */
@@ -170,6 +173,9 @@ body,
   margin: 4px 0;
 }
 
+/* #endregion */
+
+/* #region === 03. SIDEBAR / BINDER === */
 /* --------------------------------------------------------------------------
    03. Sidebar / binder
    -------------------------------------------------------------------------- */
@@ -249,6 +255,9 @@ body,
   height: 1px;
 }
 
+/* #endregion */
+
+/* #region === 04. BINDER TREE ITEMS, DRAG/DROP & INLINE RENAME === */
 /* --------------------------------------------------------------------------
    04. Binder tree items, drag/drop, and inline rename
    -------------------------------------------------------------------------- */
@@ -416,8 +425,38 @@ body,
   pointer-events: none;
 }
 
+/* #endregion */
+
+/* #region === 05. SHARED BUTTONS === */
 /* --------------------------------------------------------------------------
-   05. Editor layout and toolbar
+   05. Shared buttons
+   -------------------------------------------------------------------------- */
+
+/* Reusable dark button used on welcome screen and modal actions. */
+.welcome-btn {
+  border: 1px solid #3c3c3c;
+  background: #2d2d2d;
+  color: #cccccc;
+  cursor: pointer;
+  padding: 8px 18px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.welcome-btn:hover {
+  background: #3c3c3c;
+  color: #ffffff;
+}
+
+/* #endregion */
+
+/* #region === 06. EDITOR LAYOUT & TOOLBAR === */
+/* --------------------------------------------------------------------------
+   06. Editor layout and toolbar
    -------------------------------------------------------------------------- */
 
 /* Main editor column. */
@@ -533,8 +572,11 @@ body,
   color: #4a4a4a;
 }
 
+/* #endregion */
+
+/* #region === 07. TIPTAP / PROSEMIRROR CONTENT === */
 /* --------------------------------------------------------------------------
-   06. TipTap / ProseMirror content
+   07. TipTap / ProseMirror content
    -------------------------------------------------------------------------- */
 
 .tiptap-wrap {
@@ -600,8 +642,11 @@ mark.fnr-highlight {
   padding: 0 1px;
 }
 
+/* #endregion */
+
+/* #region === 08. EMPTY STATE & STATUS BAR === */
 /* --------------------------------------------------------------------------
-   07. Empty editor state and status bar
+   08. Empty editor state and status bar
    -------------------------------------------------------------------------- */
 
 /* Centered prompt shown when no scene is selected. */
@@ -627,36 +672,14 @@ mark.fnr-highlight {
   background: #007acc;
   font-size: 11px;
   color: rgba(255, 255, 255, 0.8);
-  display: grid;
-  grid-template-columns: 24ch 8px 24ch 8px 24ch 8px 24ch 8px 24ch;
-  align-items: center;
-  gap: 0;
-}
-
-/* --------------------------------------------------------------------------
-   08. Shared buttons
-   -------------------------------------------------------------------------- */
-
-/* Reusable dark button used on welcome screen and modal actions. */
-.welcome-btn {
-  border: 1px solid #3c3c3c;
-  background: #2d2d2d;
-  color: #cccccc;
-  cursor: pointer;
-  padding: 8px 18px;
-  border-radius: 5px;
-  font-size: 13px;
-  font-family: inherit;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
-.welcome-btn:hover {
-  background: #3c3c3c;
-  color: #ffffff;
-}
+/* #endregion */
 
+/* #region === 09. SEARCH PANEL === */
 /* --------------------------------------------------------------------------
    09. Search panel
    -------------------------------------------------------------------------- */
@@ -799,6 +822,9 @@ mark.fnr-highlight {
   font-style: italic;
 }
 
+/* #endregion */
+
+/* #region === 10. FIND & REPLACE PANEL === */
 /* --------------------------------------------------------------------------
    10. Find and replace panel
    -------------------------------------------------------------------------- */
@@ -930,6 +956,9 @@ mark.fnr-highlight {
   min-height: 28px;
 }
 
+/* #endregion */
+
+/* #region === 11. INSPECTOR (RIGHT PANEL) === */
 /* --------------------------------------------------------------------------
    11. Inspector (right panel)
    -------------------------------------------------------------------------- */
@@ -1042,7 +1071,61 @@ mark.fnr-highlight {
   padding: 8px 12px 12px;
 }
 
-/* Checklist drawer */
+/* Shared style for inspector freetext areas */
+.inspector-textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: none;
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  color: #c8c8c8;
+  font-size: 12px;
+  font-family: inherit;
+  line-height: 1.5;
+  padding: 6px 8px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.inspector-textarea:focus {
+  border-color: #007acc;
+}
+
+.inspector-textarea-tall {
+  min-height: 120px;
+}
+
+/* Scrollbars for inspector textareas and free text fields */
+.inspector-drawer-body textarea::-webkit-scrollbar {
+  width: 16px;
+}
+
+.inspector-drawer-body textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.inspector-drawer-body textarea::-webkit-scrollbar-thumb {
+  background: #3c3c3c;
+  border-radius: 2px;
+}
+
+.inspector-drawer-body textarea::-webkit-scrollbar-thumb:hover {
+  background: #555555;
+}
+
+/* Theme the textarea resize handle */
+.inspector-drawer-body textarea {
+  accent-color: #3c3c3c;
+}
+
+/* #endregion */
+
+/* #region === 12. CHECKLIST DRAWER === */
+/* --------------------------------------------------------------------------
+   12. Checklist drawer
+   -------------------------------------------------------------------------- */
+
 .checklist-wrap {
   display: flex;
   flex-direction: column;
@@ -1133,7 +1216,13 @@ mark.fnr-highlight {
   pointer-events: none;
 }
 
-/* Character and Location cards */
+/* #endregion */
+
+/* #region === 13. CHARACTER & LOCATION CARDS === */
+/* --------------------------------------------------------------------------
+   13. Character and location cards
+   -------------------------------------------------------------------------- */
+
 .cards-wrap {
   display: flex;
   flex-direction: column;
@@ -1285,50 +1374,101 @@ mark.fnr-highlight {
   cursor: grabbing;
 }
 
-/* Scrollbars for inspector textareas and free text fields */
-.inspector-drawer-body textarea::-webkit-scrollbar {
-  width: 16px;
-}
+/* #endregion */
 
-.inspector-drawer-body textarea::-webkit-scrollbar-track {
-  background: transparent;
-}
+/* #region === 14. ZOOM CONTROL === */
+/* --------------------------------------------------------------------------
+   14. Zoom control (statusbar, bottom-right)
+   -------------------------------------------------------------------------- */
 
-.inspector-drawer-body textarea::-webkit-scrollbar-thumb {
-  background: #3c3c3c;
-  border-radius: 2px;
-}
-
-.inspector-drawer-body textarea::-webkit-scrollbar-thumb:hover {
-  background: #555555;
-}
-
-/* Theme the textarea resize handle */
-.inspector-drawer-body textarea {
-  accent-color: #3c3c3c;
-}
-
-/* Shared style for inspector freetext areas */
-.inspector-textarea {
-  width: 100%;
-  min-height: 80px;
-  resize: none;
-  background: #1e1e1e;
-  border: 1px solid #3c3c3c;
-  border-radius: 4px;
-  color: #c8c8c8;
-  font-size: 12px;
+.zoom-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 11px;
   font-family: inherit;
-  line-height: 1.5;
-  padding: 6px 8px;
-  outline: none;
-  box-sizing: border-box;
+  color: rgba(255, 255, 255, 0.8);
+  padding: 0 6px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
 }
 
-.inspector-textarea:focus {
-  border-color: #007acc;
+.zoom-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
 }
 
-.inspector-textarea-tall {
-  min-height: 120px;
+.zoom-dropdown {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  right: 0;
+  background: #2d2d2d;
+  border: 1px solid #111;
+  border-radius: 4px;
+  padding: 4px 0;
+  min-width: 110px;
+  z-index: 200;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
+
+.zoom-dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: #cccccc;
+  font-family: inherit;
+  text-align: left;
+}
+
+.zoom-dropdown button:hover {
+  background: #094771;
+  color: #ffffff;
+}
+
+.zoom-dropdown button.active {
+  color: #ffffff;
+}
+
+/* #endregion */
+
+/* #region === 15. CONTEXT MENU === */
+/* --------------------------------------------------------------------------
+   15. Context menu
+   -------------------------------------------------------------------------- */
+
+.ctx-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: #cccccc;
+  font-family: inherit;
+  text-align: left;
+}
+
+.ctx-menu-item:hover {
+  background: #094771;
+  color: #ffffff;
+}
+
+.ctx-menu-item i {
+  font-size: 13px;
+  width: 14px;
+  flex-shrink: 0;
+}
+
+/* #endregion */

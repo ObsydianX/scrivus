@@ -1,3 +1,4 @@
+// #region === IMPORTS ===
 // ─────────────────────────────────────────────────────────────────────────────
 // Imports
 // ─────────────────────────────────────────────────────────────────────────────
@@ -14,6 +15,9 @@ import { Mark } from '@tiptap/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import './App.css'
 
+// #endregion
+
+// #region === TYPES & INTERFACES ===
 // ─────────────────────────────────────────────────────────────────────────────
 // Core project data types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -114,6 +118,10 @@ type ChecklistItem = {
   order: number
 }
 
+// #endregion
+
+// #region === CONSTANTS & DEFAULTS ===
+
 // Default typography/style settings used for new projects and fallback loads.
 const DEFAULT_STYLES: ProjectStyles = {
   chapter: {
@@ -134,6 +142,9 @@ const DEFAULT_STYLES: ProjectStyles = {
 // Runtime id counter for newly-created folders/scenes. Persisted in project.json.
 let nextId = 10
 
+// #endregion
+
+// #region === TREE TRAVERSAL HELPERS ===
 // ─────────────────────────────────────────────────────────────────────────────
 // Tree traversal helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -209,6 +220,9 @@ function insertNode(nodes: TreeNode[], node: TreeNode, target: NonNullable<DropT
   return result
 }
 
+// #endregion
+
+// #region === TEXT & HTML HELPERS ===
 // ─────────────────────────────────────────────────────────────────────────────
 // Text and HTML helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -240,6 +254,9 @@ function htmlToPlainLines(html: string): string[] {
 //   return div.innerHTML
 // }
 
+// #endregion
+
+// #region === PERSISTENCE HELPERS ===
 // ─────────────────────────────────────────────────────────────────────────────
 // Persistence helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -324,6 +341,10 @@ async function addToRecentProjects(name: string, path: string) {
   const updated = [{ name, path }, ...filtered].slice(0, 8)
   await saveRecentProjects(updated)
 }
+
+// #endregion
+
+// #region === COMPILE HELPERS ===
 
 // Generates a short random file id for scene files.
 function generateFileId(): string {
@@ -459,6 +480,10 @@ async function collectCompileNodes(
   return result
 }
 
+// #endregion
+
+// #region === TIPTAP EXTENSIONS ===
+
 // TipTap mark used only for temporary find-and-replace highlights.
 const FnrHighlight = Mark.create({
   name: 'fnrHighlight',
@@ -470,11 +495,16 @@ const FnrHighlight = Mark.create({
   },
 })
 
+// #endregion
+
+// #region === APP COMPONENT ===
 // ─────────────────────────────────────────────────────────────────────────────
 // Main application component
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  // #region === STATE ===
+
   // ── App Message system ──
   const [appMessage, setAppMessage] = useState<{
     title: string
@@ -526,6 +556,9 @@ export default function App() {
   // ── Binder states ──
   const [binderOpen, setBinderOpen] = useState(true)
   const [sceneStatuses, setSceneStatuses] = useState<Record<string, SceneStatus>>({})
+
+  // ── Context Menu states ──
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: TreeNode; depth: number } | null>(null)
 
 
   // ── Mutable refs used by async handlers and delayed saves ──
@@ -581,6 +614,9 @@ export default function App() {
   // ── Inspector Panel ──
   const [inspectorOpen, setInspectorOpen] = useState(true)
 
+  // ── Statusbar Panel ──
+  const [isNarrow, setIsNarrow] = useState(window.innerWidth < 600);
+
   // ── Drawer Panel ──
   const [drawerOpen, setDrawerOpen] = useState<Record<string, boolean>>({
     status: false,
@@ -621,6 +657,31 @@ export default function App() {
   const locationDragIdRef = useRef<number | null>(null)
   const [confirmDeleteLocation, setConfirmDeleteLocation] = useState<Location | null>(null)
 
+  // Settings helpers
+  const DEFAULT_SETTINGS = {
+    zoom: 100,
+  };
+
+  type AppSettings = typeof DEFAULT_SETTINGS;
+
+  function loadSettings(): AppSettings {
+    try {
+      const raw = localStorage.getItem('scrivus-settings');
+      if (!raw) return { ...DEFAULT_SETTINGS };
+      return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    } catch {
+      return { ...DEFAULT_SETTINGS };
+    }
+  }
+
+  function saveSettings(settings: AppSettings) {
+    localStorage.setItem('scrivus-settings', JSON.stringify(settings));
+  }
+
+  // --- ZOOM STATE ---
+  const ZOOM_PRESETS = [50, 75, 90, 100, 110, 125, 150, 175, 200, 300, 400, 600, 800];
+  const [zoom, setZoom] = useState(() => loadSettings().zoom);
+  const [zoomOpen, setZoomOpen] = useState(false);
 
   // ── TipTap editor configuration ──
   const editor = useEditor({
@@ -656,10 +717,13 @@ export default function App() {
     },
   })
 
-
   // ───────────────────────────────────────────────────────────────────────────
   // Effects: refs, project loading, styles, menus, trash preview, shortcuts
   // ───────────────────────────────────────────────────────────────────────────
+
+  // #endregion
+
+  // #region === EFFECTS ===
 
   useEffect(() => { projectRef.current = project }, [project])
   useEffect(() => { treeRef.current = tree }, [tree])
@@ -783,6 +847,77 @@ export default function App() {
     return () => document.removeEventListener('keydown', handler, true)
   }, [])
 
+  // --- ZOOM EFFECT --- 
+  useEffect(() => {
+    const applyZoom = () => {
+      const wrap = document.getElementById('editor-wrap');
+      const proseMirror = wrap?.querySelector('.ProseMirror') as HTMLElement | null;
+      if (!wrap || !proseMirror) return false;
+
+      const scale = zoom / 100;
+      proseMirror.style.fontSize = `calc(var(--editor-body-size, 12pt) * ${scale})`;
+      const title = document.getElementById('editor-title') as HTMLElement | null;
+      if (title) title.style.fontSize = `calc(var(--editor-chapter-size, 24pt) * ${scale})`;
+      return true;
+    };
+
+    if (!applyZoom()) {
+      const id = requestAnimationFrame(() => applyZoom());
+      return () => cancelAnimationFrame(id);
+    }
+  }, [zoom, activeId]);
+
+  useEffect(() => {
+    saveSettings({ ...loadSettings(), zoom });
+  }, [zoom]);
+
+  // --- Collapse panels on small window EFFECT --- 
+  useEffect(() => {
+    const handleResize = () => {
+      const narrow = window.innerWidth < 900;
+      setIsNarrow(narrow);
+      setBinderOpen(!narrow);
+      setInspectorOpen(!narrow);
+    };
+
+    window.addEventListener('resize', handleResize);
+    handleResize();
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // --- Disable browser context menu EFFECT --- 
+
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => e.preventDefault();
+    window.addEventListener('contextmenu', handleContextMenu);
+    return () => window.removeEventListener('contextmenu', handleContextMenu);
+  }, []);
+
+  // --- Duplicate Node EFFECT --- 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2' && activeId !== null) {
+        const node = findNode(treeRef.current, activeId)
+        if (node && node.id !== 1 && node.id !== 2) setRenamingId(activeId)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [activeId])
+
+  // --- Context Menu EFFECT --- 
+  useEffect(() => {
+    if (!contextMenu) return
+    const handle = () => setContextMenu(null)
+    window.addEventListener('click', handle)
+    return () => window.removeEventListener('click', handle)
+  }, [contextMenu])
+  
+
+  // #endregion
+
+  // #region === HANDLERS: SAVE & EDITOR ===
+
   // Saves the currently active scene and project metadata.
   const saveActive = useCallback((currentTree?: TreeNode[]) => {
     if (activeIdRef.current === null) return
@@ -875,6 +1010,10 @@ export default function App() {
     }
     setSceneStatuses(result)
   }
+
+  // #endregion
+
+  // #region === HANDLERS: NOTES, CHECKLIST, CHARACTERS & LOCATIONS ===
 
   // Persists all project-wide notes to notes.json.
   const saveNotes = async (overrides: Partial<{
@@ -1088,6 +1227,10 @@ export default function App() {
     locationDragIdRef.current = null
   }
 
+  // #endregion
+
+  // #region === HANDLERS: TRASH ===
+
   // Reads trash sidecar files so deleted scenes/folders can be listed.
   const loadTrash = async () => {
     if (!projectRef.current) return
@@ -1234,6 +1377,10 @@ export default function App() {
     }
   }
 
+  // #endregion
+
+  // #region === HANDLERS: SEARCH ===
+
   // Searches manuscript, notes, and trash for a text query.
   const runSearch = async (query: string) => {
     if (!projectRef.current || !query.trim()) {
@@ -1321,6 +1468,10 @@ export default function App() {
       await selectDoc(result.docId)
     }
   }
+
+  // #endregion
+
+  // #region === HANDLERS: FIND & REPLACE ===
 
   // Restores all scenes affected by the last manuscript-wide replace all.
   const fnrUndoReplaceAll = async () => {
@@ -1478,6 +1629,9 @@ export default function App() {
     setFnrVersion(v => v + 1)
   }
 
+  // #endregion
+
+  // #region === HANDLERS: PROJECT MANAGEMENT ===
 
   // Flushes pending changes and returns to the welcome screen.
   const closeProject = () => {
@@ -1757,7 +1911,7 @@ export default function App() {
     if (!selectedPath || Array.isArray(selectedPath)) return
     const projectFile = await join(selectedPath as string, 'project.json')
     const fileExists = await exists(projectFile)
-    if (!fileExists) { showMessage('That folder does not contain a Scrivus project.', 'Invalid Project', 'warning' ); return }
+    if (!fileExists) { showMessage('That folder does not contain a Scrivus project.', 'Invalid Project', 'warning'); return }
     const raw = await readTextFile(projectFile)
     const data = JSON.parse(raw)
     await loadProjectData(data, selectedPath as string)
@@ -1773,7 +1927,7 @@ export default function App() {
       const projectFile = await join(path, 'project.json')
       const fileExists = await exists(projectFile)
       if (!fileExists) {
-        showMessage('That project could not be found. It may have been moved or deleted.', 'Project Not Found','warning')
+        showMessage('That project could not be found. It may have been moved or deleted.', 'Project Not Found', 'warning')
         const updated = recentProjects.filter(r => r.path !== path)
         setRecentProjects(updated)
         await saveRecentProjects(updated)
@@ -1788,6 +1942,10 @@ export default function App() {
       showMessage('Failed to open project: ' + String(e), 'Error', 'error')
     }
   }
+
+  // #endregion
+
+  // #region === HANDLERS: BINDER (TREE, DRAG & DROP, SCENES) ===
 
   // Expands or collapses a binder folder.
   const toggleFolder = (id: number) => {
@@ -1934,6 +2092,48 @@ export default function App() {
     setRenamingId(null)
   }
 
+  // Duplicates a node in the binder tree.
+  const duplicateNode = (id: number) => {
+    const cloneNode = (n: TreeNode): TreeNode => {
+      const newId = nextId++
+      if (n.type === 'doc') {
+        const newFileId = generateFileId()
+        if (projectRef.current) {
+          // Copy the scene file content
+          readTextFile(join(projectRef.current.path, 'scenes', `${n.file}.md`) as unknown as string)
+            .then(content => writeSceneFile(projectRef.current!.path, newFileId, content))
+            .catch(() => writeSceneFile(projectRef.current!.path, newFileId, ''))
+          writeSceneSidecar(projectRef.current.path, newFileId, { status: sceneStatuses[n.file] ?? 'outline', synopsis: '' })
+          setSceneStatuses(prev => ({ ...prev, [newFileId]: sceneStatuses[n.file] ?? 'outline' }))
+        }
+        return { ...n, id: newId, file: newFileId, label: `${n.label} (copy)`, title: `${n.title} (copy)` }
+      } else {
+        return { ...n, id: newId, label: `${n.label} (copy)`, children: (n as FolderNode).children.map(cloneNode) }
+      }
+    }
+
+    const newTree = JSON.parse(JSON.stringify(treeRef.current)) as TreeNode[]
+
+    const insertAfter = (nodes: TreeNode[]): boolean => {
+      for (let i = 0; i < nodes.length; i++) {
+        if (nodes[i].id === id) {
+          const clone = cloneNode(nodes[i])
+          nodes.splice(i + 1, 0, clone)
+          return true
+        }
+        if (nodes[i].type === 'folder') {
+          if (insertAfter((nodes[i] as FolderNode).children)) return true
+        }
+      }
+      return false
+    }
+
+    insertAfter(newTree)
+    setTree(newTree)
+    treeRef.current = newTree
+    if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+  }
+
   // Completes a drag/drop move inside the binder tree.
   const handleDrop = (targetId: number) => {
     const currentDragId = dragIdRef.current
@@ -1959,6 +2159,10 @@ export default function App() {
   // Derived editor visibility state.
   const activeNode = activeId !== null ? findNode(tree, activeId) : null
   const showEditor = activeNode?.type === 'doc' || isTrashPreview
+
+  // #endregion
+
+  // #region === RENDER HELPERS: BINDER TREE ===
 
   // Renders one trash entry, including nested deleted folders.
   const renderTrashItem = (sidecarId: string, node: TreeNode, originalFolderId: number, depth: number): React.ReactNode => {
@@ -2078,6 +2282,15 @@ export default function App() {
               if (dragIdRef.current !== null) return
               n.type === 'doc' ? selectDoc(n.id) : toggleFolder(n.id)
             }}
+            onDoubleClick={() => {
+              if (n.id === 1 || n.id === 2) return
+              setRenamingId(n.id)
+            }}
+            onContextMenu={e => {
+              e.preventDefault()
+              e.stopPropagation()
+              setContextMenu({ x: e.clientX, y: e.clientY, node: n, depth })
+            }}
           >
             <span style={{ width: depth * 14 + 4, flexShrink: 0, display: 'inline-block' }} />
             {n.type === 'folder'
@@ -2160,6 +2373,10 @@ export default function App() {
     })
   }
 
+  // #endregion
+
+  // #region === RENDER HELPERS: INSPECTOR DRAWER ===
+
   // Inspector Panel.
   const InspectorDrawer = ({ id, label, children }: { id: string; label: string; children: React.ReactNode }) => (
     <div className="inspector-drawer">
@@ -2179,6 +2396,10 @@ export default function App() {
   )
 
 
+
+  // #endregion
+
+  // #region === RENDER HELPERS: MODALS ===
 
   // Modal for adjusting chapter/body typography settings.
   const StylesModal = () => {
@@ -2327,6 +2548,10 @@ export default function App() {
     )
   }
 
+  // #endregion
+
+  // #region === RENDER HELPERS: MENUS ===
+
   // Top menu: project/file actions.
   const FileMenu = () => (
     <div className={`menu-item${fileMenuOpen ? ' open' : ''}`} ref={fileMenuRef}>
@@ -2394,6 +2619,10 @@ export default function App() {
       )}
     </div>
   )
+
+  // #endregion
+
+  // #region === RENDER HELPERS: CONFIRM MODALS ===
 
   // Modal for creating a new project folder.
   const NewProjectModal = () => (
@@ -2606,6 +2835,10 @@ export default function App() {
     )
   }
 
+  // #endregion
+
+  // #region === HANDLERS: WORD COUNT ===
+
   // Recounts every scene under Manuscript.
   const computeManuscriptWordCount = useCallback(async () => {
     if (!projectRef.current) return
@@ -2646,6 +2879,9 @@ export default function App() {
     setChapterWordCount(total)
   }, [])
 
+  // #endregion
+
+  // #region === RENDER: WELCOME SCREEN ===
   // ───────────────────────────────────────────────────────────────────────────
   // Render: welcome screen shown when no project is open
   // ───────────────────────────────────────────────────────────────────────────
@@ -2698,6 +2934,9 @@ export default function App() {
     )
   }
 
+  // #endregion
+
+  // #region === RENDER: MAIN EDITOR WORKSPACE ===
   // ───────────────────────────────────────────────────────────────────────────
   // Render: main editor workspace
   // ───────────────────────────────────────────────────────────────────────────
@@ -2980,39 +3219,60 @@ export default function App() {
                 </div>
               </div>
             </div>
-            <div id="statusbar">
-              <span title="Words in current scene">
-                Scene: {wordCount.toLocaleString()} {wordCount === 1 ? 'word' : 'words'}
-              </span>
-              <span style={{ color: 'rgba(255,255,255,0.3)' }}>·</span>
-              <span title="Words in current chapter">
-                Chapter: {chapterWordCount > 0 ? `${chapterWordCount.toLocaleString()} ${chapterWordCount === 1 ? 'word' : 'words'}` : '—'}
-              </span>
-              <span style={{ color: 'rgba(255,255,255,0.3)' }}>·</span>
-              <span title="Estimated reading time for current chapter at 238 wpm">
-                {chapterWordCount > 0 ? (() => {
-                  const minutes = Math.ceil(chapterWordCount / 238)
-                  if (minutes < 60) return `~${minutes} min chapter`
-                  const hours = Math.floor(minutes / 60)
-                  const mins = minutes % 60
-                  return mins > 0 ? `~${hours}h ${mins}m chapter` : `~${hours}h chapter`
-                })() : '— chapter'}
-              </span>
-              <span style={{ color: 'rgba(255,255,255,0.3)' }}>·</span>
-              <span title="Total words in Manuscript">
-                Manuscript: {manuscriptWordCount.toLocaleString()} {manuscriptWordCount === 1 ? 'word' : 'words'}
-              </span>
-              <span style={{ color: 'rgba(255,255,255,0.3)' }}>·</span>
-              <span title="Estimated reading time for full manuscript at 238 wpm">
-                {(() => {
-                  const minutes = Math.ceil(manuscriptWordCount / 238)
-                  if (minutes < 60) return `~${minutes} min manuscript`
-                  const hours = Math.floor(minutes / 60)
-                  const mins = minutes % 60
-                  return mins > 0 ? `~${hours}h ${mins}m manuscript` : `~${hours}h manuscript`
-                })()}
-              </span>
-            </div>
+            {!isNarrow && (
+              <div id="statusbar">
+                <span title="Words in current scene">
+                  Scene: {wordCount.toLocaleString()} {wordCount === 1 ? 'word' : 'words'}
+                </span>
+                <span style={{ color: 'rgba(255,255,255,0.3)' }}>·</span>
+                <span title="Words in current chapter">
+                  Chapter: {chapterWordCount > 0 ? `${chapterWordCount.toLocaleString()} ${chapterWordCount === 1 ? 'word' : 'words'}` : '—'}
+                </span>
+                <span style={{ color: 'rgba(255,255,255,0.3)' }}>·</span>
+                <span title="Estimated reading time for current chapter at 238 wpm">
+                  {chapterWordCount > 0 ? (() => {
+                    const minutes = Math.ceil(chapterWordCount / 238)
+                    if (minutes < 60) return `~${minutes} min chapter`
+                    const hours = Math.floor(minutes / 60)
+                    const mins = minutes % 60
+                    return mins > 0 ? `~${hours}h ${mins}m chapter` : `~${hours}h chapter`
+                  })() : '— chapter'}
+                </span>
+                <span style={{ color: 'rgba(255,255,255,0.3)' }}>·</span>
+                <span title="Total words in Manuscript">
+                  Manuscript: {manuscriptWordCount.toLocaleString()} {manuscriptWordCount === 1 ? 'word' : 'words'}
+                </span>
+                <span style={{ color: 'rgba(255,255,255,0.3)' }}>·</span>
+                <span title="Estimated reading time for full manuscript at 238 wpm">
+                  {(() => {
+                    const minutes = Math.ceil(manuscriptWordCount / 238)
+                    if (minutes < 60) return `~${minutes} min manuscript`
+                    const hours = Math.floor(minutes / 60)
+                    const mins = minutes % 60
+                    return mins > 0 ? `~${hours}h ${mins}m manuscript` : `~${hours}h manuscript`
+                  })()}
+                </span>
+                <div style={{ marginLeft: 'auto', position: 'relative' }}>
+                  <button className="zoom-btn" onClick={() => setZoomOpen(o => !o)}>
+                    {zoom}% <i className="ti ti-chevron-up" style={{ fontSize: 9 }} />
+                  </button>
+                  {zoomOpen && (
+                    <div className="zoom-dropdown">
+                      {ZOOM_PRESETS.map(p => (
+                        <button
+                          key={p}
+                          className={zoom === p ? 'active' : ''}
+                          onClick={() => { setZoom(p); setZoomOpen(false); }}
+                        >
+                          {p === zoom ? <i className="ti ti-circle-filled" style={{ fontSize: 7 }} /> : <span style={{ width: 10 }} />}
+                          {p}%
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </>
           : <div id="empty-state">
             <i className="ti ti-file-text" aria-hidden="true" />
@@ -3113,7 +3373,7 @@ export default function App() {
                 }}
                 placeholder="Project scratch pad…"
                 className="inspector-textarea inspector-textarea-tall"
-                
+
               />
             </InspectorDrawer>
             <InspectorDrawer id="checklist" label="Checklist">
@@ -3476,6 +3736,118 @@ export default function App() {
           </div>
         )}
       </div>
+      {contextMenu && (
+        <div
+          style={{
+            position: 'fixed',
+            top: contextMenu.y,
+            left: contextMenu.x,
+            background: '#2d2d2d',
+            border: '1px solid #111',
+            borderRadius: 4,
+            padding: '4px 0',
+            minWidth: 160,
+            zIndex: 1000,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Rename — not for protected nodes */}
+          {contextMenu.node.id !== 1 && contextMenu.node.id !== 2 && (
+            <button className="ctx-menu-item" onClick={() => {
+              setRenamingId(contextMenu.node.id)
+              setContextMenu(null)
+            }}>
+              <i className="ti ti-pencil" /> Rename
+            </button>
+          )}
+
+          {/* Duplicate — not for protected nodes */}
+          {contextMenu.node.id !== 1 && contextMenu.node.id !== 2 && (
+            <button className="ctx-menu-item" onClick={() => {
+              duplicateNode(contextMenu.node.id)
+              setContextMenu(null)
+            }}>
+              <i className="ti ti-copy" /> Duplicate
+            </button>
+          )}
+
+          {/* Add Scene */}
+          <button className="ctx-menu-item" onClick={() => {
+            if (contextMenu.node.type === 'folder') {
+              // Add scene as child of this folder
+              addDoc(contextMenu.node.id)
+            } else {
+              // Add scene after this scene in its parent folder
+              const parent = findParentFolder(treeRef.current, contextMenu.node.id)
+              if (parent) {
+                const newId = nextId++
+                const fileId = generateFileId()
+                const newDoc: DocNode = { id: newId, type: 'doc', label: 'New scene', title: 'New scene', file: fileId }
+                const newTree = JSON.parse(JSON.stringify(treeRef.current)) as TreeNode[]
+                const parentNode = findNode(newTree, parent.id) as FolderNode
+                const idx = parentNode.children.findIndex(c => c.id === contextMenu.node.id)
+                parentNode.children.splice(idx + 1, 0, newDoc)
+                setTree(newTree)
+                treeRef.current = newTree
+                if (projectRef.current) {
+                  writeSceneFile(projectRef.current.path, fileId, '')
+                  writeSceneSidecar(projectRef.current.path, fileId, { status: 'outline', synopsis: '' })
+                  setSceneStatuses(prev => ({ ...prev, [fileId]: 'outline' }))
+                  saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+                }
+                setRenamingId(newId)
+                setActiveId(newId)
+                setTitleValue('New scene')
+                bodyHtmlRef.current = ''
+                editor?.commands.setContent('')
+              }
+            }
+            setContextMenu(null)
+          }}>
+            <i className="ti ti-file-plus" /> Add Scene
+          </button>
+
+          {/* Add Folder — only at depth 0 (top-level folders) or on a folder */}
+          {(contextMenu.node.type === 'folder' || contextMenu.depth === 0) && (
+            <button className="ctx-menu-item" onClick={() => {
+              if (contextMenu.node.type === 'folder') {
+                // Add folder after this folder
+                const newId = nextId++
+                const newFolder: FolderNode = { id: newId, type: 'folder', label: 'New folder', open: true, children: [] }
+                const newTree = JSON.parse(JSON.stringify(treeRef.current)) as TreeNode[]
+                const manuscript = findNode(newTree, 1) as FolderNode
+                const idx = manuscript.children.findIndex(c => c.id === contextMenu.node.id)
+                manuscript.children.splice(idx + 1, 0, newFolder)
+                setTree(newTree)
+                treeRef.current = newTree
+                if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+                setRenamingId(newId)
+              } else {
+                // Scene — add folder after its parent folder
+                const parent = findParentFolder(treeRef.current, contextMenu.node.id)
+                if (parent) addFolder(parent.id)
+              }
+              setContextMenu(null)
+            }}>
+              <i className="ti ti-folder-plus" /> Add Folder
+            </button>
+          )}
+
+          {/* Separator + Trash — not for protected nodes */}
+          {contextMenu.node.id !== 1 && contextMenu.node.id !== 2 && (
+            <>
+              <div style={{ height: 1, background: '#3c3c3c', margin: '4px 0' }} />
+              <button className="ctx-menu-item" style={{ color: '#cc8888' }} onClick={() => {
+                setConfirmBinDelete({ id: contextMenu.node.id, label: contextMenu.node.label })
+                setContextMenu(null)
+              }}>
+                <i className="ti ti-trash" /> Move to Trash
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {showNewProject && <NewProjectModal />}
       {showStyles && <StylesModal />}
@@ -3486,4 +3858,8 @@ export default function App() {
       {confirmDeleteLocation && <ConfirmDeleteLocationModal />}
     </div>
   )
+
+  // #endregion
 }
+
+// #endregion
