@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "scrivus",
+  "productName": "Scrivus",
   "version": "0.1.1",
   "identifier": "com.scrivus.app",
   "build": {
@@ -27,12 +27,23 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": {
+      "../dist/THIRD_PARTY_LICENSES.txt": "."
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "displayLanguageSelector": false,
+        "installMode": "both",
+        "headerImage": "icons/installer-header.bmp",
+        "sidebarImage": "icons/installer-sidebar.bmp"
+      }
+    }
   }
 }

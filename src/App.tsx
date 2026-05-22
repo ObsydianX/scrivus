@@ -3263,7 +3263,7 @@ export default function App() {
                           className={zoom === p ? 'active' : ''}
                           onClick={() => { setZoom(p); setZoomOpen(false) }}
                         >
-                          {p === zoom ? <i className="ti ti-circle-filled" className="zoom-active-dot" /> : <span className="zoom-inactive-dot" />}
+                          {p === zoom ? <i className="ti ti-circle-filled zoom-active-dot" /> : <span className="zoom-inactive-dot" />}
                           {p}%
                         </button>
                       ))}
