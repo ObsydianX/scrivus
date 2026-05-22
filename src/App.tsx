@@ -133,7 +133,7 @@ const DEFAULT_STYLES: ProjectStyles = {
   body: {
     font: 'Georgia',
     size: 12,
-    justification: 'left',
+    justification: 'both',
     firstLineIndent: true,
     lineSpacing: 0,
   },
@@ -685,7 +685,7 @@ export default function App() {
   }
 
   // --- ZOOM STATE ---
-  const ZOOM_PRESETS = [50, 75, 90, 100, 110, 125, 150, 175, 200, 300, 400, 600, 800];
+  const ZOOM_PRESETS = [50, 75, 90, 100, 110, 125, 150, 175, 200, 300];
   const [zoom, setZoom] = useState(() => loadSettings().zoom);
   const [zoomOpen, setZoomOpen] = useState(false);
 
@@ -2069,6 +2069,16 @@ export default function App() {
       await remove(sidecar)
       setTrashItems(prev => prev.filter(i => i.sidecarId !== sidecarId))
       setConfirmDelete(null)
+      setTrashItems(prev => prev.filter(i => i.sidecarId !== sidecarId))
+      setConfirmDelete(null)
+
+      if (isTrashPreview) {
+        setIsTrashPreview(false)
+        setActiveId(null)
+        setTitleValue('')
+        bodyHtmlRef.current = ''
+        editor?.commands.setContent('')
+      }
     } catch (e) {
       showMessage('Failed to delete: ' + String(e), 'Error', 'error')
     }
@@ -2454,111 +2464,99 @@ export default function App() {
     const fonts = ['Georgia', 'Times New Roman', 'Garamond', 'Palatino', 'Arial', 'Helvetica', 'Courier New']
 
     return (
-      <div style={{
-        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
-      }}>
-        <div style={{
-          background: '#252526', border: '1px solid #3c3c3c', borderRadius: 8,
-          padding: '24px 28px', width: 440, display: 'flex', flexDirection: 'column', gap: 16
-        }}>
-          <p style={{ fontSize: 14, fontWeight: 500, color: '#d4d4d4' }}>Styles</p>
-          <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #3c3c3c' }}>
+      <div className="modal-overlay">
+        <div className="modal-box">
+          <p className="modal-title">Styles</p>
+          <div className="modal-tabs">
             {(['chapter', 'body'] as const).map(tab => (
-              <button key={tab} onClick={() => setStylesTab(tab)} style={{
-                border: 'none', background: 'none', cursor: 'pointer',
-                padding: '6px 16px', fontSize: 12, fontFamily: 'inherit',
-                color: stylesTab === tab ? '#d4d4d4' : '#858585',
-                borderBottom: stylesTab === tab ? '2px solid #007acc' : '2px solid transparent',
-                marginBottom: -1,
-              }}>
+              <button
+                key={tab}
+                className={`modal-tab${stylesTab === tab ? ' active' : ''}`}
+                onClick={() => setStylesTab(tab)}
+              >
                 {tab.charAt(0).toUpperCase() + tab.slice(1)}
               </button>
             ))}
           </div>
 
           {stylesTab === 'chapter' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: 11, color: '#858585', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Font</label>
-                <select value={local.chapter.font}
-                  onChange={e => setLocal(p => ({ ...p, chapter: { ...p.chapter, font: e.target.value } }))}
-                  style={{ background: '#1e1e1e', border: '1px solid #3c3c3c', borderRadius: 4, color: '#d4d4d4', fontSize: 13, padding: '7px 10px', fontFamily: 'inherit' }}>
+            <div className="modal-fields">
+              <div className="modal-field">
+                <label className="modal-label">Font</label>
+                <select className="modal-select" value={local.chapter.font}
+                  onChange={e => setLocal(p => ({ ...p, chapter: { ...p.chapter, font: e.target.value } }))}>
                   {fonts.map(f => <option key={f} value={f}>{f}</option>)}
                 </select>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: 11, color: '#858585', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Size (pt)</label>
-                <input type="number" min={8} max={72} value={local.chapter.size}
-                  onChange={e => setLocal(p => ({ ...p, chapter: { ...p.chapter, size: Number(e.target.value) } }))}
-                  style={{ background: '#1e1e1e', border: '1px solid #3c3c3c', borderRadius: 4, color: '#d4d4d4', fontSize: 13, padding: '7px 10px', fontFamily: 'inherit', width: 80 }} />
+              <div className="modal-field">
+                <label className="modal-label">Size (pt)</label>
+                <input className="modal-input modal-input-sm" type="number" min={8} max={72}
+                  value={local.chapter.size}
+                  onChange={e => setLocal(p => ({ ...p, chapter: { ...p.chapter, size: Number(e.target.value) } }))} />
               </div>
-              <div style={{ display: 'flex', gap: 16 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#cccccc', cursor: 'pointer' }}>
+              <div className="modal-checkboxes">
+                <label className="modal-checkbox-label">
                   <input type="checkbox" checked={local.chapter.bold}
                     onChange={e => setLocal(p => ({ ...p, chapter: { ...p.chapter, bold: e.target.checked } }))} />
                   Bold
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#cccccc', cursor: 'pointer' }}>
+                <label className="modal-checkbox-label">
                   <input type="checkbox" checked={local.chapter.italic}
                     onChange={e => setLocal(p => ({ ...p, chapter: { ...p.chapter, italic: e.target.checked } }))} />
                   Italic
                 </label>
               </div>
-              <div style={{
-                marginTop: 8, padding: '12px 16px', background: '#1e1e1e',
-                borderRadius: 4, border: '1px solid #3c3c3c',
-                fontFamily: local.chapter.font, fontSize: local.chapter.size * 0.75,
+              <div className="modal-preview" style={{
+                fontFamily: local.chapter.font,
+                fontSize: local.chapter.size * 0.75,
                 fontWeight: local.chapter.bold ? 700 : 400,
-                fontStyle: local.chapter.italic ? 'italic' : 'normal', color: '#d4d4d4',
-              }}>Chapter One</div>
+                fontStyle: local.chapter.italic ? 'italic' : 'normal',
+              }}>
+                Chapter One
+              </div>
             </div>
           )}
 
           {stylesTab === 'body' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: 11, color: '#858585', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Font</label>
-                <select value={local.body.font}
-                  onChange={e => setLocal(p => ({ ...p, body: { ...p.body, font: e.target.value } }))}
-                  style={{ background: '#1e1e1e', border: '1px solid #3c3c3c', borderRadius: 4, color: '#d4d4d4', fontSize: 13, padding: '7px 10px', fontFamily: 'inherit' }}>
+            <div className="modal-fields">
+              <div className="modal-field">
+                <label className="modal-label">Font</label>
+                <select className="modal-select" value={local.body.font}
+                  onChange={e => setLocal(p => ({ ...p, body: { ...p.body, font: e.target.value } }))}>
                   {fonts.map(f => <option key={f} value={f}>{f}</option>)}
                 </select>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: 11, color: '#858585', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Size (pt)</label>
-                <input type="number" min={8} max={72} value={local.body.size}
-                  onChange={e => setLocal(p => ({ ...p, body: { ...p.body, size: Number(e.target.value) } }))}
-                  style={{ background: '#1e1e1e', border: '1px solid #3c3c3c', borderRadius: 4, color: '#d4d4d4', fontSize: 13, padding: '7px 10px', fontFamily: 'inherit', width: 80 }} />
+              <div className="modal-field">
+                <label className="modal-label">Size (pt)</label>
+                <input className="modal-input modal-input-sm" type="number" min={8} max={72}
+                  value={local.body.size}
+                  onChange={e => setLocal(p => ({ ...p, body: { ...p.body, size: Number(e.target.value) } }))} />
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: 11, color: '#858585', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Justification</label>
-                <select value={local.body.justification}
-                  onChange={e => setLocal(p => ({ ...p, body: { ...p.body, justification: e.target.value as BodyStyle['justification'] } }))}
-                  style={{ background: '#1e1e1e', border: '1px solid #3c3c3c', borderRadius: 4, color: '#d4d4d4', fontSize: 13, padding: '7px 10px', fontFamily: 'inherit' }}>
+              <div className="modal-field">
+                <label className="modal-label">Justification</label>
+                <select className="modal-select" value={local.body.justification}
+                  onChange={e => setLocal(p => ({ ...p, body: { ...p.body, justification: e.target.value as BodyStyle['justification'] } }))}>
                   <option value="left">Left</option>
                   <option value="center">Center</option>
                   <option value="right">Right</option>
                   <option value="both">Justified</option>
                 </select>
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#cccccc', cursor: 'pointer' }}>
+              <label className="modal-checkbox-label">
                 <input type="checkbox" checked={local.body.firstLineIndent}
                   onChange={e => setLocal(p => ({ ...p, body: { ...p.body, firstLineIndent: e.target.checked } }))} />
                 First line indent
               </label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: 11, color: '#858585', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Line spacing (pt)</label>
-                <input type="number" min={0} max={72} step={0.5} value={local.body.lineSpacing}
-                  onChange={e => setLocal(p => ({ ...p, body: { ...p.body, lineSpacing: Number(e.target.value) } }))}
-                  style={{ background: '#1e1e1e', border: '1px solid #3c3c3c', borderRadius: 4, color: '#d4d4d4', fontSize: 13, padding: '7px 10px', fontFamily: 'inherit', width: 80 }} />
+              <div className="modal-field">
+                <label className="modal-label">Line spacing (pt)</label>
+                <input className="modal-input modal-input-sm" type="number" min={0} max={72} step={0.5}
+                  value={local.body.lineSpacing}
+                  onChange={e => setLocal(p => ({ ...p, body: { ...p.body, lineSpacing: Number(e.target.value) } }))} />
               </div>
-              <div style={{
-                marginTop: 8, padding: '12px 16px', background: '#1e1e1e',
-                borderRadius: 4, border: '1px solid #3c3c3c',
-                fontFamily: local.body.font, fontSize: local.body.size * 0.75,
+              <div className="modal-preview" style={{
+                fontFamily: local.body.font,
+                fontSize: local.body.size * 0.75,
                 textAlign: local.body.justification === 'both' ? 'justify' : local.body.justification,
-                color: '#c8c8c8', lineHeight: 1.6,
               }}>
                 <span style={{ display: 'inline-block', textIndent: local.body.firstLineIndent ? '2em' : '0' }}>
                   The road out of Calver runs north until it doesn't. Maren had driven it a hundred times in childhood, always in the passenger seat, watching the tree line blur.
@@ -2567,9 +2565,9 @@ export default function App() {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', marginTop: 4 }}>
+          <div className="modal-footer-split">
             <button className="welcome-btn" onClick={saveAsDefault}>Save as default</button>
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div className="modal-footer-actions">
               <button className="welcome-btn" onClick={() => setShowStyles(false)}>Cancel</button>
               <button className="welcome-btn" onClick={applyStyles}>Apply</button>
             </div>
@@ -2657,40 +2655,36 @@ export default function App() {
 
   // Modal for creating a new project folder.
   const NewProjectModal = () => (
-    <div style={{
-      position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
-    }}>
-      <div style={{
-        background: '#252526', border: '1px solid #3c3c3c', borderRadius: 8,
-        padding: '24px 28px', width: 400, display: 'flex', flexDirection: 'column', gap: 16
-      }}>
-        <p style={{ fontSize: 14, fontWeight: 500, color: '#d4d4d4' }}>New Project</p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 11, color: '#858585', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Project name</label>
-          <input type="text" autoFocus value={newProjectName}
+    <div className="modal-overlay">
+      <div className="modal-box" style={{ width: 400 }}>
+        <p className="modal-title">New Project</p>
+        <div className="modal-field">
+          <label className="modal-label">Project name</label>
+          <input
+            className="modal-input"
+            type="text"
+            autoFocus
+            value={newProjectName}
             onChange={e => setNewProjectName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') createProject() }}
             placeholder="My Novel"
-            style={{ background: '#1e1e1e', border: '1px solid #3c3c3c', borderRadius: 4, color: '#d4d4d4', fontSize: 13, padding: '7px 10px', outline: 'none', fontFamily: 'inherit' }} />
+          />
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 11, color: '#858585', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Location</label>
+        <div className="modal-field">
+          <label className="modal-label">Location</label>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <div style={{
-              flex: 1, background: '#1e1e1e', border: '1px solid #3c3c3c', borderRadius: 4,
-              color: newProjectParent ? '#d4d4d4' : '#4a4a4a', fontSize: 12,
-              padding: '7px 10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-            }}>
+            <div className={`modal-input modal-path-display${!newProjectParent ? ' modal-path-empty' : ''}`}>
               {newProjectParent || 'No folder selected'}
             </div>
-            <button className="welcome-btn" onClick={pickParentFolder} style={{ whiteSpace: 'nowrap' }}>Browse…</button>
+            <button className="welcome-btn" style={{ whiteSpace: 'nowrap' }} onClick={pickParentFolder}>Browse…</button>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+        <div className="modal-footer">
           <button className="welcome-btn" onClick={() => { setShowNewProject(false); setNewProjectName(''); setNewProjectParent('') }}>Cancel</button>
-          <button className="welcome-btn" onClick={createProject}
-            style={{ opacity: newProjectName.trim() && newProjectParent ? 1 : 0.4 }}>Create</button>
+          <button className="welcome-btn modal-btn-create" onClick={createProject}
+            style={{ opacity: newProjectName.trim() && newProjectParent ? 1 : 0.4 }}>
+            Create
+          </button>
         </div>
       </div>
     </div>
@@ -2700,28 +2694,15 @@ export default function App() {
   const ConfirmDeleteModal = () => {
     if (!confirmDelete) return null
     return (
-      <div style={{
-        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
-      }}>
-        <div style={{
-          background: '#252526', border: '1px solid #6b3333', borderRadius: 8,
-          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16,
-          userSelect: 'none'
-        }}>
-          <p style={{ fontSize: 14, fontWeight: 500, color: '#d4d4d4' }}>Permanently delete?</p>
-          <p style={{ fontSize: 13, color: '#858585', lineHeight: 1.5 }}>
+      <div className="modal-overlay">
+        <div className="modal-box modal-danger" style={{ width: 380 }}>
+          <p className="modal-title">Permanently delete?</p>
+          <p className="modal-danger-text">
             <strong style={{ color: '#cc8888' }}>{confirmDelete.node.label}</strong> will be permanently deleted and cannot be recovered.
           </p>
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <button className="welcome-btn" onClick={() => setConfirmDelete(null)}>
-              Cancel
-            </button>
-            <button
-              className="welcome-btn"
-              onClick={() => permanentlyDelete(confirmDelete.sidecarId, confirmDelete.node)}
-              style={{ borderColor: '#6b3333', color: '#cc8888' }}
-            >
+          <div className="modal-footer">
+            <button className="welcome-btn" onClick={() => setConfirmDelete(null)}>Cancel</button>
+            <button className="welcome-btn modal-btn-danger" onClick={() => permanentlyDelete(confirmDelete.sidecarId, confirmDelete.node)}>
               Delete permanently
             </button>
           </div>
@@ -2734,27 +2715,15 @@ export default function App() {
   const ConfirmBinDeleteModal = () => {
     if (!confirmBinDelete) return null
     return (
-      <div style={{
-        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
-      }}>
-        <div style={{
-          background: '#252526', border: '1px solid #3c3c3c', borderRadius: 8,
-          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16,
-          userSelect: 'none'
-        }}>
-          <p style={{ fontSize: 14, fontWeight: 500, color: '#d4d4d4' }}>Move to trash?</p>
-          <p style={{ fontSize: 13, color: '#858585', lineHeight: 1.5 }}>
+      <div className="modal-overlay">
+        <div className="modal-box" style={{ width: 380 }}>
+          <p className="modal-title">Move to trash?</p>
+          <p className="modal-danger-text">
             <strong style={{ color: '#d4d4d4' }}>{confirmBinDelete.label}</strong> will be moved to the trash.
           </p>
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <button className="welcome-btn" onClick={() => setConfirmBinDelete(null)}>
-              Cancel
-            </button>
-            <button
-              className="welcome-btn"
-              onClick={() => { deleteNode(confirmBinDelete.id); setConfirmBinDelete(null) }}
-            >
+          <div className="modal-footer">
+            <button className="welcome-btn" onClick={() => setConfirmBinDelete(null)}>Cancel</button>
+            <button className="welcome-btn" onClick={() => { deleteNode(confirmBinDelete.id); setConfirmBinDelete(null) }}>
               Move to trash
             </button>
           </div>
@@ -2767,28 +2736,15 @@ export default function App() {
   const ConfirmDeleteCharacterModal = () => {
     if (!confirmDeleteCharacter) return null
     return (
-      <div style={{
-        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
-      }}>
-        <div style={{
-          background: '#252526', border: '1px solid #6b3333', borderRadius: 8,
-          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16,
-          userSelect: 'none'
-        }}>
-          <p style={{ fontSize: 14, fontWeight: 500, color: '#d4d4d4' }}>Delete character?</p>
-          <p style={{ fontSize: 13, color: '#858585', lineHeight: 1.5 }}>
+      <div className="modal-overlay">
+        <div className="modal-box modal-danger" style={{ width: 380 }}>
+          <p className="modal-title">Delete character?</p>
+          <p className="modal-danger-text">
             <strong style={{ color: '#cc8888' }}>{confirmDeleteCharacter.name}</strong> will be permanently deleted and cannot be recovered.
           </p>
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <button className="welcome-btn" onClick={() => setConfirmDeleteCharacter(null)}>
-              Cancel
-            </button>
-            <button
-              className="welcome-btn"
-              onClick={() => deleteCharacter(confirmDeleteCharacter.id)}
-              style={{ borderColor: '#6b3333', color: '#cc8888' }}
-            >
+          <div className="modal-footer">
+            <button className="welcome-btn" onClick={() => setConfirmDeleteCharacter(null)}>Cancel</button>
+            <button className="welcome-btn modal-btn-danger" onClick={() => deleteCharacter(confirmDeleteCharacter.id)}>
               Delete
             </button>
           </div>
@@ -2801,28 +2757,15 @@ export default function App() {
   const ConfirmDeleteLocationModal = () => {
     if (!confirmDeleteLocation) return null
     return (
-      <div style={{
-        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
-      }}>
-        <div style={{
-          background: '#252526', border: '1px solid #6b3333', borderRadius: 8,
-          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16,
-          userSelect: 'none'
-        }}>
-          <p style={{ fontSize: 14, fontWeight: 500, color: '#d4d4d4' }}>Delete location?</p>
-          <p style={{ fontSize: 13, color: '#858585', lineHeight: 1.5 }}>
+      <div className="modal-overlay">
+        <div className="modal-box modal-danger" style={{ width: 380 }}>
+          <p className="modal-title">Delete location?</p>
+          <p className="modal-danger-text">
             <strong style={{ color: '#cc8888' }}>{confirmDeleteLocation.name}</strong> will be permanently deleted and cannot be recovered.
           </p>
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <button className="welcome-btn" onClick={() => setConfirmDeleteLocation(null)}>
-              Cancel
-            </button>
-            <button
-              className="welcome-btn"
-              onClick={() => deleteLocation(confirmDeleteLocation.id)}
-              style={{ borderColor: '#6b3333', color: '#cc8888' }}
-            >
+          <div className="modal-footer">
+            <button className="welcome-btn" onClick={() => setConfirmDeleteLocation(null)}>Cancel</button>
+            <button className="welcome-btn modal-btn-danger" onClick={() => deleteLocation(confirmDeleteLocation.id)}>
               Delete
             </button>
           </div>
@@ -2835,17 +2778,10 @@ export default function App() {
   const ConfirmEmptyTrashModal = () => {
     if (!confirmEmptyTrash) return null
     return (
-      <div style={{
-        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
-      }}>
-        <div style={{
-          background: '#252526', border: '1px solid #6b3333', borderRadius: 8,
-          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16,
-          userSelect: 'none'
-        }}>
-          <p style={{ fontSize: 14, fontWeight: 500, color: '#d4d4d4' }}>Empty Trash?</p>
-          <p style={{ fontSize: 13, color: '#858585', lineHeight: 1.5 }}>
+      <div className="modal-overlay">
+        <div className="modal-box modal-danger" style={{ width: 380 }}>
+          <p className="modal-title">Empty Trash?</p>
+          <p className="modal-danger-text">
             {(() => {
               const total = trashItems.reduce((acc, item) => {
                 if (item.node.type === 'folder') return acc + 1 + collectDocs(item.node).length
@@ -2854,15 +2790,9 @@ export default function App() {
               return <>All <strong style={{ color: '#cc8888' }}>{total} {total === 1 ? 'item' : 'items'}</strong> in the trash will be permanently deleted and cannot be recovered.</>
             })()}
           </p>
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <button className="welcome-btn" onClick={() => setConfirmEmptyTrash(false)}>
-              Cancel
-            </button>
-            <button
-              className="welcome-btn"
-              onClick={() => { emptyTrash(); setConfirmEmptyTrash(false) }}
-              style={{ borderColor: '#6b3333', color: '#cc8888' }}
-            >
+          <div className="modal-footer">
+            <button className="welcome-btn" onClick={() => setConfirmEmptyTrash(false)}>Cancel</button>
+            <button className="welcome-btn modal-btn-danger" onClick={() => { emptyTrash(); setConfirmEmptyTrash(false) }}>
               Empty Trash
             </button>
           </div>
@@ -2871,7 +2801,7 @@ export default function App() {
     )
   }
 
-  // App Message modal for showing custom alert prompts
+  // App message modal for showing custom alert prompts.
   const AppMessageModal = () => {
     if (!appMessage) return null
     const colors = {
@@ -2881,26 +2811,16 @@ export default function App() {
     }
     const c = colors[appMessage.kind]
     return (
-      <div style={{
-        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200
-      }}>
-        <div style={{
-          background: '#252526', border: `1px solid ${c.border}`, borderRadius: 8,
-          padding: '24px 28px', width: 380, display: 'flex', flexDirection: 'column', gap: 16,
-          userSelect: 'none'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <i className={`ti ${c.icon}`} style={{ fontSize: 20, color: c.iconColor }} aria-hidden="true" />
-            <p style={{ fontSize: 14, fontWeight: 500, color: '#d4d4d4' }}>{appMessage.title}</p>
+      <div className="modal-overlay" style={{ zIndex: 200 }}>
+        <div className="modal-box" style={{ width: 380, borderColor: c.border }}>
+          <div className="modal-message-header">
+            <i className={`ti ${c.icon}`} style={{ color: c.iconColor }} aria-hidden="true" />
+            <p className="modal-title">{appMessage.title}</p>
           </div>
-          <p style={{ fontSize: 13, color: '#858585', lineHeight: 1.5 }}>{appMessage.body}</p>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <p className="modal-danger-text">{appMessage.body}</p>
+          <div className="modal-footer">
             {appMessage.action && (
-              <button className="welcome-btn" onClick={() => {
-                appMessage.action!.onClick()
-                setAppMessage(null)
-              }}>
+              <button className="welcome-btn" onClick={() => { appMessage.action!.onClick(); setAppMessage(null) }}>
                 {appMessage.action.label}
               </button>
             )}
@@ -2963,7 +2883,7 @@ export default function App() {
   // ───────────────────────────────────────────────────────────────────────────
   if (!project) {
     return (
-      <div id="app" style={{ position: 'relative', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
+      <div id="app" className="app-welcome">
         <div id="menubar">
           <FileMenu />
           <EditMenu />
@@ -2977,9 +2897,9 @@ export default function App() {
         {confirmDeleteCharacter && <ConfirmDeleteCharacterModal />}
         {confirmDeleteLocation && <ConfirmDeleteLocationModal />}
         {confirmEmptyTrash && <ConfirmEmptyTrashModal />}
-        <i className="ti ti-feather" aria-hidden="true" style={{ fontSize: 48, color: '#4a4a4a', marginTop: 36 }} />
-        <p style={{ color: '#858585', fontSize: 14, marginBottom: 8 }}>No project open</p>
-        <div style={{ display: 'flex', gap: 10, marginBottom: recentProjects.length ? 32 : 0 }}>
+        <i className="ti ti-feather welcome-icon" aria-hidden="true" />
+        <p className="welcome-label">No project open</p>
+        <div className={`welcome-actions${recentProjects.length ? ' welcome-actions-spaced' : ''}`}>
           <button className="welcome-btn" onClick={() => setShowNewProject(true)}>
             <i className="ti ti-folder-plus" aria-hidden="true" /> New project
           </button>
@@ -2988,19 +2908,15 @@ export default function App() {
           </button>
         </div>
         {recentProjects.length > 0 && (
-          <div style={{ width: 340 }}>
-            <p style={{ fontSize: 10, color: '#858585', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Recent projects</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <div className="welcome-recent">
+            <p className="welcome-recent-heading">Recent projects</p>
+            <div className="welcome-recent-list">
               {recentProjects.map(r => (
-                <button key={r.path} onClick={() => openProjectByPath(r.path)}
-                  style={{ border: 'none', background: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 5, textAlign: 'left', width: '100%' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#2a2d2e')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                >
-                  <i className="ti ti-book" aria-hidden="true" style={{ fontSize: 15, color: '#858585', flexShrink: 0 }} />
-                  <div style={{ overflow: 'hidden' }}>
-                    <p style={{ fontSize: 13, color: '#cccccc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</p>
-                    <p style={{ fontSize: 11, color: '#4a4a4a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.path}</p>
+                <button key={r.path} className="welcome-recent-item" onClick={() => openProjectByPath(r.path)}>
+                  <i className="ti ti-book welcome-recent-icon" aria-hidden="true" />
+                  <div className="welcome-recent-text">
+                    <p className="welcome-recent-name">{r.name}</p>
+                    <p className="welcome-recent-path">{r.path}</p>
                   </div>
                 </button>
               ))}
@@ -3291,11 +3207,7 @@ export default function App() {
             <div id="editor-scroll">
               <div id="editor-wrap">
                 {isTrashPreview && (
-                  <div style={{
-                    background: '#3c2a2a', border: '1px solid #6b3333', borderRadius: 4,
-                    padding: '6px 12px', marginBottom: 16, fontSize: 12, color: '#cc8888',
-                    display: 'flex', alignItems: 'center', gap: 8,
-                  }}>
+                  <div className="trash-preview-banner">
                     <i className="ti ti-trash" aria-hidden="true" />
                     This scene is in the trash — read only. Restore it to edit.
                   </div>
@@ -3311,11 +3223,11 @@ export default function App() {
                 <span title="Words in current scene">
                   Scene: {wordCount.toLocaleString()} {wordCount === 1 ? 'word' : 'words'}
                 </span>
-                <span style={{ color: 'rgba(255,255,255,0.3)' }}>·</span>
+                <span className="statusbar-sep">·</span>
                 <span title="Words in current chapter">
                   Chapter: {chapterWordCount > 0 ? `${chapterWordCount.toLocaleString()} ${chapterWordCount === 1 ? 'word' : 'words'}` : '—'}
                 </span>
-                <span style={{ color: 'rgba(255,255,255,0.3)' }}>·</span>
+                <span className="statusbar-sep">·</span>
                 <span title="Estimated reading time for current chapter at 238 wpm">
                   {chapterWordCount > 0 ? (() => {
                     const minutes = Math.ceil(chapterWordCount / 238)
@@ -3325,11 +3237,11 @@ export default function App() {
                     return mins > 0 ? `~${hours}h ${mins}m chapter` : `~${hours}h chapter`
                   })() : '— chapter'}
                 </span>
-                <span style={{ color: 'rgba(255,255,255,0.3)' }}>·</span>
+                <span className="statusbar-sep">·</span>
                 <span title="Total words in Manuscript">
                   Manuscript: {manuscriptWordCount.toLocaleString()} {manuscriptWordCount === 1 ? 'word' : 'words'}
                 </span>
-                <span style={{ color: 'rgba(255,255,255,0.3)' }}>·</span>
+                <span className="statusbar-sep">·</span>
                 <span title="Estimated reading time for full manuscript at 238 wpm">
                   {(() => {
                     const minutes = Math.ceil(manuscriptWordCount / 238)
@@ -3339,9 +3251,9 @@ export default function App() {
                     return mins > 0 ? `~${hours}h ${mins}m manuscript` : `~${hours}h manuscript`
                   })()}
                 </span>
-                <div style={{ marginLeft: 'auto', position: 'relative' }}>
+                <div className="zoom-control">
                   <button className="zoom-btn" onClick={() => setZoomOpen(o => !o)}>
-                    {zoom}% <i className="ti ti-chevron-up" style={{ fontSize: 9 }} />
+                    {zoom}% <i className="ti ti-chevron-up" />
                   </button>
                   {zoomOpen && (
                     <div className="zoom-dropdown">
@@ -3349,9 +3261,9 @@ export default function App() {
                         <button
                           key={p}
                           className={zoom === p ? 'active' : ''}
-                          onClick={() => { setZoom(p); setZoomOpen(false); }}
+                          onClick={() => { setZoom(p); setZoomOpen(false) }}
                         >
-                          {p === zoom ? <i className="ti ti-circle-filled" style={{ fontSize: 7 }} /> : <span style={{ width: 10 }} />}
+                          {p === zoom ? <i className="ti ti-circle-filled" className="zoom-active-dot" /> : <span className="zoom-inactive-dot" />}
                           {p}%
                         </button>
                       ))}
@@ -3364,7 +3276,7 @@ export default function App() {
           : <div id="empty-state">
             <i className="ti ti-file-text" aria-hidden="true" />
             <p>Select a scene to start writing</p>
-            <p style={{ fontSize: 12 }}>or add one using the + buttons</p>
+            <p className="empty-state-hint">or add one using the + buttons</p>
           </div>
         }
       </div>

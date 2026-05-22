@@ -642,6 +642,19 @@ mark.fnr-highlight {
   padding: 0 1px;
 }
 
+.trash-preview-banner {
+  background: #3c2a2a;
+  border: 1px solid #6b3333;
+  border-radius: 4px;
+  padding: 6px 12px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: #cc8888;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* #endregion */
 
 /* #region === 08. EMPTY STATE & STATUS BAR === */
@@ -675,6 +688,28 @@ mark.fnr-highlight {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.statusbar-sep {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.zoom-control {
+  margin-left: auto;
+  position: relative;
+}
+
+.zoom-active-dot {
+  font-size: 7px;
+}
+
+.zoom-inactive-dot {
+  width: 10px;
+  display: inline-block;
+}
+
+.empty-state-hint {
+  font-size: 12px;
 }
 
 /* #endregion */
@@ -1469,6 +1504,304 @@ mark.fnr-highlight {
   font-size: 13px;
   width: 14px;
   flex-shrink: 0;
+}
+
+/* #endregion */
+
+/* #region === 16. MODALS === */
+/* --------------------------------------------------------------------------
+   16. Modals
+   -------------------------------------------------------------------------- */
+
+/* Shared overlay backdrop */
+.modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+/* Modal container box */
+.modal-box {
+  background: #252526;
+  border: 1px solid #3c3c3c;
+  border-radius: 8px;
+  padding: 24px 28px;
+  width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  user-select: none;
+}
+
+/* Modal title */
+.modal-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #d4d4d4;
+}
+
+/* Tab row */
+.modal-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.modal-tab {
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 6px 16px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #858585;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.modal-tab.active {
+  color: #d4d4d4;
+  border-bottom-color: #007acc;
+}
+
+/* Field group */
+.modal-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.modal-label {
+  font-size: 11px;
+  color: #858585;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Inputs and selects */
+.modal-select,
+.modal-input {
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  color: #d4d4d4;
+  font-size: 13px;
+  padding: 7px 10px;
+  font-family: inherit;
+  outline: none;
+}
+
+.modal-select:focus,
+.modal-input:focus {
+  border-color: #007acc;
+}
+
+.modal-input-sm {
+  width: 80px;
+}
+
+/* Checkbox row */
+.modal-checkboxes {
+  display: flex;
+  gap: 16px;
+}
+
+.modal-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #cccccc;
+  cursor: pointer;
+}
+
+/* Preview box */
+.modal-preview {
+  margin-top: 8px;
+  padding: 12px 16px;
+  background: #1e1e1e;
+  border-radius: 4px;
+  border: 1px solid #3c3c3c;
+  color: #d4d4d4;
+  line-height: 1.6;
+}
+
+/* Footer */
+.modal-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.modal-footer-split {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.modal-footer-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* Danger variant for destructive modals */
+.modal-box.modal-danger {
+  border-color: #6b3333;
+}
+
+.modal-danger-text {
+  font-size: 13px;
+  color: #858585;
+  line-height: 1.5;
+}
+
+.modal-path-display {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.modal-path-empty {
+  color: #4a4a4a;
+}
+
+/* Danger action button */
+.modal-btn-danger {
+  border-color: #6b3333;
+  color: #cc8888;
+}
+
+.modal-btn-danger:hover {
+  background: #3c3c3c;
+  color: #ef9a9a;
+}
+
+/* App message header with icon */
+.modal-message-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.modal-message-header i {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+/* #endregion */
+
+/* #region === 17. WELCOME SCREEN === */
+/* --------------------------------------------------------------------------
+   17. Welcome screen
+   -------------------------------------------------------------------------- */
+
+.welcome-screen {
+  position: relative;
+  display: flex;
+  gap: 16px;
+}
+
+.welcome-icon {
+  font-size: 48px;
+  color: #4a4a4a;
+  margin-top: 36px;
+}
+
+.welcome-label {
+  font-size: 14px;
+  color: #858585;
+  margin-bottom: 8px;
+}
+
+.welcome-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.welcome-actions-spaced {
+  margin-bottom: 32px;
+}
+
+.welcome-recent {
+  width: 340px;
+}
+
+.welcome-recent-heading {
+  font-size: 10px;
+  color: #858585;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+
+.welcome-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.welcome-recent-item {
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 5px;
+  text-align: left;
+  width: 100%;
+}
+
+.welcome-recent-item:hover {
+  background: #2a2d2e;
+}
+
+.welcome-recent-icon {
+  font-size: 15px;
+  color: #858585;
+  flex-shrink: 0;
+}
+
+.welcome-recent-text {
+  overflow: hidden;
+}
+
+.welcome-recent-name {
+  font-size: 13px;
+  color: #cccccc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.welcome-recent-path {
+  font-size: 11px;
+  color: #4a4a4a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#app.app-welcome {
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
 }
 
 /* #endregion */
