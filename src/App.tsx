@@ -421,8 +421,6 @@ async function copyLoreImage(projectPath: string, sourcePath: string, entryId: s
   const imagesDir = await join(projectPath, 'lorebook', 'images')
   await mkdir(imagesDir, { recursive: true })
   const destPath = await join(imagesDir, destName)
-  const data = await readTextFile(sourcePath).catch(() => '')
-  // Use binary copy via readFile/writeFile
   const { readFile } = await import('@tauri-apps/plugin-fs')
   const bytes = await readFile(sourcePath)
   await writeFile(destPath, bytes)
@@ -509,7 +507,6 @@ const FnrHighlight = Mark.create({
 // #region === SCENE TAB HELPERS ===
 
 const TAB_DELIMITER = (name: string) => `<!--TAB:${name}-->`
-const TAB_PATTERN = /<!--TAB:(.*?)-->/
 const DELETED_DELIMITER = (name: string, ts: number) => `<!--DELETED:${name}:${ts}-->`
 
 // Splits a raw scene file into active tabs, skipping deleted blocks.
@@ -764,7 +761,6 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
   const [activeLoreCategoryId, setActiveLoreCategoryId] = useState<string | null>(null)
   const [loreTemplateEditor, setLoreTemplateEditor] = useState<LoreCategory | null>(null)
   const [loreTemplateIsNew, setLoreTemplateIsNew] = useState(false)
-  const [loreActiveEntryId, setLoreActiveEntryId] = useState<string | null>(null)
   const [loreEntryEditor, setLoreEntryEditor] = useState<LoreEntry | null>(null)
   const [confirmDeleteLoreCategory, setConfirmDeleteLoreCategory] = useState<LoreCategory | null>(null)
   const [confirmDeleteLoreEntry, setConfirmDeleteLoreEntry] = useState<LoreEntry | null>(null)
@@ -1437,18 +1433,6 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
     setConfirmDeleteLoreEntry(null)
   }
 
-  // Soft-removes a template field (marks removed: true).
-  const softRemoveLoreField = (fieldId: string) => {
-    if (!loreTemplateEditor) return
-    const updated = {
-      ...loreTemplateEditor,
-      template: loreTemplateEditor.template.map(f =>
-        f.id === fieldId ? { ...f, removed: true } : f
-      ),
-    }
-    setLoreTemplateEditor(updated)
-  }
-
   // Hard-deletes a template field and wipes its data from all entries.
   const hardDeleteLoreField = async (categoryId: string, fieldId: string) => {
     const updated = { ...loreBookRef.current }
@@ -1938,7 +1922,6 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
     setLoreView('home')
     setActiveLoreCategoryId(null)
     setLoreTemplateEditor(null)
-    setLoreActiveEntryId(null)
     setLoreEntryEditor(null)
   }
 
