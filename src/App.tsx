@@ -72,50 +72,17 @@ type ProjectStyles = {
   body: BodyStyle
 }
 
-type SceneStatus = 'outline' | 'first-draft' | 'second-draft' | 'third-draft' | 'final'
-
-type SceneSidecar = {
-  status: SceneStatus
-  synopsis: string
-}
-
-// Character and Location entry types for project-wide notes.
-type CharacterRole = 'protagonist' | 'antagonist' | 'supporting' | 'minor'
-type LocationType = 'city' | 'region' | 'landmark' | 'building' | 'other'
-
-type Character = {
-  id: number
-  name: string
-  role: CharacterRole
-  description: string
-  traits: string
-  notes: string
-  order: number
-}
-
-type Location = {
-  id: number
-  name: string
-  type: LocationType
-  description: string
-  notes: string
-  order: number
-}
-
-const SCENE_STATUSES: { value: SceneStatus; label: string; color: string }[] = [
-  { value: 'outline', label: 'Outline', color: '#c0392b' },
-  { value: 'first-draft', label: '1st Draft', color: '#e67e22' },
-  { value: 'second-draft', label: '2nd Draft', color: '#f1c40f' },
-  { value: 'third-draft', label: '3rd Draft', color: '#27ae60' },
-  { value: 'final', label: 'Final', color: '#2ecc71' },
-]
-
 // Represents a single checklist entry with order tracking.
 type ChecklistItem = {
   id: number
   label: string
   checked: boolean
   order: number
+}
+
+type SceneTab = {
+  name: string
+  content: string
 }
 
 // #endregion
@@ -372,42 +339,19 @@ async function readSceneFile(projectPath: string, fileId: string): Promise<strin
   }
 }
 
-// Writes a scene sidecar metadata file alongside the scene body.
-async function writeSceneSidecar(projectPath: string, fileId: string, sidecar: SceneSidecar) {
-  try {
-    const filePath = await join(projectPath, 'scenes', `${fileId}.json`)
-    await writeTextFile(filePath, JSON.stringify(sidecar, null, 2))
-  } catch { /* silently fail */ }
-}
-
-// Reads the scene sidecar, returning defaults if missing.
-async function readSceneSidecar(projectPath: string, fileId: string): Promise<SceneSidecar> {
-  try {
-    const filePath = await join(projectPath, 'scenes', `${fileId}.json`)
-    const fileExists = await exists(filePath)
-    if (!fileExists) return { status: 'outline', synopsis: '' }
-    const raw = await readTextFile(filePath)
-    return { status: 'outline', synopsis: '', ...JSON.parse(raw) }
-  } catch {
-    return { status: 'outline', synopsis: '' }
-  }
-}
-
 // Reads the project-wide notes file, returning defaults if missing.
 async function readNotesFile(projectPath: string): Promise<{
   quickNote: string
   checklist: ChecklistItem[]
-  characters: Character[]
-  locations: Location[]
 }> {
   try {
     const filePath = await join(projectPath, 'notes.json')
     const fileExists = await exists(filePath)
-    if (!fileExists) return { quickNote: '', checklist: [], characters: [], locations: [] }
+    if (!fileExists) return { quickNote: '', checklist: [] }
     const raw = await readTextFile(filePath)
-    return { quickNote: '', checklist: [], characters: [], locations: [], ...JSON.parse(raw) }
+    return { quickNote: '', checklist: [], ...JSON.parse(raw) }
   } catch {
-    return { quickNote: '', checklist: [], characters: [], locations: [] }
+    return { quickNote: '', checklist: [], }
   }
 }
 
@@ -415,8 +359,6 @@ async function readNotesFile(projectPath: string): Promise<{
 async function writeNotesFile(projectPath: string, data: {
   quickNote: string
   checklist: ChecklistItem[]
-  characters: Character[]
-  locations: Location[]
 }) {
   try {
     const filePath = await join(projectPath, 'notes.json')
@@ -437,11 +379,6 @@ async function trashNode(projectPath: string, node: TreeNode, originalFolderId: 
       const to = await join(trashDir, `${doc.file}.md`)
       const fileExists = await exists(from)
       if (fileExists) await rename(from, to)
-
-      const fromJson = await join(projectPath, 'scenes', `${doc.file}.json`)
-      const toJson = await join(trashDir, `${doc.file}.json`)
-      const jsonExists = await exists(fromJson)
-      if (jsonExists) await rename(fromJson, toJson)
     }
 
     // Write a single sidecar for the whole subtree
@@ -473,12 +410,16 @@ async function collectCompileNodes(
       result.push({ type: 'heading', label: n.label })
       for (const child of n.children) {
         if (child.type === 'doc') {
-          const html = await readSceneFile(projectPath, child.file)
+          const raw = await readSceneFile(projectPath, child.file)
+          const tabs = parseSceneTabs(raw)
+          const html = tabs[tabs.length - 1]?.content ?? ''
           if (html.trim()) result.push({ type: 'body', html })
         }
       }
     } else if (n.type === 'doc') {
-      const html = await readSceneFile(projectPath, n.file)
+      const raw = await readSceneFile(projectPath, n.file)
+      const tabs = parseSceneTabs(raw)
+      const html = tabs[tabs.length - 1]?.content ?? ''
       if (html.trim()) result.push({ type: 'body', html })
     }
   }
@@ -499,6 +440,113 @@ const FnrHighlight = Mark.create({
     return ['mark', { 'data-fnr': '', class: 'fnr-highlight' }, 0]
   },
 })
+
+// #endregion
+
+// #region === SCENE TAB HELPERS ===
+
+const TAB_DELIMITER = (name: string) => `<!--TAB:${name}-->`
+const TAB_PATTERN = /<!--TAB:(.*?)-->/
+const DELETED_DELIMITER = (name: string, ts: number) => `<!--DELETED:${name}:${ts}-->`
+
+// Splits a raw scene file into active tabs, skipping deleted blocks.
+function parseSceneTabs(raw: string): SceneTab[] {
+  if (!raw.trim()) return [{ name: 'First Draft', content: '' }]
+  const lines = raw.split('\n')
+  const tabs: SceneTab[] = []
+  let currentName: string | null = null
+  let currentLines: string[] = []
+  let inDeleted = false
+
+  for (const line of lines) {
+    const tabMatch = line.match(/^<!--TAB:(.*?)-->$/)
+    const deletedMatch = line.match(/^<!--DELETED:(.*?):(\d+)-->$/)
+    if (tabMatch) {
+      if (currentName !== null && !inDeleted) {
+        tabs.push({ name: currentName, content: currentLines.join('\n').trim() })
+      }
+      currentName = tabMatch[1]
+      currentLines = []
+      inDeleted = false
+    } else if (deletedMatch) {
+      if (currentName !== null && !inDeleted) {
+        tabs.push({ name: currentName, content: currentLines.join('\n').trim() })
+      }
+      currentName = deletedMatch[1]
+      currentLines = []
+      inDeleted = true
+    } else {
+      currentLines.push(line)
+    }
+  }
+  // Push last block if active
+  if (currentName !== null && !inDeleted) {
+    tabs.push({ name: currentName, content: currentLines.join('\n').trim() })
+  }
+
+  // Legacy: file has content but no tab delimiters — treat as single First Draft tab
+  if (tabs.length === 0 && raw.trim()) {
+    return [{ name: 'First Draft', content: raw.trim() }]
+  }
+
+  return tabs.length > 0 ? tabs : [{ name: 'First Draft', content: '' }]
+}
+
+// Extracts only the deleted blocks from a raw file string, preserving them.
+function extractDeletedBlocks(raw: string): string {
+  const lines = raw.split('\n')
+  const blocks: string[] = []
+  let inDeleted = false
+  let currentLines: string[] = []
+  let currentHeader = ''
+
+  for (const line of lines) {
+    const deletedMatch = line.match(/^<!--DELETED:(.*?):(\d+)-->$/)
+    const tabMatch = line.match(/^<!--TAB:(.*?)-->$/)
+    if (deletedMatch) {
+      if (inDeleted && currentHeader) {
+        blocks.push(currentHeader + '\n' + currentLines.join('\n'))
+      }
+      currentHeader = line
+      currentLines = []
+      inDeleted = true
+    } else if (tabMatch) {
+      if (inDeleted && currentHeader) {
+        blocks.push(currentHeader + '\n' + currentLines.join('\n'))
+      }
+      inDeleted = false
+      currentHeader = ''
+      currentLines = []
+    } else if (inDeleted) {
+      currentLines.push(line)
+    }
+  }
+  if (inDeleted && currentHeader) {
+    blocks.push(currentHeader + '\n' + currentLines.join('\n'))
+  }
+  return blocks.length > 0 ? '\n' + blocks.join('\n') : ''
+}
+
+// Serializes active tabs back to a file string, preserving deleted blocks.
+function serializeSceneTabs(tabs: SceneTab[], raw: string): string {
+  const activePart = tabs
+    .map(t => `${TAB_DELIMITER(t.name)}\n${t.content}`)
+    .join('\n')
+  const deletedPart = extractDeletedBlocks(raw)
+  return activePart + deletedPart
+}
+
+// Moves a tab to a soft-deleted block in the raw file string.
+function softDeleteTab(tabs: SceneTab[], tabIndex: number, raw: string): string {
+  const tab = tabs[tabIndex]
+  const remaining = tabs.filter((_, i) => i !== tabIndex)
+  const activePart = remaining
+    .map(t => `${TAB_DELIMITER(t.name)}\n${t.content}`)
+    .join('\n')
+  const existingDeleted = extractDeletedBlocks(raw)
+  const newDeleted = `\n${DELETED_DELIMITER(tab.name, Date.now())}\n${tab.content}`
+  return activePart + existingDeleted + newDeleted
+}
 
 // #endregion
 
@@ -555,13 +603,11 @@ export default function App() {
   const [confirmBinDelete, setConfirmBinDelete] = useState<{ id: number; label: string } | null>(null)
   const [confirmEmptyTrash, setConfirmEmptyTrash] = useState(false)
 
-  // ── Scene Sidecar states ──
-  const [sceneSidecar, setSceneSidecar] = useState<SceneSidecar>({ status: 'outline', synopsis: '' })
-  const sceneSidecarRef = useRef<SceneSidecar>({ status: 'outline', synopsis: '' })
+// ── Workspace state ──
+const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('editor')
 
   // ── Binder states ──
   const [binderOpen, setBinderOpen] = useState(true)
-  const [sceneStatuses, setSceneStatuses] = useState<Record<string, SceneStatus>>({})
 
   // ── Context Menu states ──
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: TreeNode; depth: number } | null>(null)
@@ -569,10 +615,6 @@ export default function App() {
 
   // ── Mutable refs used by async handlers and delayed saves ──
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const synopsisTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Debounce timers for character and location field updates.
-  const characterFieldTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
-  const locationFieldTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const projectRef = useRef<Project | null>(null)
   const treeRef = useRef<TreeNode[]>([])
   const activeIdRef = useRef<number | null>(null)
@@ -625,12 +667,8 @@ export default function App() {
 
   // ── Drawer Panel ──
   const [drawerOpen, setDrawerOpen] = useState<Record<string, boolean>>({
-    status: false,
-    synopsis: false,
     quickNote: false,
     checklist: false,
-    characters: false,
-    locations: false,
   })
 
   // ── Inspector / notes state ──
@@ -644,24 +682,17 @@ export default function App() {
   const [checklistDropIndex, setChecklistDropIndex] = useState<number | null>(null)
   const checklistDragIdRef = useRef<number | null>(null)
 
-  // ── Characters and Locations state ──
-  const [characters, setCharacters] = useState<Character[]>([])
-  const charactersRef = useRef<Character[]>([])
-  const [expandedCharacters, setExpandedCharacters] = useState<Set<number>>(new Set())
-  const [renamingCharacterId, setRenamingCharacterId] = useState<number | null>(null)
-  const [characterDragId, setCharacterDragId] = useState<number | null>(null)
-  const [characterDropIndex, setCharacterDropIndex] = useState<number | null>(null)
-  const characterDragIdRef = useRef<number | null>(null)
-  const [confirmDeleteCharacter, setConfirmDeleteCharacter] = useState<Character | null>(null)
-
-  const [locations, setLocations] = useState<Location[]>([])
-  const locationsRef = useRef<Location[]>([])
-  const [expandedLocations, setExpandedLocations] = useState<Set<number>>(new Set())
-  const [renamingLocationId, setRenamingLocationId] = useState<number | null>(null)
-  const [locationDragId, setLocationDragId] = useState<number | null>(null)
-  const [locationDropIndex, setLocationDropIndex] = useState<number | null>(null)
-  const locationDragIdRef = useRef<number | null>(null)
-  const [confirmDeleteLocation, setConfirmDeleteLocation] = useState<Location | null>(null)
+  // ── Scene Tabs state ──
+  const [sceneTabs, setSceneTabs] = useState<SceneTab[]>([])
+  const [activeTabIndex, setActiveTabIndex] = useState(0)
+  const sceneTabsRef = useRef<SceneTab[]>([])
+  const rawFileRef = useRef<string>('')
+  const [renamingTabIndex, setRenamingTabIndex] = useState<number | null>(null)
+  const [tabDragIndex, setTabDragIndex] = useState<number | null>(null)
+  const [tabDropIndex, setTabDropIndex] = useState<number | null>(null)
+  const tabDragIndexRef = useRef<number | null>(null)
+  const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; index: number } | null>(null)
+  const [confirmDeleteTab, setConfirmDeleteTab] = useState<number | null>(null)
 
   // Settings helpers
   const DEFAULT_SETTINGS = {
@@ -918,6 +949,14 @@ export default function App() {
     window.addEventListener('click', handle)
     return () => window.removeEventListener('click', handle)
   }, [contextMenu])
+
+  // --- Tab context menu close EFFECT ---
+  useEffect(() => {
+    if (!tabContextMenu) return
+    const handle = () => setTabContextMenu(null)
+    window.addEventListener('click', handle)
+    return () => window.removeEventListener('click', handle)
+  }, [tabContextMenu])
   
 
   // #endregion
@@ -932,14 +971,21 @@ export default function App() {
     const node = findNode(clone, activeIdRef.current)
     if (node && node.type === 'doc' && projectRef.current) {
       const cleanHtml = bodyHtmlRef.current.replace(/<mark data-fnr="" class="fnr-highlight">(.*?)<\/mark>/g, '$1')
-      writeSceneFile(projectRef.current.path, node.file, cleanHtml)
+      // Update the active tab's content in the ref
+      const updatedTabs = sceneTabsRef.current.map((t, i) =>
+        i === activeTabIndex ? { ...t, content: cleanHtml } : t
+      )
+      sceneTabsRef.current = updatedTabs
+      const serialized = serializeSceneTabs(updatedTabs, rawFileRef.current)
+      rawFileRef.current = serialized
+      writeSceneFile(projectRef.current.path, node.file, serialized)
     }
     setTree(clone)
     treeRef.current = clone
     if (projectRef.current) {
       saveProjectToDisk({ ...projectRef.current, tree: clone }, activeIdRef.current ?? undefined)
     }
-  }, [])
+  }, [activeTabIndex])
 
   // Debounces autosave while the editor is changing.
   const triggerSave = useCallback(() => {
@@ -961,7 +1007,13 @@ export default function App() {
     setActiveId(id)
     const node = findNode(treeRef.current, id)
     if (node && node.type === 'doc' && projectRef.current) {
-      const content = await readSceneFile(projectRef.current.path, node.file)
+      const raw = await readSceneFile(projectRef.current.path, node.file)
+      rawFileRef.current = raw
+      const tabs = parseSceneTabs(raw)
+      setSceneTabs(tabs)
+      sceneTabsRef.current = tabs
+      setActiveTabIndex(0)
+      const content = tabs[0]?.content ?? ''
       bodyHtmlRef.current = content
       editor?.commands.setContent(content, { emitUpdate: false })
       const div = document.createElement('div')
@@ -970,9 +1022,6 @@ export default function App() {
       setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0)
       setCharCount(text.length)
       setTitleValue(node.title)
-      const sidecar = await readSceneSidecar(projectRef.current.path, node.file)
-      setSceneSidecar(sidecar)
-      sceneSidecarRef.current = sidecar
       computeChapterWordCount()
       computeManuscriptWordCount()
     }
@@ -988,35 +1037,6 @@ export default function App() {
     setAppMessage({ title, body, kind, action })
   }
 
-  // Status update handler.
-  const updateSceneStatus = async (status: SceneStatus) => {
-    if (!projectRef.current || activeIdRef.current === null) return
-    const node = findNode(treeRef.current, activeIdRef.current)
-    if (!node || node.type !== 'doc') return
-    const updated = { ...sceneSidecarRef.current, status }
-    setSceneSidecar(updated)
-    sceneSidecarRef.current = updated
-    await writeSceneSidecar(projectRef.current.path, node.file, updated)
-    setSceneStatuses(prev => ({ ...prev, [node.file]: status }))
-  }
-
-
-  // Update all Scene Statuses handler.
-  const loadAllSceneStatuses = async () => {
-    if (!projectRef.current) return
-    const manuscript = findNode(treeRef.current, 1)
-    const notes = findNode(treeRef.current, 2)
-    const allDocs: DocNode[] = []
-    if (manuscript) allDocs.push(...collectDocs(manuscript))
-    if (notes) allDocs.push(...collectDocs(notes))
-    const result: Record<string, SceneStatus> = {}
-    for (const doc of allDocs) {
-      const sidecar = await readSceneSidecar(projectRef.current.path, doc.file)
-      result[doc.file] = sidecar.status
-    }
-    setSceneStatuses(result)
-  }
-
   // #endregion
 
   // #region === HANDLERS: NOTES, CHECKLIST, CHARACTERS & LOCATIONS ===
@@ -1024,15 +1044,11 @@ export default function App() {
   // Persists all project-wide notes to notes.json.
   const saveNotes = async (overrides: Partial<{
     checklist: ChecklistItem[]
-    characters: Character[]
-    locations: Location[]
   }> = {}) => {
     if (!projectRef.current) return
     await writeNotesFile(projectRef.current.path, {
       quickNote: quickNoteRef.current,
       checklist: overrides.checklist ?? checklistRef.current,
-      characters: overrides.characters ?? charactersRef.current,
-      locations: overrides.locations ?? locationsRef.current,
     })
   }
 
@@ -1105,132 +1121,141 @@ export default function App() {
     checklistDragIdRef.current = null
   }
 
-  // Adds a new character and immediately enters rename mode.
-  const addCharacter = () => {
-    const id = Date.now()
-    const newCharacter: Character = {
-      id, name: 'New character', role: 'supporting',
-      description: '', traits: '', notes: '',
-      order: charactersRef.current.length,
+  // #endregion
+
+  // #region === HANDLERS: SCENE TABS ===
+
+  // Switches to a tab, saving current tab content first.
+  const switchTab = (index: number) => {
+    if (index === activeTabIndex) return
+    // Save current tab content into ref
+    const cleanHtml = bodyHtmlRef.current.replace(/<mark data-fnr="" class="fnr-highlight">(.*?)<\/mark>/g, '$1')
+    const updatedTabs = sceneTabsRef.current.map((t, i) =>
+      i === activeTabIndex ? { ...t, content: cleanHtml } : t
+    )
+    sceneTabsRef.current = updatedTabs
+    setSceneTabs(updatedTabs)
+    // Serialize and save immediately
+    if (activeIdRef.current !== null && projectRef.current) {
+      const node = findNode(treeRef.current, activeIdRef.current)
+      if (node && node.type === 'doc') {
+        const serialized = serializeSceneTabs(updatedTabs, rawFileRef.current)
+        rawFileRef.current = serialized
+        writeSceneFile(projectRef.current.path, node.file, serialized)
+      }
     }
-    const updated = [...charactersRef.current, newCharacter]
-    setCharacters(updated)
-    charactersRef.current = updated
-    saveNotes({ characters: updated })
-    setExpandedCharacters(prev => new Set(prev).add(id))
-    setRenamingCharacterId(id)
+    // Load new tab
+    setActiveTabIndex(index)
+    const content = updatedTabs[index]?.content ?? ''
+    bodyHtmlRef.current = content
+    editor?.commands.setContent(content, { emitUpdate: false })
+    const div = document.createElement('div')
+    div.innerHTML = content
+    const text = div.textContent ?? ''
+    setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0)
+    setCharCount(text.length)
   }
 
-  // Updates a single field on a character entry with debounced save.
-  const updateCharacter = (id: number, field: keyof Character, value: string) => {
-    charactersRef.current = charactersRef.current.map(c => c.id === id ? { ...c, [field]: value } : c)
-    const timerKey = `${id}-${field}`
-    if (characterFieldTimers.current[timerKey]) clearTimeout(characterFieldTimers.current[timerKey])
-    characterFieldTimers.current[timerKey] = setTimeout(() => {
-      saveNotes({ characters: charactersRef.current })
-    }, 600)
+  // Adds a new tab and immediately enters rename mode.
+  const addTab = () => {
+    const cleanHtml = bodyHtmlRef.current.replace(/<mark data-fnr="" class="fnr-highlight">(.*?)<\/mark>/g, '$1')
+    const updatedTabs = sceneTabsRef.current.map((t, i) =>
+      i === activeTabIndex ? { ...t, content: cleanHtml } : t
+    )
+    const newTab: SceneTab = { name: 'New Revision', content: '' }
+    const newTabs = [...updatedTabs, newTab]
+    const newIndex = newTabs.length - 1
+    sceneTabsRef.current = newTabs
+    setSceneTabs(newTabs)
+    setActiveTabIndex(newIndex)
+    bodyHtmlRef.current = ''
+    editor?.commands.setContent('', { emitUpdate: false })
+    if (activeIdRef.current !== null && projectRef.current) {
+      const node = findNode(treeRef.current, activeIdRef.current)
+      if (node && node.type === 'doc') {
+        const serialized = serializeSceneTabs(newTabs, rawFileRef.current)
+        rawFileRef.current = serialized
+        writeSceneFile(projectRef.current.path, node.file, serialized)
+      }
+    }
+    setRenamingTabIndex(newIndex)
   }
 
-  // Renames a character, confirming on Enter or blur.
-  const renameCharacter = (id: number, name: string) => {
-    const label = name || 'New character'
-    const updated = charactersRef.current.map(c => c.id === id ? { ...c, name: label } : c)
-    setCharacters(updated)
-    charactersRef.current = updated
-    saveNotes({ characters: updated })
-    setRenamingCharacterId(null)
+  // Renames a tab.
+  const renameTab = (index: number, name: string) => {
+    const label = name.trim() || sceneTabsRef.current[index].name
+    const updatedTabs = sceneTabsRef.current.map((t, i) =>
+      i === index ? { ...t, name: label } : t
+    )
+    sceneTabsRef.current = updatedTabs
+    setSceneTabs(updatedTabs)
+    setRenamingTabIndex(null)
+    if (activeIdRef.current !== null && projectRef.current) {
+      const node = findNode(treeRef.current, activeIdRef.current)
+      if (node && node.type === 'doc') {
+        const serialized = serializeSceneTabs(updatedTabs, rawFileRef.current)
+        rawFileRef.current = serialized
+        writeSceneFile(projectRef.current.path, node.file, serialized)
+      }
+    }
   }
 
-  // Permanently deletes a character.
-  const deleteCharacter = (id: number) => {
-    const updated = charactersRef.current.filter(c => c.id !== id)
-    setCharacters(updated)
-    charactersRef.current = updated
-    saveNotes({ characters: updated })
-    setConfirmDeleteCharacter(null)
+  // Soft-deletes a tab, preserving its content in the file.
+  const deleteTab = (index: number) => {
+    const tabs = sceneTabsRef.current
+    if (tabs.length <= 1) return
+    const newRaw = softDeleteTab(tabs, index, rawFileRef.current)
+    const newTabs = tabs.filter((_, i) => i !== index)
+    rawFileRef.current = newRaw
+    sceneTabsRef.current = newTabs
+    setSceneTabs(newTabs)
+    const newIndex = Math.min(activeTabIndex, newTabs.length - 1)
+    setActiveTabIndex(newIndex)
+    const content = newTabs[newIndex]?.content ?? ''
+    bodyHtmlRef.current = content
+    editor?.commands.setContent(content, { emitUpdate: false })
+    if (activeIdRef.current !== null && projectRef.current) {
+      const node = findNode(treeRef.current, activeIdRef.current)
+      if (node && node.type === 'doc') {
+        writeSceneFile(projectRef.current.path, node.file, newRaw)
+      }
+    }
+    setConfirmDeleteTab(null)
   }
 
-  // Handles drop reordering of characters.
-  const handleCharacterDrop = (targetIndex: number) => {
-    const dragId = characterDragIdRef.current
-    if (dragId === null) return
-    const sorted = [...charactersRef.current].sort((a, b) => a.order - b.order)
-    const dragIndex = sorted.findIndex(c => c.id === dragId)
-    if (dragIndex === -1) return
-    const reordered = [...sorted]
+  // Handles drag/drop reordering of tabs.
+  const handleTabDrop = (targetIndex: number) => {
+    const dragIndex = tabDragIndexRef.current
+    if (dragIndex === null || dragIndex === targetIndex) {
+      setTabDragIndex(null)
+      setTabDropIndex(null)
+      tabDragIndexRef.current = null
+      return
+    }
+    // Save current content first
+    const cleanHtml = bodyHtmlRef.current.replace(/<mark data-fnr="" class="fnr-highlight">(.*?)<\/mark>/g, '$1')
+    const savedTabs = sceneTabsRef.current.map((t, i) =>
+      i === activeTabIndex ? { ...t, content: cleanHtml } : t
+    )
+    const reordered = [...savedTabs]
     const [moved] = reordered.splice(dragIndex, 1)
     reordered.splice(targetIndex, 0, moved)
-    const updated = reordered.map((c, idx) => ({ ...c, order: idx }))
-    setCharacters(updated)
-    charactersRef.current = updated
-    saveNotes({ characters: updated })
-    setCharacterDragId(null)
-    setCharacterDropIndex(null)
-    characterDragIdRef.current = null
-  }
-
-  // Adds a new location and immediately enters rename mode.
-  const addLocation = () => {
-    const id = Date.now()
-    const newLocation: Location = {
-      id, name: 'New location', type: 'other',
-      description: '', notes: '',
-      order: locationsRef.current.length,
+    // Track where the active tab ended up
+    const newActiveIndex = reordered.findIndex(t => t === savedTabs[activeTabIndex])
+    sceneTabsRef.current = reordered
+    setSceneTabs(reordered)
+    setActiveTabIndex(newActiveIndex)
+    setTabDragIndex(null)
+    setTabDropIndex(null)
+    tabDragIndexRef.current = null
+    if (activeIdRef.current !== null && projectRef.current) {
+      const node = findNode(treeRef.current, activeIdRef.current)
+      if (node && node.type === 'doc') {
+        const serialized = serializeSceneTabs(reordered, rawFileRef.current)
+        rawFileRef.current = serialized
+        writeSceneFile(projectRef.current.path, node.file, serialized)
+      }
     }
-    const updated = [...locationsRef.current, newLocation]
-    setLocations(updated)
-    locationsRef.current = updated
-    saveNotes({ locations: updated })
-    setExpandedLocations(prev => new Set(prev).add(id))
-    setRenamingLocationId(id)
-  }
-
-  // Updates a single field on a location entry with debounced save.
-  const updateLocation = (id: number, field: keyof Location, value: string) => {
-    locationsRef.current = locationsRef.current.map(l => l.id === id ? { ...l, [field]: value } : l)
-    const timerKey = `${id}-${field}`
-    if (locationFieldTimers.current[timerKey]) clearTimeout(locationFieldTimers.current[timerKey])
-    locationFieldTimers.current[timerKey] = setTimeout(() => {
-      saveNotes({ locations: locationsRef.current })
-    }, 600)
-  }
-
-  // Renames a location, confirming on Enter or blur.
-  const renameLocation = (id: number, name: string) => {
-    const label = name || 'New location'
-    const updated = locationsRef.current.map(l => l.id === id ? { ...l, name: label } : l)
-    setLocations(updated)
-    locationsRef.current = updated
-    saveNotes({ locations: updated })
-    setRenamingLocationId(null)
-  }
-
-  // Permanently deletes a location.
-  const deleteLocation = (id: number) => {
-    const updated = locationsRef.current.filter(l => l.id !== id)
-    setLocations(updated)
-    locationsRef.current = updated
-    saveNotes({ locations: updated })
-    setConfirmDeleteLocation(null)
-  }
-
-  // Handles drop reordering of locations.
-  const handleLocationDrop = (targetIndex: number) => {
-    const dragId = locationDragIdRef.current
-    if (dragId === null) return
-    const sorted = [...locationsRef.current].sort((a, b) => a.order - b.order)
-    const dragIndex = sorted.findIndex(l => l.id === dragId)
-    if (dragIndex === -1) return
-    const reordered = [...sorted]
-    const [moved] = reordered.splice(dragIndex, 1)
-    reordered.splice(targetIndex, 0, moved)
-    const updated = reordered.map((l, idx) => ({ ...l, order: idx }))
-    setLocations(updated)
-    locationsRef.current = updated
-    saveNotes({ locations: updated })
-    setLocationDragId(null)
-    setLocationDropIndex(null)
-    locationDragIdRef.current = null
   }
 
   // #endregion
@@ -1678,24 +1703,21 @@ export default function App() {
     editor?.commands.setContent('')
     setSaveLabel('')
     setFileMenuOpen(false)
-    setSceneSidecar({ status: 'outline', synopsis: '' })
-    sceneSidecarRef.current = { status: 'outline', synopsis: '' }
     setQuickNote('')
     quickNoteRef.current = ''
     setChecklist([])
     checklistRef.current = []
-    setCharacters([])
-    charactersRef.current = []
-    setLocations([])
-    locationsRef.current = []
     setDrawerOpen({
-      status: false,
-      synopsis: false,
       quickNote: false,
       checklist: false,
-      characters: false,
-      locations: false,
     })
+    setSceneTabs([])
+    sceneTabsRef.current = []
+    rawFileRef.current = ''
+    setActiveTabIndex(0)
+    setRenamingTabIndex(null)
+    setTabContextMenu(null)
+    setConfirmDeleteTab(null)
   }
 
   // Exports the manuscript folder to a DOCX document.
@@ -1843,8 +1865,6 @@ export default function App() {
       const defaultContent = `<p>This is the beginning of your story. Somewhere in these pages, a character is waiting to surprise you — someone whose voice you don't yet know, whose choices will lead somewhere you haven't imagined. Let them.</p><p>The world you're building exists nowhere else. Every detail you set down — the quality of light through a particular window, the way two people talk around what they mean, the rules of a place that has never existed — belongs entirely to you. There is no wrong way to begin.</p><p>Write the first true sentence. The rest will follow.</p>`
 
       await writeSceneFile(projectPath, defaultFileId, defaultContent)
-      const sidecarPath = await join(scenesDir, `${defaultFileId}.json`)
-      await writeTextFile(sidecarPath, JSON.stringify({ status: 'outline', synopsis: '' }, null, 2))
 
       const { defaultStyles } = await loadRecentData()
       const newProj: Project = { name: newProjectName.trim(), path: projectPath, tree: defaultTree, styles: defaultStyles }
@@ -1857,7 +1877,6 @@ export default function App() {
       setStyles(defaultStyles)
       setTree(defaultTree)
       treeRef.current = defaultTree
-      setSceneStatuses({ [defaultFileId]: 'outline' })
       setActiveId(null)
       setTitleValue('')
       bodyHtmlRef.current = ''
@@ -1891,11 +1910,6 @@ export default function App() {
     quickNoteRef.current = notes.quickNote
     setChecklist(notes.checklist)
     checklistRef.current = notes.checklist
-    setCharacters(notes.characters)
-    charactersRef.current = notes.characters
-    setLocations(notes.locations)
-    locationsRef.current = notes.locations
-    setTimeout(() => loadAllSceneStatuses(), 0)
     setStyles(loadedStyles)
     const restoredId = (data.lastActiveId as number | null) ?? null
     setActiveId(restoredId)
@@ -1903,10 +1917,13 @@ export default function App() {
       const restoredNode = findNode(loadedTree, restoredId)
       if (restoredNode && restoredNode.type === 'doc') {
         setTitleValue(restoredNode.title)
-        const sidecar = await readSceneSidecar(path, restoredNode.file)
-        setSceneSidecar(sidecar)
-        sceneSidecarRef.current = sidecar
-        const content = await readSceneFile(path, restoredNode.file)
+        const raw = await readSceneFile(path, restoredNode.file)
+        rawFileRef.current = raw
+        const tabs = parseSceneTabs(raw)
+        setSceneTabs(tabs)
+        sceneTabsRef.current = tabs
+        setActiveTabIndex(0)
+        const content = tabs[0]?.content ?? ''
         bodyHtmlRef.current = content
         editor?.commands.setContent(content, { emitUpdate: false })
         const div = document.createElement('div')
@@ -2001,12 +2018,16 @@ export default function App() {
     }
     setTree(newTree)
     treeRef.current = newTree
+    const defaultTabs: SceneTab[] = [{ name: 'First Draft', content: '' }]
+    const defaultRaw = serializeSceneTabs(defaultTabs, '')
     if (projectRef.current) {
-      writeSceneFile(projectRef.current.path, fileId, '')
-      writeSceneSidecar(projectRef.current.path, fileId, { status: 'outline', synopsis: '' })
-      setSceneStatuses(prev => ({ ...prev, [fileId]: 'outline' }))
+      writeSceneFile(projectRef.current.path, fileId, defaultRaw)
       saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
     }
+    setSceneTabs(defaultTabs)
+    sceneTabsRef.current = defaultTabs
+    rawFileRef.current = defaultRaw
+    setActiveTabIndex(0)
     setRenamingId(id)
     setActiveId(id)
     setTitleValue('New scene')
@@ -2143,8 +2164,6 @@ export default function App() {
           } catch {
             await writeSceneFile(projectRef.current.path, newFileId, '')
           }
-          await writeSceneSidecar(projectRef.current.path, newFileId, { status: sceneStatuses[n.file] ?? 'outline', synopsis: '' })
-          setSceneStatuses(prev => ({ ...prev, [newFileId]: sceneStatuses[n.file] ?? 'outline' }))
         }
         return { ...n, id: newId, file: newFileId, label: `${n.label} (copy)`, title: `${n.title} (copy)` }
       } else {
@@ -2358,13 +2377,7 @@ export default function App() {
                 }}
                 onBlur={e => renameNode(n.id, e.target.value || n.label)}
               />
-              : <span className="item-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {(() => {
-                  const color = SCENE_STATUSES.find(s => s.value === sceneStatuses[(n as DocNode).file])?.color
-                  return color
-                    ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                    : null
-                })()}
+              : <span className="item-label">
                 {n.label}
               </span>
             }
@@ -2732,48 +2745,6 @@ export default function App() {
     )
   }
 
-  // Confirmation modal for permanently deleting a character.
-  const ConfirmDeleteCharacterModal = () => {
-    if (!confirmDeleteCharacter) return null
-    return (
-      <div className="modal-overlay">
-        <div className="modal-box modal-danger" style={{ width: 380 }}>
-          <p className="modal-title">Delete character?</p>
-          <p className="modal-danger-text">
-            <strong style={{ color: '#cc8888' }}>{confirmDeleteCharacter.name}</strong> will be permanently deleted and cannot be recovered.
-          </p>
-          <div className="modal-footer">
-            <button className="welcome-btn" onClick={() => setConfirmDeleteCharacter(null)}>Cancel</button>
-            <button className="welcome-btn modal-btn-danger" onClick={() => deleteCharacter(confirmDeleteCharacter.id)}>
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Confirmation modal for permanently deleting a location.
-  const ConfirmDeleteLocationModal = () => {
-    if (!confirmDeleteLocation) return null
-    return (
-      <div className="modal-overlay">
-        <div className="modal-box modal-danger" style={{ width: 380 }}>
-          <p className="modal-title">Delete location?</p>
-          <p className="modal-danger-text">
-            <strong style={{ color: '#cc8888' }}>{confirmDeleteLocation.name}</strong> will be permanently deleted and cannot be recovered.
-          </p>
-          <div className="modal-footer">
-            <button className="welcome-btn" onClick={() => setConfirmDeleteLocation(null)}>Cancel</button>
-            <button className="welcome-btn modal-btn-danger" onClick={() => deleteLocation(confirmDeleteLocation.id)}>
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   // Confirmation modal for permanently emptying trash.
   const ConfirmEmptyTrashModal = () => {
     if (!confirmEmptyTrash) return null
@@ -2825,6 +2796,28 @@ export default function App() {
               </button>
             )}
             <button className="welcome-btn" onClick={() => setAppMessage(null)}>OK</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Confirmation modal for permanently soft-deleting a scene tab.
+  const ConfirmDeleteTabModal = () => {
+    if (confirmDeleteTab === null) return null
+    const tab = sceneTabs[confirmDeleteTab]
+    return (
+      <div className="modal-overlay">
+        <div className="modal-box modal-danger" style={{ width: 380 }}>
+          <p className="modal-title">Delete tab?</p>
+          <p className="modal-danger-text">
+            <strong style={{ color: '#cc8888' }}>{tab?.name}</strong> will be removed. Its content will be preserved in the scene file and can be manually recovered if needed.
+          </p>
+          <div className="modal-footer">
+            <button className="welcome-btn" onClick={() => setConfirmDeleteTab(null)}>Cancel</button>
+            <button className="welcome-btn modal-btn-danger" onClick={() => deleteTab(confirmDeleteTab)}>
+              Delete
+            </button>
           </div>
         </div>
       </div>
@@ -2894,9 +2887,8 @@ export default function App() {
         {confirmDelete && <ConfirmDeleteModal />}
         {confirmBinDelete && <ConfirmBinDeleteModal />}
         {appMessage && <AppMessageModal />}
-        {confirmDeleteCharacter && <ConfirmDeleteCharacterModal />}
-        {confirmDeleteLocation && <ConfirmDeleteLocationModal />}
         {confirmEmptyTrash && <ConfirmEmptyTrashModal />}
+        {confirmDeleteTab !== null && <ConfirmDeleteTabModal />}
         <i className="ti ti-feather welcome-icon" aria-hidden="true" />
         <p className="welcome-label">No project open</p>
         <div className={`welcome-actions${recentProjects.length ? ' welcome-actions-spaced' : ''}`}>
@@ -2942,7 +2934,7 @@ export default function App() {
         <span style={{ marginLeft: 'auto', fontSize: 11, color: '#858585', paddingRight: 12 }}>{saveLabel}</span>
       </div>
 
-      <div id="sidebar" className={binderOpen ? '' : 'collapsed'}>
+      <div id="sidebar" className={`${binderOpen ? '' : 'collapsed'} ${workspace !== 'editor' ? 'hidden' : ''}`}>
         <div id="sidebar-header">
           {binderOpen && <span>Binder</span>}
           <div style={{ display: 'flex', flexDirection: binderOpen ? 'row' : 'column', gap: 2, alignItems: 'center' }}>
@@ -3061,7 +3053,7 @@ export default function App() {
         </div>}
       </div>
 
-      {showSearch && (
+      {showSearch && workspace === 'editor' && (
         <div id="search-panel">
           <div id="search-panel-header">
             Search
@@ -3118,7 +3110,7 @@ export default function App() {
         </div>
       )}
 
-      {showFnR && (
+      {showSearch && workspace === 'editor' && (
         <div id="fnr-panel">
           <div id="fnr-panel-header">
             Find & Replace
@@ -3185,24 +3177,145 @@ export default function App() {
       )}
 
       <div id="editor-area">
-        <div id="editor-toolbar">
+        <div id="workspace-bar">
           <button
-            className={editor?.isActive('bold') ? 'active' : ''}
-            onClick={() => editor?.chain().focus().toggleBold().run()}
-            title="Bold"
+            className={workspace === 'editor' ? 'active' : ''}
+            onClick={() => setWorkspace('editor')}
+            title="Editor"
           >
-            <i className="ti ti-bold" aria-hidden="true" />
+            <i className="ti ti-edit" aria-hidden="true" />
+            <span>Editor</span>
           </button>
           <button
-            className={editor?.isActive('italic') ? 'active' : ''}
-            onClick={() => editor?.chain().focus().toggleItalic().run()}
-            title="Italic"
+            className={workspace === 'lorebook' ? 'active' : ''}
+            onClick={() => setWorkspace('lorebook')}
+            title="Lore Book"
           >
-            <i className="ti ti-italic" aria-hidden="true" />
+            <i className="ti ti-book-2" aria-hidden="true" />
+            <span>Lore Book</span>
+          </button>
+          <button
+            className={workspace === 'mindmap' ? 'active' : ''}
+            onClick={() => setWorkspace('mindmap')}
+            title="Mind Map"
+          >
+            <i className="ti ti-git-fork" aria-hidden="true" />
+            <span>Mind Map</span>
           </button>
         </div>
 
-        {showEditor
+        {workspace === 'editor' && showEditor && (
+          <div id="scene-tab-bar">
+            {sceneTabs.map((tab, index) => {
+              const isActive = index === activeTabIndex
+              const isDragging = tabDragIndex === index
+              const isDropTarget = tabDropIndex === index
+              return (
+                <div key={index} style={{ display: 'flex', alignItems: 'stretch' }}>
+                  {isDropTarget && tabDragIndex !== index && (
+                    <div className="tab-drop-line" />
+                  )}
+                  <div
+                    className={`scene-tab${isActive ? ' active' : ''}${isDragging ? ' dragging' : ''}`}
+                    draggable={renamingTabIndex !== index}
+                    onDragStart={renamingTabIndex !== index ? e => {
+                      e.stopPropagation()
+                      tabDragIndexRef.current = index
+                      setTabDragIndex(index)
+                      e.dataTransfer.effectAllowed = 'move'
+                    } : undefined}
+                    onDragEnd={() => {
+                      setTabDragIndex(null)
+                      setTabDropIndex(null)
+                      tabDragIndexRef.current = null
+                    }}
+                    onDragOver={e => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setTabDropIndex(index)
+                    }}
+                    onDrop={e => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      handleTabDrop(index)
+                    }}
+                    onClick={() => {
+                      if (renamingTabIndex === index) return
+                      switchTab(index)
+                    }}
+                    onDoubleClick={() => setRenamingTabIndex(index)}
+                    onContextMenu={e => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setTabContextMenu({ x: e.clientX, y: e.clientY, index })
+                    }}
+                  >
+                    {renamingTabIndex === index
+                      ? <input
+                        className="tab-rename-input"
+                        defaultValue={tab.name}
+                        autoFocus
+                        ref={el => { if (el) { el.focus(); el.select() } }}
+                        onClick={e => e.stopPropagation()}
+                        onKeyDown={e => {
+                          if (e.key === 'z' || e.key === 'y') e.stopPropagation()
+                          if (e.key === 'Enter') renameTab(index, (e.target as HTMLInputElement).value)
+                          if (e.key === 'Escape') setRenamingTabIndex(null)
+                        }}
+                        onBlur={e => renameTab(index, e.target.value)}
+                      />
+                      : <span className="tab-label">{tab.name}</span>
+                    }
+                  </div>
+                </div>
+              )
+            })}
+            <button
+              className="tab-add-btn"
+              title="Add tab"
+              onClick={addTab}
+            >
+              <i className="ti ti-plus" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+
+        {workspace === 'editor' && (
+          <div id="editor-toolbar">
+            <button
+              className={editor?.isActive('bold') ? 'active' : ''}
+              onClick={() => editor?.chain().focus().toggleBold().run()}
+              title="Bold"
+            >
+              <i className="ti ti-bold" aria-hidden="true" />
+            </button>
+            <button
+              className={editor?.isActive('italic') ? 'active' : ''}
+              onClick={() => editor?.chain().focus().toggleItalic().run()}
+              title="Italic"
+            >
+              <i className="ti ti-italic" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+
+        {workspace === 'lorebook' && (
+          <div id="workspace-placeholder">
+            <i className="ti ti-book-2" aria-hidden="true" />
+            <p>Lore Book</p>
+            <p className="empty-state-hint">Coming soon</p>
+          </div>
+        )}
+
+        {workspace === 'mindmap' && (
+          <div id="workspace-placeholder">
+            <i className="ti ti-git-fork" aria-hidden="true" />
+            <p>Mind Map</p>
+            <p className="empty-state-hint">Coming soon</p>
+          </div>
+        )}
+
+        {workspace === 'editor' && (showEditor
           ? <>
             <div id="editor-scroll">
               <div id="editor-wrap">
@@ -3278,9 +3391,9 @@ export default function App() {
             <p>Select a scene to start writing</p>
             <p className="empty-state-hint">or add one using the + buttons</p>
           </div>
-        }
+        )}
       </div>
-      <div id="inspector" className={inspectorOpen ? '' : 'collapsed'}>
+      <div id="inspector" className={`${inspectorOpen ? '' : 'collapsed'} ${workspace !== 'editor' ? 'hidden' : ''}`}>
         <div id="inspector-header">
           <div style={{ display: 'flex', flexDirection: inspectorOpen ? 'row' : 'column', gap: 2, alignItems: 'center' }}>
             {!inspectorOpen && (
@@ -3297,60 +3410,10 @@ export default function App() {
               </>
             )}
           </div>
-          {inspectorOpen && <span>Inspector</span>}
+          {inspectorOpen && <span>Quick Tools</span>}
         </div>
         {inspectorOpen && (
           <div id="inspector-body">
-            <InspectorDrawer id="status" label="Scene Status">
-              {activeId === null || !showEditor
-                ? <p style={{ fontSize: 12, color: '#4a4a4a', fontStyle: 'italic' }}>No scene selected</p>
-                : <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {SCENE_STATUSES.map(s => (
-                    <button
-                      key={s.value}
-                      onClick={() => updateSceneStatus(s.value)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        border: 'none', borderRadius: 4, padding: '6px 8px',
-                        cursor: 'pointer', fontFamily: 'inherit', fontSize: 12,
-                        background: sceneSidecar.status === s.value ? '#2a2d2e' : 'none',
-                        color: sceneSidecar.status === s.value ? '#d4d4d4' : '#858585',
-                        outline: sceneSidecar.status === s.value ? `1px solid ${s.color}` : 'none',
-                      }}
-                    >
-                      <span style={{
-                        width: 10, height: 10, borderRadius: '50%',
-                        background: s.color, flexShrink: 0,
-                      }} />
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-              }
-            </InspectorDrawer>
-            <InspectorDrawer id="synopsis" label="Scene Synopsis">
-              {activeId === null || !showEditor
-                ? <p style={{ fontSize: 12, color: '#4a4a4a', fontStyle: 'italic' }}>No scene selected</p>
-                : <textarea
-                  key={activeId ?? 'none'}
-                  defaultValue={sceneSidecar.synopsis}
-                  onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-                  onChange={e => {
-                    const synopsis = e.target.value
-                    sceneSidecarRef.current = { ...sceneSidecarRef.current, synopsis }
-                    if (synopsisTimerRef.current) clearTimeout(synopsisTimerRef.current)
-                    synopsisTimerRef.current = setTimeout(async () => {
-                      if (!projectRef.current || activeIdRef.current === null) return
-                      const node = findNode(treeRef.current, activeIdRef.current)
-                      if (!node || node.type !== 'doc') return
-                      await writeSceneSidecar(projectRef.current.path, node.file, sceneSidecarRef.current)
-                    }, 600)
-                  }}
-                  placeholder="Brief scene summary…"
-                  className="inspector-textarea"
-                />
-              }
-            </InspectorDrawer>
             <InspectorDrawer id="quickNote" label="Quick Note">
               <textarea
                 key={project?.path ?? 'none'}
@@ -3365,8 +3428,6 @@ export default function App() {
                     await writeNotesFile(projectRef.current.path, {
                       quickNote: quickNoteRef.current,
                       checklist: checklistRef.current,
-                      characters: charactersRef.current,
-                      locations: locationsRef.current,
                     })
                   }, 600)
                 }}
@@ -3488,253 +3549,48 @@ export default function App() {
                 )
               })()}
             </InspectorDrawer>
-            <InspectorDrawer id="characters" label="Characters">
-              {(() => {
-                const sorted = [...characters].sort((a, b) => a.order - b.order)
-                return (
-                  <div className="cards-wrap">
-                    {sorted.map((char, index) => {
-                      const isExpanded = expandedCharacters.has(char.id)
-                      const isDragging = characterDragId === char.id
-                      const isDropTarget = characterDropIndex === index
-                      return (
-                        <div key={char.id}>
-                          {isDropTarget && <div className="checklist-drop-line" />}
-                          <div
-                            className="character-card"
-                            style={{ opacity: isDragging ? 0.4 : 1 }}
-                          >
-                            <div
-                              className="character-card-header"
-                              onDragOver={e => { e.preventDefault(); e.stopPropagation(); setCharacterDropIndex(index) }}
-                              onDrop={e => { e.preventDefault(); e.stopPropagation(); handleCharacterDrop(index) }}
-                              onClick={() => setExpandedCharacters(prev => {
-                                const next = new Set(prev)
-                                if (next.has(char.id)) next.delete(char.id)
-                                else next.add(char.id)
-                                return next
-                              })}
-                            >
-                              <span
-                                className="card-drag-handle"
-                                draggable={renamingCharacterId !== char.id}
-                                onDragStart={renamingCharacterId !== char.id ? e => {
-                                  e.stopPropagation()
-                                  characterDragIdRef.current = char.id
-                                  e.dataTransfer.effectAllowed = 'move'
-                                  requestAnimationFrame(() => setCharacterDragId(char.id))
-                                } : undefined}
-                                onDragEnd={() => {
-                                  setCharacterDragId(null)
-                                  setCharacterDropIndex(null)
-                                  characterDragIdRef.current = null
-                                }}
-                                onClick={e => e.stopPropagation()}
-                              >
-                                <i className="ti ti-grip-vertical" aria-hidden="true" />
-                              </span>
-                              <i className={`ti ti-chevron-${isExpanded ? 'down' : 'right'}`} style={{ fontSize: 11, color: '#4a4a4a', flexShrink: 0 }} aria-hidden="true" />
-                              {renamingCharacterId === char.id
-                                ? <input
-                                  className="card-rename"
-                                  defaultValue={char.name}
-                                  autoFocus
-                                  ref={el => { if (el) { el.focus(); el.select() } }}
-                                  onClick={e => e.stopPropagation()}
-                                  onKeyDown={e => {
-                                    if (e.key === 'z' || e.key === 'y') e.stopPropagation()
-                                    if (e.key === 'Enter') renameCharacter(char.id, (e.target as HTMLInputElement).value)
-                                    if (e.key === 'Escape') setRenamingCharacterId(null)
-                                  }}
-                                  onBlur={e => renameCharacter(char.id, e.target.value)}
-                                />
-                                : <span className="character-card-name" onDoubleClick={e => { e.stopPropagation(); setRenamingCharacterId(char.id) }}>
-                                  {char.name}
-                                </span>
-                              }
-                              <span className="card-actions" onClick={e => e.stopPropagation()}>
-                                <button title="Rename" onClick={e => { e.stopPropagation(); setRenamingCharacterId(char.id) }}>
-                                  <i className="ti ti-pencil" aria-hidden="true" />
-                                </button>
-                                <button title="Delete character" onClick={() => setConfirmDeleteCharacter(char)}>
-                                  <i className="ti ti-trash" aria-hidden="true" />
-                                </button>
-                              </span>
-                            </div>
-                            {isExpanded && (
-                              <div className="character-card-body">
-                                <label className="card-label">Role</label>
-                                <select
-                                  value={char.role}
-                                  onChange={e => updateCharacter(char.id, 'role', e.target.value)}
-                                  className="card-select"
-                                >
-                                  <option value="protagonist">Protagonist</option>
-                                  <option value="antagonist">Antagonist</option>
-                                  <option value="supporting">Supporting</option>
-                                  <option value="minor">Minor</option>
-                                </select>
-                                <label className="card-label">Description</label>
-                                <textarea
-                                  key={`char-desc-${char.id}`}
-                                  defaultValue={char.description}
-                                  onChange={e => updateCharacter(char.id, 'description', e.target.value)}
-                                  onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-                                  placeholder="Brief description…"
-                                  className="card-textarea"
-                                />
-                                <label className="card-label">Traits</label>
-                                <textarea
-                                  key={`char-traits-${char.id}`}
-                                  defaultValue={char.traits}
-                                  onChange={e => updateCharacter(char.id, 'traits', e.target.value)}
-                                  onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-                                  placeholder="Core traits…"
-                                  className="card-textarea"
-                                />
-                                <label className="card-label">Notes</label>
-                                <textarea
-                                  key={`char-notes-${char.id}`}
-                                  defaultValue={char.notes}
-                                  onChange={e => updateCharacter(char.id, 'notes', e.target.value)}
-                                  onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-                                  placeholder="Arc, tensions, prose mechanics…"
-                                  className="card-textarea card-textarea-tall"
-                                />
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                    <button className="checklist-add" onClick={addCharacter}>
-                      <i className="ti ti-plus" aria-hidden="true" /> Add character
-                    </button>
-                  </div>
-                )
-              })()}
-            </InspectorDrawer>
-            <InspectorDrawer id="locations" label="Locations">
-              {(() => {
-                const sorted = [...locations].sort((a, b) => a.order - b.order)
-                return (
-                  <div className="cards-wrap">
-                    {sorted.map((loc, index) => {
-                      const isExpanded = expandedLocations.has(loc.id)
-                      const isDragging = locationDragId === loc.id
-                      const isDropTarget = locationDropIndex === index
-                      return (
-                        <div key={loc.id}>
-                          {isDropTarget && <div className="checklist-drop-line" />}
-                          <div
-                            className="character-card"
-                            style={{ opacity: isDragging ? 0.4 : 1 }}
-                          >
-                            <div
-                              className="character-card-header"
-                              onDragOver={e => { e.preventDefault(); e.stopPropagation(); setLocationDropIndex(index) }}
-                              onDrop={e => { e.preventDefault(); e.stopPropagation(); handleLocationDrop(index) }}
-                              onClick={() => setExpandedLocations(prev => {
-                                const next = new Set(prev)
-                                if (next.has(loc.id)) next.delete(loc.id)
-                                else next.add(loc.id)
-                                return next
-                              })}
-                            >
-                              <span
-                                className="card-drag-handle"
-                                draggable={renamingLocationId !== loc.id}
-                                onDragStart={renamingLocationId !== loc.id ? e => {
-                                  e.stopPropagation()
-                                  locationDragIdRef.current = loc.id
-                                  e.dataTransfer.effectAllowed = 'move'
-                                  requestAnimationFrame(() => setLocationDragId(loc.id))
-                                } : undefined}
-                                onDragEnd={() => {
-                                  setLocationDragId(null)
-                                  setLocationDropIndex(null)
-                                  locationDragIdRef.current = null
-                                }}
-                                onClick={e => e.stopPropagation()}
-                              >
-                                <i className="ti ti-grip-vertical" aria-hidden="true" />
-                              </span>
-                              <i className={`ti ti-chevron-${isExpanded ? 'down' : 'right'}`} style={{ fontSize: 11, color: '#4a4a4a', flexShrink: 0 }} aria-hidden="true" />
-                              {renamingLocationId === loc.id
-                                ? <input
-                                  className="card-rename"
-                                  defaultValue={loc.name}
-                                  autoFocus
-                                  ref={el => { if (el) { el.focus(); el.select() } }}
-                                  onClick={e => e.stopPropagation()}
-                                  onKeyDown={e => {
-                                    if (e.key === 'z' || e.key === 'y') e.stopPropagation()
-                                    if (e.key === 'Enter') renameLocation(loc.id, (e.target as HTMLInputElement).value)
-                                    if (e.key === 'Escape') setRenamingLocationId(null)
-                                  }}
-                                  onBlur={e => renameLocation(loc.id, e.target.value)}
-                                />
-                                : <span className="character-card-name" onDoubleClick={e => { e.stopPropagation(); setRenamingLocationId(loc.id) }}>
-                                  {loc.name}
-                                </span>
-                              }
-                              <span className="card-actions" onClick={e => e.stopPropagation()}>
-                                <button title="Rename" onClick={e => { e.stopPropagation(); setRenamingLocationId(loc.id) }}>
-                                  <i className="ti ti-pencil" aria-hidden="true" />
-                                </button>
-                                <button title="Delete location" onClick={() => setConfirmDeleteLocation(loc)}>
-                                  <i className="ti ti-trash" aria-hidden="true" />
-                                </button>
-                              </span>
-                            </div>
-                            {isExpanded && (
-                              <div className="character-card-body">
-                                <label className="card-label">Type</label>
-                                <select
-                                  value={loc.type}
-                                  onChange={e => updateLocation(loc.id, 'type', e.target.value)}
-                                  className="card-select"
-                                >
-                                  <option value="city">City</option>
-                                  <option value="region">Region</option>
-                                  <option value="landmark">Landmark</option>
-                                  <option value="building">Building</option>
-                                  <option value="other">Other</option>
-                                </select>
-                                <label className="card-label">Description</label>
-                                <textarea
-                                  key={`loc-desc-${loc.id}`}
-                                  defaultValue={loc.description}
-                                  onChange={e => updateLocation(loc.id, 'description', e.target.value)}
-                                  onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-                                  placeholder="Brief description…"
-                                  className="card-textarea"
-                                />
-                                <label className="card-label">Notes</label>
-                                <textarea
-                                  key={`loc-notes-${loc.id}`}
-                                  defaultValue={loc.notes}
-                                  onChange={e => updateLocation(loc.id, 'notes', e.target.value)}
-                                  onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-                                  placeholder="History, atmosphere, significance…"
-                                  className="card-textarea card-textarea-tall"
-                                />
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                    <button className="checklist-add" onClick={addLocation}>
-                      <i className="ti ti-plus" aria-hidden="true" /> Add location
-                    </button>
-                  </div>
-                )
-              })()}
-            </InspectorDrawer>
           </div>
         )}
       </div>
+      
+      {tabContextMenu && (
+        <div
+          style={{
+            position: 'fixed',
+            top: tabContextMenu.y,
+            left: tabContextMenu.x,
+            background: '#2d2d2d',
+            border: '1px solid #111',
+            borderRadius: 4,
+            padding: '4px 0',
+            minWidth: 140,
+            zIndex: 1000,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          <button className="ctx-menu-item" onClick={() => {
+            setRenamingTabIndex(tabContextMenu.index)
+            setTabContextMenu(null)
+          }}>
+            <i className="ti ti-pencil" /> Rename
+          </button>
+          <div style={{ height: 1, background: '#3c3c3c', margin: '4px 0' }} />
+          <button
+            className="ctx-menu-item"
+            style={{ color: sceneTabs.length <= 1 ? '#4a4a4a' : '#cc8888' }}
+            disabled={sceneTabs.length <= 1}
+            onClick={() => {
+              if (sceneTabs.length <= 1) return
+              setConfirmDeleteTab(tabContextMenu.index)
+              setTabContextMenu(null)
+            }}
+          >
+            <i className="ti ti-trash" /> Delete
+          </button>
+        </div>
+      )}
+      
       {contextMenu && (
         <div
           style={{
@@ -3792,8 +3648,6 @@ export default function App() {
                 treeRef.current = newTree
                 if (projectRef.current) {
                   writeSceneFile(projectRef.current.path, fileId, '')
-                  writeSceneSidecar(projectRef.current.path, fileId, { status: 'outline', synopsis: '' })
-                  setSceneStatuses(prev => ({ ...prev, [fileId]: 'outline' }))
                   saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
                 }
                 setRenamingId(newId)
@@ -3854,9 +3708,8 @@ export default function App() {
       {confirmDelete && <ConfirmDeleteModal />}
       {confirmBinDelete && <ConfirmBinDeleteModal />}
       {appMessage && <AppMessageModal />}
-      {confirmDeleteCharacter && <ConfirmDeleteCharacterModal />}
-      {confirmDeleteLocation && <ConfirmDeleteLocationModal />}
       {confirmEmptyTrash && <ConfirmEmptyTrashModal />}
+      {confirmDeleteTab !== null && <ConfirmDeleteTabModal />}
       
     </div>
   )

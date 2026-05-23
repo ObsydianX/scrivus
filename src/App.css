@@ -37,6 +37,11 @@ body,
   align-items: stretch;
 }
 
+/* Hides sidebar/inspector panels when a non-editor workspace is active. */
+.hidden {
+  display: none !important;
+}
+
 /* #endregion */
 
 /* #region === 02. TOP BARS & MENUS === */
@@ -469,6 +474,67 @@ body,
   background: #1e1e1e;
 }
 
+/* Workspace switcher bar above the formatting toolbar. */
+#workspace-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 10px;
+  border-bottom: 1px solid #111;
+  background: #1e1e1e;
+}
+
+#workspace-bar button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #858585;
+}
+
+#workspace-bar button:hover {
+  background: #2d2d2d;
+  color: #d4d4d4;
+}
+
+#workspace-bar button.active {
+  background: #2d2d2d;
+  color: #cccccc;
+  border-bottom: 2px solid #007acc;
+}
+
+#workspace-bar button i {
+  font-size: 14px;
+}
+
+/* Blank canvas shown for unimplemented workspaces. */
+#workspace-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #3c3c3c;
+  font-size: 14px;
+}
+
+#workspace-placeholder i {
+  font-size: 36px;
+}
+
+#workspace-placeholder p {
+  font-size: 14px;
+  color: #4a4a4a;
+}
+
 /* Scroll container for the writing surface. */
 #editor-scroll {
   flex: 1;
@@ -570,6 +636,88 @@ body,
 
 #editor-title::placeholder {
   color: #4a4a4a;
+}
+
+/* Scene tab bar sitting between the workspace bar and formatting toolbar. */
+#scene-tab-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 0 10px;
+  background: #252526;
+  border-bottom: 1px solid #111;
+  min-height: 34px;
+  overflow-x: auto;
+}
+
+#scene-tab-bar::-webkit-scrollbar {
+  height: 0;
+}
+
+.scene-tab {
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #858585;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  user-select: none;
+  min-width: 60px;
+  justify-content: center;
+}
+
+.scene-tab:hover {
+  color: #d4d4d4;
+  background: #2d2d2d;
+}
+
+.scene-tab.active {
+  color: #d4d4d4;
+  border-bottom: 2px solid #007acc;
+}
+
+.scene-tab.dragging {
+  opacity: 0.4;
+}
+
+.tab-drop-line {
+  width: 2px;
+  background: #007acc;
+  margin: 4px 0;
+  border-radius: 1px;
+  align-self: stretch;
+}
+
+.tab-rename-input {
+  font-size: 12px;
+  font-family: inherit;
+  border: 1px solid #007acc;
+  border-radius: 3px;
+  padding: 1px 5px;
+  background: #3c3c3c;
+  color: #d4d4d4;
+  outline: none;
+  width: 100px;
+}
+
+.tab-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 0 8px;
+  color: #555;
+  font-size: 13px;
+}
+
+.tab-add-btn:hover {
+  color: #d4d4d4;
+  background: #2d2d2d;
 }
 
 /* #endregion */
