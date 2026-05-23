@@ -13,6 +13,7 @@ import { exit } from '@tauri-apps/plugin-process'
 import { Packer, Document, Paragraph, HeadingLevel, AlignmentType, TextRun } from 'docx'
 import { Mark } from '@tiptap/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
+import { convertFileSrc } from '@tauri-apps/api/core'
 import './App.css'
 
 // #endregion
@@ -83,6 +84,32 @@ type ChecklistItem = {
 type SceneTab = {
   name: string
   content: string
+}
+
+type LoreFieldType = 'field' | 'textarea' | 'image' | 'divider'
+
+type LoreTemplateElement = {
+  id: string
+  type: LoreFieldType
+  label?: string
+  removed: boolean
+}
+
+type LoreEntry = {
+  id: string
+  name: string
+  fields: Record<string, string>
+}
+
+type LoreCategory = {
+  id: string
+  name: string
+  template: LoreTemplateElement[]
+  entries: LoreEntry[]
+}
+
+type LoreBook = {
+  categories: LoreCategory[]
 }
 
 // #endregion
@@ -364,6 +391,42 @@ async function writeNotesFile(projectPath: string, data: {
     const filePath = await join(projectPath, 'notes.json')
     await writeTextFile(filePath, JSON.stringify(data, null, 2))
   } catch { /* silently fail */ }
+}
+
+// Reads the lorebook file, returning empty categories if missing.
+async function readLoreBookFile(projectPath: string): Promise<LoreBook> {
+  try {
+    const filePath = await join(projectPath, 'lorebook.json')
+    const fileExists = await exists(filePath)
+    if (!fileExists) return { categories: [] }
+    const raw = await readTextFile(filePath)
+    return { categories: [], ...JSON.parse(raw) }
+  } catch {
+    return { categories: [] }
+  }
+}
+
+// Writes the lorebook file.
+async function writeLoreBookFile(projectPath: string, data: LoreBook) {
+  try {
+    const filePath = await join(projectPath, 'lorebook.json')
+    await writeTextFile(filePath, JSON.stringify(data, null, 2))
+  } catch { /* silently fail */ }
+}
+
+// Copies an image into the project lorebook/images folder and returns the relative path.
+async function copyLoreImage(projectPath: string, sourcePath: string, entryId: string, fieldId: string): Promise<string> {
+  const ext = sourcePath.split('.').pop() ?? 'png'
+  const destName = `${entryId}_${fieldId}.${ext}`
+  const imagesDir = await join(projectPath, 'lorebook', 'images')
+  await mkdir(imagesDir, { recursive: true })
+  const destPath = await join(imagesDir, destName)
+  const data = await readTextFile(sourcePath).catch(() => '')
+  // Use binary copy via readFile/writeFile
+  const { readFile } = await import('@tauri-apps/plugin-fs')
+  const bytes = await readFile(sourcePath)
+  await writeFile(destPath, bytes)
+  return `lorebook/images/${destName}`.replace(/\\/g, '/')
 }
 
 // Moves a scene or folder subtree into project trash with recovery metadata.
@@ -693,6 +756,20 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
   const tabDragIndexRef = useRef<number | null>(null)
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; index: number } | null>(null)
   const [confirmDeleteTab, setConfirmDeleteTab] = useState<number | null>(null)
+
+  // ── Lore Book state ──
+  const [loreBook, setLoreBook] = useState<LoreBook>({ categories: [] })
+  const loreBookRef = useRef<LoreBook>({ categories: [] })
+  const [loreView, setLoreView] = useState<'home' | 'category'>('home')
+  const [activeLoreCategoryId, setActiveLoreCategoryId] = useState<string | null>(null)
+  const [loreTemplateEditor, setLoreTemplateEditor] = useState<LoreCategory | null>(null)
+  const [loreTemplateIsNew, setLoreTemplateIsNew] = useState(false)
+  const [loreActiveEntryId, setLoreActiveEntryId] = useState<string | null>(null)
+  const [loreEntryEditor, setLoreEntryEditor] = useState<LoreEntry | null>(null)
+  const [confirmDeleteLoreCategory, setConfirmDeleteLoreCategory] = useState<LoreCategory | null>(null)
+  const [confirmDeleteLoreEntry, setConfirmDeleteLoreEntry] = useState<LoreEntry | null>(null)
+  const [confirmHardDeleteField, setConfirmHardDeleteField] = useState<{ categoryId: string; fieldId: string; label: string } | null>(null)
+  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
 
   // Settings helpers
   const DEFAULT_SETTINGS = {
@@ -1037,6 +1114,23 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
     setAppMessage({ title, body, kind, action })
   }
 
+  // Generates a short unique id for lore entries and fields.
+  const generateLoreId = () => `l${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+
+  // Saves the lorebook to disk.
+  const saveLoreBook = async (data: LoreBook) => {
+    if (!projectRef.current) return
+    loreBookRef.current = data
+    setLoreBook(data)
+    await writeLoreBookFile(projectRef.current.path, data)
+  }
+
+  // Returns the active lore category or null.
+  const getActiveLoreCategory = (): LoreCategory | null => {
+    if (!activeLoreCategoryId) return null
+    return loreBookRef.current.categories.find(c => c.id === activeLoreCategoryId) ?? null
+  }
+
   // #endregion
 
   // #region === HANDLERS: NOTES, CHECKLIST, CHARACTERS & LOCATIONS ===
@@ -1260,6 +1354,127 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
 
   // #endregion
 
+  // #region === HANDLERS: LORE BOOK ===
+
+  // Opens the template editor for a new category.
+  const openNewCategoryEditor = () => {
+    const newCat: LoreCategory = {
+      id: generateLoreId(),
+      name: 'New Category',
+      template: [],
+      entries: [],
+    }
+    setLoreTemplateEditor(newCat)
+    setLoreTemplateIsNew(true)
+  }
+
+  // Opens the template editor for an existing category.
+  const openEditCategoryEditor = (cat: LoreCategory) => {
+    setLoreTemplateEditor(JSON.parse(JSON.stringify(cat)))
+    setLoreTemplateIsNew(false)
+  }
+
+  // Saves the template editor result.
+  const saveLoreTemplate = async (edited: LoreCategory) => {
+    const updated = { ...loreBookRef.current }
+    if (loreTemplateIsNew) {
+      updated.categories = [...updated.categories, edited]
+    } else {
+      updated.categories = updated.categories.map(c => c.id === edited.id ? edited : c)
+    }
+    await saveLoreBook(updated)
+    setLoreTemplateEditor(null)
+  }
+
+  // Deletes a category and all its entries.
+  const deleteLoreCategory = async (categoryId: string) => {
+    const updated = {
+      ...loreBookRef.current,
+      categories: loreBookRef.current.categories.filter(c => c.id !== categoryId),
+    }
+    await saveLoreBook(updated)
+    if (activeLoreCategoryId === categoryId) {
+      setActiveLoreCategoryId(null)
+      setLoreView('home')
+    }
+    setConfirmDeleteLoreCategory(null)
+  }
+
+  // Opens entry editor for a new entry.
+  const openNewEntryEditor = () => {
+    const newEntry: LoreEntry = { id: generateLoreId(), name: '', fields: {} }
+    setLoreEntryEditor(newEntry)
+  }
+
+  // Opens entry editor for an existing entry.
+  const openEditEntryEditor = (entry: LoreEntry) => {
+    setLoreEntryEditor(JSON.parse(JSON.stringify(entry)))
+  }
+
+  // Saves an entry.
+  const saveLoreEntry = async (categoryId: string, entry: LoreEntry) => {
+    const updated = { ...loreBookRef.current }
+    updated.categories = updated.categories.map(c => {
+      if (c.id !== categoryId) return c
+      const exists = c.entries.find(e => e.id === entry.id)
+      const entries = exists
+        ? c.entries.map(e => e.id === entry.id ? entry : e)
+        : [...c.entries, entry]
+      return { ...c, entries }
+    })
+    await saveLoreBook(updated)
+    setLoreEntryEditor(null)
+  }
+
+  // Deletes an entry.
+  const deleteLoreEntry = async (categoryId: string, entryId: string) => {
+    const updated = { ...loreBookRef.current }
+    updated.categories = updated.categories.map(c => {
+      if (c.id !== categoryId) return c
+      return { ...c, entries: c.entries.filter(e => e.id !== entryId) }
+    })
+    await saveLoreBook(updated)
+    setConfirmDeleteLoreEntry(null)
+  }
+
+  // Soft-removes a template field (marks removed: true).
+  const softRemoveLoreField = (fieldId: string) => {
+    if (!loreTemplateEditor) return
+    const updated = {
+      ...loreTemplateEditor,
+      template: loreTemplateEditor.template.map(f =>
+        f.id === fieldId ? { ...f, removed: true } : f
+      ),
+    }
+    setLoreTemplateEditor(updated)
+  }
+
+  // Hard-deletes a template field and wipes its data from all entries.
+  const hardDeleteLoreField = async (categoryId: string, fieldId: string) => {
+    const updated = { ...loreBookRef.current }
+    updated.categories = updated.categories.map(c => {
+      if (c.id !== categoryId) return c
+      const template = c.template.filter(f => f.id !== fieldId)
+      const entries = c.entries.map(e => {
+        const fields = { ...e.fields }
+        delete fields[fieldId]
+        return { ...e, fields }
+      })
+      return { ...c, template, entries }
+    })
+    await saveLoreBook(updated)
+    // Also update template editor if open
+    if (loreTemplateEditor?.id === categoryId) {
+      setLoreTemplateEditor(prev => prev ? {
+        ...prev,
+        template: prev.template.filter(f => f.id !== fieldId),
+      } : null)
+    }
+    setConfirmHardDeleteField(null)
+  }
+
+  // #endregion
+  
   // #region === HANDLERS: TRASH ===
 
   // Reads trash sidecar files so deleted scenes/folders can be listed.
@@ -1718,6 +1933,13 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
     setRenamingTabIndex(null)
     setTabContextMenu(null)
     setConfirmDeleteTab(null)
+    setLoreBook({ categories: [] })
+    loreBookRef.current = { categories: [] }
+    setLoreView('home')
+    setActiveLoreCategoryId(null)
+    setLoreTemplateEditor(null)
+    setLoreActiveEntryId(null)
+    setLoreEntryEditor(null)
   }
 
   // Exports the manuscript folder to a DOCX document.
@@ -1910,6 +2132,9 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
     quickNoteRef.current = notes.quickNote
     setChecklist(notes.checklist)
     checklistRef.current = notes.checklist
+    const lore = await readLoreBookFile(path)
+    setLoreBook(lore)
+    loreBookRef.current = lore
     setStyles(loadedStyles)
     const restoredId = (data.lastActiveId as number | null) ?? null
     setActiveId(restoredId)
@@ -2824,6 +3049,70 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
     )
   }
 
+  // Confirmation modal for deleting a lore category.
+  const ConfirmDeleteLoreCategoryModal = () => {
+    if (!confirmDeleteLoreCategory) return null
+    return (
+      <div className="modal-overlay" style={{ zIndex: 200 }}>
+        <div className="modal-box modal-danger" style={{ width: 380 }}>
+          <p className="modal-title">Delete category?</p>
+          <p className="modal-danger-text">
+            <strong style={{ color: '#cc8888' }}>{confirmDeleteLoreCategory.name}</strong> and all its entries will be permanently deleted.
+          </p>
+          <div className="modal-footer">
+            <button className="welcome-btn" onClick={() => setConfirmDeleteLoreCategory(null)}>Cancel</button>
+            <button className="welcome-btn modal-btn-danger" onClick={() => deleteLoreCategory(confirmDeleteLoreCategory.id)}>
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Confirmation modal for deleting a lore entry.
+  const ConfirmDeleteLoreEntryModal = () => {
+    if (!confirmDeleteLoreEntry) return null
+    const cat = getActiveLoreCategory()
+    return (
+      <div className="modal-overlay" style={{ zIndex: 200 }}>
+        <div className="modal-box modal-danger" style={{ width: 380 }}>
+          <p className="modal-title">Delete entry?</p>
+          <p className="modal-danger-text">
+            <strong style={{ color: '#cc8888' }}>{confirmDeleteLoreEntry.name}</strong> will be permanently deleted.
+          </p>
+          <div className="modal-footer">
+            <button className="welcome-btn" onClick={() => setConfirmDeleteLoreEntry(null)}>Cancel</button>
+            <button className="welcome-btn modal-btn-danger" onClick={() => cat && deleteLoreEntry(cat.id, confirmDeleteLoreEntry.id)}>
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Confirmation modal for hard-deleting a template field.
+  const ConfirmHardDeleteFieldModal = () => {
+    if (!confirmHardDeleteField) return null
+    return (
+      <div className="modal-overlay" style={{ zIndex: 200 }}>
+        <div className="modal-box modal-danger" style={{ width: 400 }}>
+          <p className="modal-title">Permanently delete field?</p>
+          <p className="modal-danger-text">
+            <strong style={{ color: '#cc8888' }}>{confirmHardDeleteField.label}</strong> will be removed from the template and its data deleted from every entry in this category. This cannot be undone.
+          </p>
+          <div className="modal-footer">
+            <button className="welcome-btn" onClick={() => setConfirmHardDeleteField(null)}>Cancel</button>
+            <button className="welcome-btn modal-btn-danger" onClick={() => hardDeleteLoreField(confirmHardDeleteField.categoryId, confirmHardDeleteField.fieldId)}>
+              Delete permanently
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // #endregion
 
   // #region === HANDLERS: WORD COUNT ===
@@ -2870,6 +3159,444 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
 
   // #endregion
 
+  // #region === RENDER HELPERS: LORE BOOK ===
+
+  const LoreBookView = () => {
+    const sortedCategories = [...loreBook.categories].sort((a, b) => a.name.localeCompare(b.name))
+
+    if (loreView === 'category') {
+      const cat = getActiveLoreCategory()
+      if (!cat) return null
+      const sortedEntries = [...cat.entries].sort((a, b) => a.name.localeCompare(b.name))
+      const activeFields = cat.template.filter(f => !f.removed)
+
+      return (
+        <div id="lorebook-view">
+          <div id="lorebook-category-header">
+            <button className="lorebook-back-btn" onClick={() => setLoreView('home')}>
+              <i className="ti ti-arrow-left" aria-hidden="true" />
+            </button>
+            <span id="lorebook-category-title">{cat.name}</span>
+            <button className="lorebook-edit-btn" onClick={() => openEditCategoryEditor(cat)}>
+              <i className="ti ti-edit" aria-hidden="true" />
+            </button>
+            <button className="lorebook-delete-btn" onClick={() => setConfirmDeleteLoreCategory(cat)}>
+              <i className="ti ti-trash" aria-hidden="true" />
+            </button>
+          </div>
+          <div id="lorebook-entries">
+            {sortedEntries.map(entry => {
+              const isExpanded = expandedEntryId === entry.id
+              return (
+                <div
+                  key={entry.id}
+                  className={`lorebook-entry-card${isExpanded ? ' expanded' : ' collapsed'}`}
+                >
+                  <div
+                    className="lorebook-entry-card-header"
+                    onClick={() => setExpandedEntryId(isExpanded ? null : entry.id)}
+                  >
+                    <i className={`ti ti-chevron-${isExpanded ? 'down' : 'right'} lorebook-entry-chevron`} aria-hidden="true" />
+                    <span className="lorebook-entry-name">{entry.name}</span>
+                    <span className="lorebook-entry-actions" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => openEditEntryEditor(entry)}>
+                        <i className="ti ti-pencil" aria-hidden="true" />
+                      </button>
+                      <button onClick={() => setConfirmDeleteLoreEntry(entry)}>
+                        <i className="ti ti-trash" aria-hidden="true" />
+                      </button>
+                    </span>
+                  </div>
+                  {isExpanded && (
+                    <div className="lorebook-entry-body">
+                      {activeFields.map(field => {
+                        if (field.type === 'divider') {
+                          return <div key={field.id} className="lorebook-entry-divider" />
+                        }
+                        const value = entry.fields[field.id] ?? ''
+                        if (!value) return null
+                        if (field.type === 'image') {
+                          return (
+                            <div key={field.id} className="lorebook-entry-field">
+                              {field.label && <span className="lorebook-field-label">{field.label}</span>}
+                              <img
+                                src={projectRef.current ? convertFileSrc(`${projectRef.current.path}/${value}`.replace(/\\/g, '/')) : ''}
+                                className="lorebook-entry-image"
+                                alt={field.label ?? 'image'}
+                              />
+                            </div>
+                          )
+                        }
+                        return (
+                          <div key={field.id} className="lorebook-entry-field">
+                            <span className="lorebook-field-label">{field.label}</span>
+                            <span className="lorebook-field-value">{value}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+            <button className="lorebook-add-entry-btn" onClick={openNewEntryEditor}>
+              <i className="ti ti-plus" aria-hidden="true" /> Add entry
+            </button>
+          </div>
+        </div>
+      )
+    }
+
+    // Home view
+    return (
+      <div id="lorebook-view">
+        <div id="lorebook-home">
+          <div id="lorebook-categories">
+            {sortedCategories.map(cat => (
+              <div
+                key={cat.id}
+                className="lorebook-category-btn"
+                onClick={() => { setActiveLoreCategoryId(cat.id); setLoreView('category') }}
+              >
+                <span>{cat.name.toUpperCase()}</span>
+                <button
+                  className="lorebook-category-edit-icon"
+                  title="Edit template"
+                  onClick={e => { e.stopPropagation(); openEditCategoryEditor(cat) }}
+                >
+                  <i className="ti ti-edit" aria-hidden="true" />
+                </button>
+              </div>
+            ))}
+            <button className="lorebook-add-category-btn" onClick={openNewCategoryEditor}>
+              <i className="ti ti-plus" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Template editor modal.
+  const LoreTemplateEditorModal = () => {
+    const [local, setLocal] = useState<LoreCategory>(loreTemplateEditor!)
+    const [templateDragIndex, setTemplateDragIndex] = useState<number | null>(null)
+    const [templateDropIndex, setTemplateDropIndex] = useState<number | null>(null)
+    const templateDragIndexRef = useRef<number | null>(null)
+    const [addMenuOpen, setAddMenuOpen] = useState(false)
+    const addBtnRef = useRef<HTMLButtonElement>(null)
+
+    if (!loreTemplateEditor) return null
+
+    const activeElements = local.template.filter(f => !f.removed)
+    const removedElements = local.template.filter(f => f.removed)
+
+    const addElement = (type: LoreFieldType) => {
+      const newEl: LoreTemplateElement = {
+        id: generateLoreId(),
+        type,
+        label: type === 'divider' ? undefined : '',
+        removed: false,
+      }
+      setLocal(prev => ({ ...prev, template: [...prev.template, newEl] }))
+    }
+
+    const updateLabel = (id: string, label: string) => {
+      setLocal(prev => ({
+        ...prev,
+        template: prev.template.map(f => f.id === id ? { ...f, label } : f),
+      }))
+    }
+
+    const softRemove = (id: string) => {
+      setLocal(prev => ({
+        ...prev,
+        template: prev.template.map(f => f.id === id ? { ...f, removed: true } : f),
+      }))
+    }
+
+    const restore = (id: string) => {
+      setLocal(prev => ({
+        ...prev,
+        template: prev.template.map(f => f.id === id ? { ...f, removed: false } : f),
+      }))
+    }
+
+    const handleDrop = (targetIndex: number) => {
+      const dragIndex = templateDragIndexRef.current
+      if (dragIndex === null || dragIndex === targetIndex) {
+        setTemplateDragIndex(null)
+        setTemplateDropIndex(null)
+        templateDragIndexRef.current = null
+        return
+      }
+      const reordered = [...activeElements]
+      const [moved] = reordered.splice(dragIndex, 1)
+      reordered.splice(targetIndex, 0, moved)
+      setLocal(prev => ({
+        ...prev,
+        template: [...reordered, ...removedElements],
+      }))
+      setTemplateDragIndex(null)
+      setTemplateDropIndex(null)
+      templateDragIndexRef.current = null
+    }
+
+    return (
+      <div className="modal-overlay" style={{ zIndex: 150 }}>
+        <div className="modal-box lore-template-modal">
+          <div className="lore-template-header">
+            <input
+              className="lore-template-title-input"
+              value={local.name}
+              onChange={e => setLocal(prev => ({ ...prev, name: e.target.value }))}
+              onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
+              placeholder="Category name"
+            />
+          </div>
+
+          <div className="lore-template-entry-name">
+            <span className="lore-template-locked-label">Entry Name</span>
+            <span className="lore-template-locked-hint">(set when creating an entry)</span>
+          </div>
+
+          <div className="lore-template-elements">
+            {activeElements.map((el, index) => {
+              const isDragging = templateDragIndex === index
+              const isDropTarget = templateDropIndex === index
+              return (
+                <div key={el.id}>
+                  {isDropTarget && templateDragIndex !== index && (
+                    <div className="drop-line" />
+                  )}
+                  <div
+                    className={`lore-template-element${isDragging ? ' dragging' : ''}`}
+                    draggable
+                    onDragStart={e => {
+                      e.stopPropagation()
+                      templateDragIndexRef.current = index
+                      setTemplateDragIndex(index)
+                      e.dataTransfer.effectAllowed = 'move'
+                    }}
+                    onDragEnd={() => {
+                      setTemplateDragIndex(null)
+                      setTemplateDropIndex(null)
+                      templateDragIndexRef.current = null
+                    }}
+                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); setTemplateDropIndex(index) }}
+                    onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDrop(index) }}
+                  >
+                    <span className="lore-template-drag-handle">
+                      <i className="ti ti-grip-vertical" aria-hidden="true" />
+                    </span>
+                    {el.type === 'divider'
+                      ? <div className="lore-template-divider-preview" />
+                      : <input
+                        className="lore-template-label-input"
+                        value={el.label ?? ''}
+                        onChange={e => updateLabel(el.id, e.target.value)}
+                        onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
+                        placeholder={
+                          el.type === 'field' ? 'Field label…' :
+                            el.type === 'textarea' ? 'Description label…' :
+                              'Image label…'
+                        }
+                      />
+                    }
+                    <span className="lore-template-type-badge">{el.type}</span>
+                    <button
+                      className="lore-template-remove-btn"
+                      title="Remove"
+                      onClick={() => softRemove(el.id)}
+                    >
+                      <i className="ti ti-trash" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="lore-template-add-wrap">
+            <button
+              ref={addBtnRef}
+              className="lore-template-add-btn"
+              onClick={() => setAddMenuOpen(v => !v)}
+            >
+              <i className="ti ti-plus" aria-hidden="true" /> Add element
+            </button>
+            {addMenuOpen && (() => {
+              const rect = addBtnRef.current?.getBoundingClientRect()
+              return (
+                <div
+                  className="lore-template-add-menu"
+                  style={{
+                    position: 'fixed',
+                    top: rect ? rect.bottom + 4 : 0,
+                    left: rect ? rect.left : 0,
+                  }}
+                >
+                  {(['field', 'textarea', 'image', 'divider'] as LoreFieldType[]).map(type => (
+                    <button key={type} onClick={() => { addElement(type); setAddMenuOpen(false) }}>
+                      {type === 'field' ? 'Field Box' :
+                        type === 'textarea' ? 'Description Box' :
+                          type === 'image' ? 'Image' : 'Divider'}
+                    </button>
+                  ))}
+                </div>
+              )
+            })()}
+          </div>
+
+          {removedElements.length > 0 && (
+            <div className="lore-template-removed-section">
+              <p className="lore-template-removed-heading">Removed elements</p>
+              {removedElements.map(el => (
+                <div key={el.id} className="lore-template-element removed">
+                  <span className="lore-template-type-badge">{el.type}</span>
+                  {el.label && <span className="lore-template-removed-label">{el.label}</span>}
+                  <button
+                    className="lore-template-restore-btn"
+                    title="Restore"
+                    onClick={() => restore(el.id)}
+                  >
+                    <i className="ti ti-restore" aria-hidden="true" />
+                  </button>
+                  <button
+                    className="lore-template-hard-delete-btn"
+                    title="Permanently delete"
+                    onClick={() => setConfirmHardDeleteField({
+                      categoryId: local.id,
+                      fieldId: el.id,
+                      label: el.label ?? el.type,
+                    })}
+                  >
+                    <i className="ti ti-x" aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="modal-footer">
+            <button className="welcome-btn" onClick={() => setLoreTemplateEditor(null)}>Cancel</button>
+            <button className="welcome-btn" onClick={() => saveLoreTemplate(local)}>Save</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Entry editor modal.
+  const LoreEntryEditorModal = () => {
+    const cat = getActiveLoreCategory()
+    if (!cat || !loreEntryEditor) return null
+    const [local, setLocal] = useState<LoreEntry>(loreEntryEditor)
+    const activeFields = cat.template.filter(f => !f.removed)
+
+    const handleImagePick = async (fieldId: string) => {
+      if (!projectRef.current) return
+      const selected = await open({
+        title: 'Select image',
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
+      })
+      if (!selected || Array.isArray(selected)) return
+      const rel = await copyLoreImage(projectRef.current.path, selected as string, local.id, fieldId)
+      setLocal(prev => ({ ...prev, fields: { ...prev.fields, [fieldId]: rel } }))
+    }
+
+    return (
+      <div className="modal-overlay" style={{ zIndex: 150 }}>
+        <div className="modal-box lore-entry-modal">
+          <p className="modal-title">{local.id ? 'Edit Entry' : 'New Entry'}</p>
+
+          <div className="lore-entry-field-wrap">
+            <label className="lore-entry-label">Entry Name</label>
+            <input
+              className="modal-input"
+              value={local.name}
+              onChange={e => setLocal(prev => ({ ...prev, name: e.target.value }))}
+              onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
+              placeholder="Enter name…"
+              autoFocus
+            />
+          </div>
+
+          {activeFields.map(field => {
+            if (field.type === 'divider') {
+              return <div key={field.id} className="lore-entry-divider" />
+            }
+            if (field.type === 'image') {
+              const val = local.fields[field.id] ?? ''
+              return (
+                <div key={field.id} className="lore-entry-field-wrap">
+                  {field.label && <label className="lore-entry-label">{field.label}</label>}
+                  <div className="lore-entry-image-wrap">
+                    {val && (
+                      <img
+                        src={projectRef.current ? convertFileSrc(`${projectRef.current.path}/${val}`.replace(/\\/g, '/')) : ''}
+                        className="lore-entry-image-preview"
+                        alt={field.label ?? 'image'}
+                      />
+                    )}
+                    <button className="welcome-btn" onClick={() => handleImagePick(field.id)}>
+                      {val ? 'Change image' : 'Select image'}
+                    </button>
+                  </div>
+                </div>
+              )
+            }
+            if (field.type === 'textarea') {
+              return (
+                <div key={field.id} className="lore-entry-field-wrap">
+                  {field.label && <label className="lore-entry-label">{field.label}</label>}
+                  <textarea
+                    className="modal-input lore-entry-textarea"
+                    value={local.fields[field.id] ?? ''}
+                    onChange={e => setLocal(prev => ({
+                      ...prev,
+                      fields: { ...prev.fields, [field.id]: e.target.value },
+                    }))}
+                    onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
+                    placeholder={`${field.label ?? 'Description'}…`}
+                  />
+                </div>
+              )
+            }
+            return (
+              <div key={field.id} className="lore-entry-field-wrap">
+                {field.label && <label className="lore-entry-label">{field.label}</label>}
+                <input
+                  className="modal-input"
+                  value={local.fields[field.id] ?? ''}
+                  onChange={e => setLocal(prev => ({
+                    ...prev,
+                    fields: { ...prev.fields, [field.id]: e.target.value },
+                  }))}
+                  onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
+                  placeholder={`${field.label ?? 'Field'}…`}
+                />
+              </div>
+            )
+          })}
+
+          <div className="modal-footer">
+            <button className="welcome-btn" onClick={() => setLoreEntryEditor(null)}>Cancel</button>
+            <button
+              className="welcome-btn"
+              onClick={() => saveLoreEntry(cat.id, local)}
+              style={{ opacity: local.name.trim() ? 1 : 0.4 }}
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // #endregion
+
   // #region === RENDER: WELCOME SCREEN ===
   // ───────────────────────────────────────────────────────────────────────────
   // Render: welcome screen shown when no project is open
@@ -2889,6 +3616,11 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
         {appMessage && <AppMessageModal />}
         {confirmEmptyTrash && <ConfirmEmptyTrashModal />}
         {confirmDeleteTab !== null && <ConfirmDeleteTabModal />}
+        {loreTemplateEditor && <LoreTemplateEditorModal />}
+        {loreEntryEditor && <LoreEntryEditorModal />}
+        {confirmDeleteLoreCategory && <ConfirmDeleteLoreCategoryModal />}
+        {confirmDeleteLoreEntry && <ConfirmDeleteLoreEntryModal />}
+        {confirmHardDeleteField && <ConfirmHardDeleteFieldModal />}
         <i className="ti ti-feather welcome-icon" aria-hidden="true" />
         <p className="welcome-label">No project open</p>
         <div className={`welcome-actions${recentProjects.length ? ' welcome-actions-spaced' : ''}`}>
@@ -3299,13 +4031,7 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
           </div>
         )}
 
-        {workspace === 'lorebook' && (
-          <div id="workspace-placeholder">
-            <i className="ti ti-book-2" aria-hidden="true" />
-            <p>Lore Book</p>
-            <p className="empty-state-hint">Coming soon</p>
-          </div>
-        )}
+        {workspace === 'lorebook' && <LoreBookView />}
 
         {workspace === 'mindmap' && (
           <div id="workspace-placeholder">
@@ -3710,6 +4436,11 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
       {appMessage && <AppMessageModal />}
       {confirmEmptyTrash && <ConfirmEmptyTrashModal />}
       {confirmDeleteTab !== null && <ConfirmDeleteTabModal />}
+      {loreTemplateEditor && <LoreTemplateEditorModal />}
+      {loreEntryEditor && <LoreEntryEditorModal />}
+      {confirmDeleteLoreCategory && <ConfirmDeleteLoreCategoryModal />}
+      {confirmDeleteLoreEntry && <ConfirmDeleteLoreEntryModal />}
+      {confirmHardDeleteField && <ConfirmHardDeleteFieldModal />}
       
     </div>
   )
