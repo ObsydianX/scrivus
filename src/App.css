@@ -207,6 +207,7 @@ body,
   color: #858585;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  user-select: none;
 }
 
 #sidebar-header .header-buttons {
@@ -483,6 +484,7 @@ body,
   padding: 4px 10px;
   border-bottom: 1px solid #111;
   background: #1e1e1e;
+  user-select: none;
 }
 
 #workspace-bar button {
@@ -1848,6 +1850,7 @@ mark.fnr-highlight {
   color: #858585;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  user-select: none;
 }
 
 #inspector.collapsed #inspector-header {
@@ -2625,6 +2628,402 @@ mark.fnr-highlight {
   justify-content: center;
   flex-direction: column;
   gap: 16px;
+}
+
+/* #endregion */
+
+/* ==========================================================================
+   REVISION WORKSPACE
+   --------------------------------------------------------------------------
+   Styles for the Revision tab: read-only prose viewer + Google Docs-style
+   comment panel on the right.
+   ========================================================================== */
+
+/* #region === REVISION LAYOUT === */
+
+/* Root flex container for the revision workspace */
+#revision-layout {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Empty state when no scene is selected */
+#revision-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #3c3c3c;
+}
+
+#revision-empty i {
+  font-size: 36px;
+  color: #3c3c3c;
+}
+
+#revision-empty p {
+  font-size: 14px;
+  color: #4a4a4a;
+}
+
+/* #endregion */
+
+/* #region === REVISION TEXT PANE === */
+
+/* Scrollable text pane — mirrors editor-scroll */
+#revision-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  min-width: 0;
+  background: #1e1e1e;
+}
+
+#revision-scroll::-webkit-scrollbar {
+  width: 16px;
+}
+
+#revision-scroll::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+#revision-scroll::-webkit-scrollbar-thumb {
+  background: #3c3c3c;
+  border-radius: 4px;
+  border: 2px solid #1e1e1e;
+}
+
+#revision-scroll::-webkit-scrollbar-thumb:hover {
+  background: #555555;
+}
+
+/* Inner wrapper matching editor-wrap */
+#revision-wrap {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 48px 40px 80px;
+}
+
+/* Scene title — matches #editor-title */
+#revision-title {
+  font-family: var(--editor-chapter-font, Georgia);
+  font-size: var(--editor-chapter-size, 20pt);
+  font-weight: var(--editor-chapter-weight, 700);
+  font-style: var(--editor-chapter-style, normal);
+  color: #d4d4d4;
+  margin-bottom: 28px;
+  line-height: 1.25;
+}
+
+/* Body text — mirrors tiptap-wrap prose */
+#revision-body {
+  font-family: var(--editor-body-font, Georgia);
+  font-size: var(--editor-body-size, 12pt);
+  line-height: var(--editor-body-line-height, 1.85);
+  text-align: var(--editor-body-align, justify);
+  color: #d4d4d4;
+  user-select: text;
+  cursor: text;
+}
+
+#revision-body p {
+  margin: 0;
+  text-indent: var(--editor-body-indent, 2em);
+}
+
+#revision-body p:first-child {
+  text-indent: 0;
+}
+
+/* Inline comment highlight */
+.revision-highlight {
+  background: rgba(255, 213, 79, 0.18);
+  border-bottom: 2px solid rgba(255, 213, 79, 0.45);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.revision-highlight:hover {
+  background: rgba(255, 213, 79, 0.28);
+}
+
+.revision-highlight--active {
+  background: rgba(255, 213, 79, 0.38);
+  border-bottom-color: rgba(255, 213, 79, 0.85);
+}
+
+/* #endregion */
+
+/* #region === REVISION COMMENTS PANE === */
+
+/* Fixed-width panel on the right */
+#revision-comments-pane {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #111;
+  background: #252526;
+  overflow: hidden;
+}
+
+/* Header row */
+#revision-comments-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 9px;
+  border-bottom: 1px solid #111;
+  font-size: 11px;
+  font-weight: 600;
+  color: #858585;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.revision-comments-count {
+  background: #007acc;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 20px;
+  padding: 1px 6px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Scrollable comment list */
+#revision-comments-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 0;
+}
+
+.revision-comments-empty {
+  user-select: none;
+}
+
+.revision-comment--resolved {
+  opacity: 0.45;
+}
+
+.revision-comment--resolved .revision-comment-quote,
+.revision-comment--resolved .revision-comment-text {
+  color: #555;
+}
+
+#revision-comments-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+#revision-comments-list::-webkit-scrollbar-track {
+  background: #252526;
+}
+
+#revision-comments-list::-webkit-scrollbar-thumb {
+  background: #3c3c3c;
+  border-radius: 4px;
+}
+
+#revision-comments-list::-webkit-scrollbar-thumb:hover {
+  background: #555555;
+}
+
+/* Empty state inside comment list */
+.revision-comments-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 40px 20px;
+  color: #3c3c3c;
+  text-align: center;
+}
+
+.revision-comments-empty i {
+  font-size: 28px;
+}
+
+.revision-comments-empty p {
+  font-size: 12px;
+  color: #4a4a4a;
+}
+
+.revision-comments-empty-hint {
+  font-size: 11px;
+  color: #3c3c3c !important;
+}
+
+/* Individual comment card */
+.revision-comment {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background 0.12s, border-color 0.12s;
+  direction: ltr;
+}
+
+.revision-comment:hover {
+  background: #2d2d2d;
+}
+
+.revision-comment--active {
+  background: #2d2d2d;
+  border-left-color: #007acc;
+}
+
+/* Pending comment (composer mode) */
+.revision-comment--pending {
+  background: #2a2a2a;
+  border-left: 2px solid rgba(255, 213, 79, 0.6);
+  cursor: default;
+  gap: 8px;
+}
+
+/* date row */
+.revision-comment-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.revision-comment-date {
+  font-size: 10px;
+  color: #555;
+}
+
+/* Quoted text */
+.revision-comment-quote {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 11px;
+  color: #858585;
+  font-style: italic;
+  line-height: 1.5;
+  border-left: 2px solid #3c3c3c;
+  padding-left: 8px;
+}
+
+.revision-comment-quote i {
+  font-size: 11px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #4a4a4a;
+}
+
+/* Comment body */
+.revision-comment-text {
+  font-size: 12px;
+  color: #c8c8c8;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+/* Action row */
+.revision-comment-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Textarea for new comment */
+.revision-comment-input {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  color: #d4d4d4;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 7px 9px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.revision-comment-input:focus {
+  border-color: #007acc;
+}
+
+.revision-comment-input::-webkit-scrollbar {
+  width: 6px;
+}
+
+.revision-comment-input::-webkit-scrollbar-thumb {
+  background: #3c3c3c;
+  border-radius: 3px;
+}
+
+/* Buttons */
+.revision-btn {
+  border: 1px solid #3c3c3c;
+  background: #007acc;
+  color: #fff;
+  cursor: pointer;
+  padding: 5px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.12s;
+}
+
+.revision-btn:hover {
+  background: #005fa3;
+}
+
+.revision-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.revision-btn--ghost {
+  background: none;
+  color: #858585;
+  border-color: #3c3c3c;
+}
+
+.revision-btn--ghost:hover {
+  background: #3c3c3c;
+  color: #d4d4d4;
+}
+
+.revision-btn--sm {
+  padding: 3px 8px;
+  font-size: 10px;
+}
+
+.revision-btn--danger {
+  color: #cc8888;
+}
+
+.revision-btn--danger:hover {
+  background: #3c3c3c;
+  color: #ff9999;
 }
 
 /* #endregion */

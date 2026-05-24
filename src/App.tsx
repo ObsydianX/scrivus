@@ -11,7 +11,7 @@ import { writeTextFile, readTextFile, mkdir, exists, writeFile, rename, readDir,
 import { join, appDataDir } from '@tauri-apps/api/path'
 import { exit } from '@tauri-apps/plugin-process'
 import { Packer, Document, Paragraph, HeadingLevel, AlignmentType, TextRun } from 'docx'
-import { Mark } from '@tiptap/core'
+import { Mark, Node as TiptapNode } from '@tiptap/core'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import './App.css'
@@ -110,6 +110,16 @@ type LoreCategory = {
 
 type LoreBook = {
   categories: LoreCategory[]
+}
+
+// A single inline comment anchored to a text selection in revision mode.
+type RevisionComment = {
+  id: string
+  sceneId: number
+  quote: string        // kept for display in the comment card
+  text: string
+  createdAt: number
+  resolved: boolean
 }
 
 // #endregion
@@ -229,24 +239,6 @@ function htmlToPlainLines(html: string): string[] {
   div.querySelectorAll('p').forEach(p => lines.push(p.textContent ?? ''))
   return lines.length ? lines : [div.textContent ?? '']
 }
-
-// // Counts words from HTML by reading its text content.
-// function wordCountFromHtml(html: string): number {
-//   const div = document.createElement('div')
-//   div.innerHTML = html
-//   const text = div.textContent ?? ''
-//   return text.trim() ? text.trim().split(/\s+/).length : 0
-// }
-
-// Removes temporary find-and-replace highlight marks from saved HTML.
-// function stripFnrHighlights(html: string): string {
-//   const div = document.createElement('div')
-//   div.innerHTML = html
-//   div.querySelectorAll('mark.fnr-highlight').forEach(mark => {
-//     mark.replaceWith(mark.textContent ?? '')
-//   })
-//   return div.innerHTML
-// }
 
 // #endregion
 
@@ -414,6 +406,27 @@ async function writeLoreBookFile(projectPath: string, data: LoreBook) {
   } catch { /* silently fail */ }
 }
 
+// Reads revision comments for the project.
+async function readRevisionFile(projectPath: string): Promise<RevisionComment[]> {
+  try {
+    const filePath = await join(projectPath, 'revision.json')
+    const fileExists = await exists(filePath)
+    if (!fileExists) return []
+    const raw = await readTextFile(filePath)
+    return JSON.parse(raw) ?? []
+  } catch {
+    return []
+  }
+}
+
+// Writes revision comments for the project.
+async function writeRevisionFile(projectPath: string, comments: RevisionComment[]) {
+  try {
+    const filePath = await join(projectPath, 'revision.json')
+    await writeTextFile(filePath, JSON.stringify(comments, null, 2))
+  } catch { /* silently fail */ }
+}
+
 // Copies an image into the project lorebook/images folder and returns the relative path.
 async function copyLoreImage(projectPath: string, sourcePath: string, entryId: string, fieldId: string): Promise<string> {
   const ext = sourcePath.split('.').pop() ?? 'png'
@@ -499,6 +512,52 @@ const FnrHighlight = Mark.create({
   },
   renderHTML() {
     return ['mark', { 'data-fnr': '', class: 'fnr-highlight' }, 0]
+  },
+})
+
+const CommentStart = TiptapNode.create({
+  name: 'commentStart',
+  group: 'inline',
+  inline: true,
+  atom: true,
+  selectable: false,
+  draggable: false,
+
+  addAttributes() {
+    return {
+      'data-id': { default: null },
+    }
+  },
+
+  parseHTML() {
+    return [{ tag: 'x-comment-start' }]
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ['x-comment-start', HTMLAttributes]
+  },
+})
+
+const CommentEnd = TiptapNode.create({
+  name: 'commentEnd',
+  group: 'inline',
+  inline: true,
+  atom: true,
+  selectable: false,
+  draggable: false,
+
+  addAttributes() {
+    return {
+      'data-id': { default: null },
+    }
+  },
+
+  parseHTML() {
+    return [{ tag: 'x-comment-end' }]
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ['x-comment-end', HTMLAttributes]
   },
 })
 
@@ -664,7 +723,7 @@ export default function App() {
   const [confirmEmptyTrash, setConfirmEmptyTrash] = useState(false)
 
 // ── Workspace state ──
-const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('editor')
+  const [workspace, setWorkspace] = useState<'editor' | 'revision' | 'lorebook' | 'mindmap'>('editor')
 
   // ── Binder states ──
   const [binderOpen, setBinderOpen] = useState(true)
@@ -767,6 +826,23 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
   const [confirmHardDeleteField, setConfirmHardDeleteField] = useState<{ categoryId: string; fieldId: string; label: string } | null>(null)
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
 
+  // ── Revision workspace state ──
+  const [revisionComments, setRevisionComments] = useState<RevisionComment[]>([])
+  const revisionCommentsRef = useRef<RevisionComment[]>([])
+  const [revisionActiveId, setRevisionActiveId] = useState<number | null>(null)
+  const [revisionContent, setRevisionContent] = useState<string>('')    // read-only HTML
+  const [revisionTitle, setRevisionTitle] = useState<string>('')
+  const [revisionPendingComment, setRevisionPendingComment] = useState<{
+    quote: string
+    wrappedHtml: string
+  } | null>(null)
+  const [revisionActiveCommentId, setRevisionActiveCommentId] = useState<string | null>(null)
+  const [draftText, setDraftText] = useState('')
+  const [confirmDeleteRevisionComment, setConfirmDeleteRevisionComment] = useState<string | null>(null)
+  const revisionScrollRef = useRef<HTMLDivElement>(null)
+
+
+
   // Settings helpers
   const DEFAULT_SETTINGS = {
     zoom: 100,
@@ -799,6 +875,8 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
       StarterKit,
       Placeholder.configure({ placeholder: 'Begin writing…' }),
       FnrHighlight,
+      CommentStart,
+      CommentEnd,
     ],
     content: '',
     immediatelyRender: false,
@@ -840,23 +918,6 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
   useEffect(() => { activeIdRef.current = activeId }, [activeId])
   useEffect(() => { dragIdRef.current = dragId }, [dragId])
   useEffect(() => { dropTargetRef.current = dropTarget }, [dropTarget])
-
-  useEffect(() => {
-    if (activeId !== null && editor) {
-      const node = findNode(tree, activeId)
-      if (node && node.type === 'doc') {
-        setTitleValue(node.title)
-        const content = ''
-        bodyHtmlRef.current = content
-        editor.commands.setContent(content, { emitUpdate: false })
-        const div = document.createElement('div')
-        div.innerHTML = content
-        const text = div.textContent ?? ''
-        setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0)
-        setCharCount(text.length)
-      }
-    }
-  }, [activeId, editor])
 
   useEffect(() => {
     loadRecentProjects().then(setRecentProjects)
@@ -1030,6 +1091,14 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
     window.addEventListener('click', handle)
     return () => window.removeEventListener('click', handle)
   }, [tabContextMenu])
+
+  useEffect(() => {
+    const handleMouseUp = () => {
+      setTimeout(handleTextSelect, 10)
+    }
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => document.removeEventListener('mouseup', handleMouseUp)
+  }, [revisionActiveId, revisionPendingComment])
   
 
   // #endregion
@@ -1044,7 +1113,6 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
     const node = findNode(clone, activeIdRef.current)
     if (node && node.type === 'doc' && projectRef.current) {
       const cleanHtml = bodyHtmlRef.current.replace(/<mark data-fnr="" class="fnr-highlight">(.*?)<\/mark>/g, '$1')
-      // Update the active tab's content in the ref
       const updatedTabs = sceneTabsRef.current.map((t, i) =>
         i === activeTabIndex ? { ...t, content: cleanHtml } : t
       )
@@ -1085,8 +1153,9 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
       const tabs = parseSceneTabs(raw)
       setSceneTabs(tabs)
       sceneTabsRef.current = tabs
-      setActiveTabIndex(0)
-      const content = tabs[0]?.content ?? ''
+      const lastIndex = tabs.length - 1
+      setActiveTabIndex(lastIndex)
+      const content = tabs[lastIndex]?.content ?? ''
       bodyHtmlRef.current = content
       editor?.commands.setContent(content, { emitUpdate: false })
       const div = document.createElement('div')
@@ -1094,7 +1163,11 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
       const text = div.textContent ?? ''
       setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0)
       setCharCount(text.length)
-      setTitleValue(node.title)
+      setTitleValue(tabs.length > 1 ? `${node.title} — ${tabs[lastIndex].name}` : node.title)
+      const revisionContent = tabs[tabs.length - 1]?.content ?? ''
+      setRevisionContent(revisionContent)
+      setRevisionTitle(node.title)
+      setRevisionActiveId(id)
       computeChapterWordCount()
       computeManuscriptWordCount()
     }
@@ -1232,6 +1305,7 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
         const serialized = serializeSceneTabs(updatedTabs, rawFileRef.current)
         rawFileRef.current = serialized
         writeSceneFile(projectRef.current.path, node.file, serialized)
+        setTitleValue(updatedTabs.length > 1 ? `${node.title} — ${updatedTabs[index].name}` : node.title)
       }
     }
     // Load new tab
@@ -1266,6 +1340,7 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
         const serialized = serializeSceneTabs(newTabs, rawFileRef.current)
         rawFileRef.current = serialized
         writeSceneFile(projectRef.current.path, node.file, serialized)
+        setTitleValue(newTabs.length > 1 ? `${node.title} — ${newTab.name}` : node.title)
       }
     }
     setRenamingTabIndex(newIndex)
@@ -1280,9 +1355,10 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
     sceneTabsRef.current = updatedTabs
     setSceneTabs(updatedTabs)
     setRenamingTabIndex(null)
-    if (activeIdRef.current !== null && projectRef.current) {
-      const node = findNode(treeRef.current, activeIdRef.current)
-      if (node && node.type === 'doc') {
+    const node = findNode(treeRef.current, activeIdRef.current ?? -1)
+    if (node && node.type === 'doc') {
+      setTitleValue(updatedTabs.length > 1 ? `${node.title} — ${label}` : node.title)
+      if (projectRef.current) {
         const serialized = serializeSceneTabs(updatedTabs, rawFileRef.current)
         rawFileRef.current = serialized
         writeSceneFile(projectRef.current.path, node.file, serialized)
@@ -1350,6 +1426,37 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
 
   // #endregion
 
+  // #region === HANDLERS: REVISION ===
+
+  const handleTextSelect = () => {
+    const sel = window.getSelection()
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) return
+    const quote = sel.toString().trim()
+    const range = sel.getRangeAt(0).cloneRange()
+    if (range.collapsed) return
+    const revisionBody = document.getElementById('revision-body')
+    if (!revisionBody || !revisionBody.contains(range.commonAncestorContainer)) return
+
+    const tempId = 'pending'
+    const endMarker = document.createElement('x-comment-end')
+    endMarker.setAttribute('data-id', tempId)
+    const endRange = range.cloneRange()
+    endRange.collapse(false)
+    endRange.insertNode(endMarker)
+
+    const startMarker = document.createElement('x-comment-start')
+    startMarker.setAttribute('data-id', tempId)
+    const startRange = range.cloneRange()
+    startRange.collapse(true)
+    startRange.insertNode(startMarker)
+
+    window.getSelection()?.removeAllRanges()
+
+    const wrappedHtml = revisionBody.innerHTML
+    setRevisionPendingComment({ quote, wrappedHtml })
+    setDraftText('')
+  }
+
   // #region === HANDLERS: LORE BOOK ===
 
   // Opens the template editor for a new category.
@@ -1395,6 +1502,117 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
     }
     setConfirmDeleteLoreCategory(null)
   }
+
+  // #region === HANDLERS: REVISION ===
+
+  // Generates a unique revision comment id.
+  const generateRevisionId = () =>
+    `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+
+  // Loads a scene into the revision viewer (read-only).
+  const selectRevisionDoc = async (id: number) => {
+    await selectDoc(id)
+    const node = findNode(treeRef.current, id)
+    if (node && node.type === 'doc' && projectRef.current) {
+      const raw = await readSceneFile(projectRef.current.path, node.file)
+      const tabs = parseSceneTabs(raw)
+      setRevisionContent(tabs[tabs.length - 1]?.content ?? '')
+    }
+  }
+
+  // Adds a new comment anchored to the current text selection.
+  const addRevisionComment = async (quote: string, text: string) => {
+    if (!projectRef.current || !revisionActiveId || !revisionPendingComment) return
+    const id = generateRevisionId()
+    const newComment: RevisionComment = {
+      id, sceneId: revisionActiveId, quote, text,
+      createdAt: Date.now(), resolved: false,
+    }
+
+    // Replace the temporary 'pending' id with the real comment id
+    const wrapped = revisionPendingComment.wrappedHtml
+      .replace(/data-id="pending"/g, `data-id="${id}"`)
+
+    const node = findNode(treeRef.current, revisionActiveId)
+    if (node && node.type === 'doc') {
+      const raw = await readSceneFile(projectRef.current.path, node.file)
+      const tabs = parseSceneTabs(raw)
+      const lastIndex = tabs.length - 1
+      const updatedTabs = tabs.map((t, i) => i === lastIndex ? { ...t, content: wrapped } : t)
+      const serialized = serializeSceneTabs(updatedTabs, raw)
+      await writeSceneFile(projectRef.current.path, node.file, serialized)
+      rawFileRef.current = serialized
+      setRevisionContent(wrapped)
+      if (revisionActiveId === activeIdRef.current) {
+        const editorTabs = sceneTabsRef.current.map((t, i) =>
+          i === sceneTabsRef.current.length - 1 ? { ...t, content: wrapped } : t
+        )
+        sceneTabsRef.current = editorTabs
+        setSceneTabs(editorTabs)
+        bodyHtmlRef.current = wrapped
+        editor?.commands.setContent(wrapped, { emitUpdate: false })
+      }
+    }
+
+    const updated = [...revisionCommentsRef.current, newComment]
+    revisionCommentsRef.current = updated
+    setRevisionComments(updated)
+    setRevisionPendingComment(null)
+    setRevisionActiveCommentId(id)
+    await writeRevisionFile(projectRef.current.path, updated)
+  }
+
+  // Resolves (hides) a comment.
+  const resolveRevisionComment = async (id: string) => {
+    if (!projectRef.current) return
+    const updated = revisionCommentsRef.current.map(c =>
+      c.id === id ? { ...c, resolved: true } : c
+    )
+    revisionCommentsRef.current = updated
+    setRevisionComments(updated)
+    if (revisionActiveCommentId === id) setRevisionActiveCommentId(null)
+    await writeRevisionFile(projectRef.current.path, updated)
+  }
+
+  // Permanently deletes a comment.
+  const deleteRevisionComment = async (id: string) => {
+    if (!projectRef.current) return
+
+    // Strip delimiters from scene file
+    const comment = revisionCommentsRef.current.find(c => c.id === id)
+    if (comment) {
+      const node = findNode(treeRef.current, comment.sceneId)
+      if (node && node.type === 'doc') {
+        const raw = await readSceneFile(projectRef.current.path, node.file)
+        const stripped = raw
+          .replace(new RegExp(`<x-comment-start data-id="${id}"></x-comment-start>`, 'g'), '')
+          .replace(new RegExp(`<x-comment-end data-id="${id}"></x-comment-end>`, 'g'), '')
+        await writeSceneFile(projectRef.current.path, node.file, stripped)
+        if (comment.sceneId === revisionActiveId) {
+          const tabs = parseSceneTabs(stripped)
+          setRevisionContent(tabs[tabs.length - 1]?.content ?? '')
+        }
+      }
+    }
+
+    const updated = revisionCommentsRef.current.filter(c => c.id !== id)
+    revisionCommentsRef.current = updated
+    setRevisionComments(updated)
+    if (revisionActiveCommentId === id) setRevisionActiveCommentId(null)
+    await writeRevisionFile(projectRef.current.path, updated)
+  }
+
+  const unresolveRevisionComment = async (id: string) => {
+    if (!projectRef.current) return
+    const updated = revisionCommentsRef.current.map(c =>
+      c.id === id ? { ...c, resolved: false } : c
+    )
+    revisionCommentsRef.current = updated
+    setRevisionComments(updated)
+    await writeRevisionFile(projectRef.current.path, updated)
+  }
+
+  // #endregion
 
   // Opens entry editor for a new entry.
   const openNewEntryEditor = () => {
@@ -1923,6 +2141,14 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
     setActiveLoreCategoryId(null)
     setLoreTemplateEditor(null)
     setLoreEntryEditor(null)
+    setRevisionComments([])
+    revisionCommentsRef.current = []
+    setRevisionActiveId(null)
+    setRevisionContent('')
+    setRevisionTitle('')
+    setRevisionPendingComment(null)
+    setRevisionActiveCommentId(null)
+    setDraftText('')
   }
 
   // Exports the manuscript folder to a DOCX document.
@@ -2041,6 +2267,7 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
   // Creates a new project folder, default tree, and project.json.
   const createProject = async () => {
     if (!newProjectName.trim() || !newProjectParent) return
+    closeProject()
     try {
       const projectPath = await join(newProjectParent, newProjectName.trim())
       await mkdir(projectPath, { recursive: true })
@@ -2082,14 +2309,11 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
       setStyles(defaultStyles)
       setTree(defaultTree)
       treeRef.current = defaultTree
-      setActiveId(null)
-      setTitleValue('')
-      bodyHtmlRef.current = ''
-      editor?.commands.setContent('')
       setShowNewProject(false)
       setNewProjectName('')
       setNewProjectParent('')
       setRecentProjects(await loadRecentProjects())
+      await selectDoc(sceneId)
     } catch (e) {
       showMessage('Failed to create project: ' + String(e), 'Error', 'error')
     }
@@ -2118,6 +2342,9 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
     const lore = await readLoreBookFile(path)
     setLoreBook(lore)
     loreBookRef.current = lore
+    const revComments = await readRevisionFile(path)
+    setRevisionComments(revComments)
+    revisionCommentsRef.current = revComments
     setStyles(loadedStyles)
     const restoredId = (data.lastActiveId as number | null) ?? null
     setActiveId(restoredId)
@@ -2237,10 +2464,7 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
     rawFileRef.current = defaultRaw
     setActiveTabIndex(0)
     setRenamingId(id)
-    setActiveId(id)
-    setTitleValue('New scene')
-    bodyHtmlRef.current = ''
-    editor?.commands.setContent('')
+    selectDoc(id)
   }
 
   // Adds a new binder folder, then starts rename mode.
@@ -2546,10 +2770,9 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
               setDropTarget(next)
             }}
             onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDrop(n.id) }}
-            onClick={() => {
-              if (dragIdRef.current !== null) return
-              n.type === 'doc' ? selectDoc(n.id) : toggleFolder(n.id)
-            }}
+            onClick={() => n.type === 'doc'
+              ? (workspace === 'revision' ? selectRevisionDoc(n.id) : selectDoc(n.id))
+              : toggleFolder(n.id)}
             onDoubleClick={() => {
               if (n.id === 1 || n.id === 2) return
               setRenamingId(n.id)
@@ -3142,6 +3365,227 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
 
   // #endregion
 
+  // #region === RENDER: REVISION WORKSPACE ===
+
+  const RevisionView = () => {
+    const activeComments = revisionComments
+      .filter(c => c.sceneId === revisionActiveId)
+      .sort((a, b) => {
+        if (a.resolved !== b.resolved) return a.resolved ? 1 : -1
+        return a.createdAt - b.createdAt
+      })
+
+    const renderAnnotatedHtml = (html: string): string => {
+      let result = html
+
+      activeComments.forEach(c => {
+        const isResolved = c.resolved
+        const isActive = revisionActiveCommentId === c.id
+        const cls = [
+          'revision-highlight',
+          isActive ? 'revision-highlight--active' : '',
+          isResolved ? 'revision-highlight--resolved' : '',
+        ].filter(Boolean).join(' ')
+
+        const startTag = `<x-comment-start data-id="${c.id}"></x-comment-start>`
+        const endTag = `<x-comment-end data-id="${c.id}"></x-comment-end>`
+
+        if (!result.includes(startTag) || !result.includes(endTag)) return
+
+        // Split at the delimiters
+        const beforeStart = result.slice(0, result.indexOf(startTag))
+        const afterStart = result.slice(result.indexOf(startTag) + startTag.length)
+        const middle = afterStart.slice(0, afterStart.indexOf(endTag))
+        const afterEnd = afterStart.slice(afterStart.indexOf(endTag) + endTag.length)
+
+        // Split the middle into segments by paragraph boundaries
+        const segments = middle.split(/(?=<p[^>]*>)|(?<=<\/p>)/)
+        const wrappedMiddle = segments.map(segment => {
+          if (segment.match(/^<p[^>]*>/)) {
+            // Complete or partial opening paragraph
+            return segment.replace(
+              /^(<p[^>]*>)([\s\S]*)(<\/p>)$/,
+              (_, open, content, close) =>
+                `${open}<mark class="${cls}" data-comment-id="${c.id}">${content}</mark>${close}`
+            ).replace(
+              /^(<p[^>]*>)([\s\S]*)$/,
+              (_, open, content) =>
+                `${open}<mark class="${cls}" data-comment-id="${c.id}">${content}</mark>`
+            )
+          }
+          // Leading fragment (text before first paragraph close)
+          return segment.replace(
+            /^([\s\S]*?)(<\/p>)$/,
+            (_, content, close) =>
+              `<mark class="${cls}" data-comment-id="${c.id}">${content}</mark>${close}`
+          )
+        }).join('')
+
+        const finalMiddle = wrappedMiddle === middle
+          ? `<mark class="${cls}" data-comment-id="${c.id}">${middle}</mark>`
+          : wrappedMiddle
+
+        result = beforeStart + finalMiddle + afterEnd
+      })
+
+      return result
+    }
+
+    if (!revisionActiveId) {
+      return (
+        <div id="revision-empty">
+          <i className="ti ti-message-circle" aria-hidden="true" />
+          <p>Select a scene from the binder to review</p>
+        </div>
+      )
+    }
+
+    return (
+      <div id="revision-layout">
+        {/* ── Read-only text pane ── */}
+        <div id="revision-scroll" ref={revisionScrollRef}>
+          <div id="revision-wrap">
+            <div id="revision-title">{revisionTitle}</div>
+            <div
+              id="revision-body"
+              dangerouslySetInnerHTML={{ __html: renderAnnotatedHtml(revisionContent) }}
+              onClick={e => {
+                const target = e.target as HTMLElement
+                const mark = target.closest('[data-comment-id]') as HTMLElement | null
+                if (mark) {
+                  const cid = mark.dataset.commentId ?? null
+                  setRevisionActiveCommentId(cid)
+                }
+              }}
+            />
+          </div>
+        </div>
+
+        {/* ── Comments pane ── */}
+        <div id="revision-comments-pane">
+          <div id="revision-comments-header">
+            <span>Comments</span>
+            {activeComments.filter(c => !c.resolved).length > 0 && (
+              <span className="revision-comments-count">
+                {activeComments.filter(c => !c.resolved).length}
+              </span>
+            )}
+          </div>
+
+          <div id="revision-comments-list">
+            {/* Pending new comment composer */}
+            {revisionPendingComment && (
+              <div className="revision-comment revision-comment--pending">
+                <div className="revision-comment-quote">
+                  <i className="ti ti-quote" aria-hidden="true" />
+                  {revisionPendingComment.quote.length > 120
+                    ? revisionPendingComment.quote.slice(0, 120) + '…'
+                    : revisionPendingComment.quote}
+                </div>
+                <textarea
+                  className="revision-comment-input"
+                  placeholder="Add a comment…"
+                  value={draftText}
+                  autoFocus
+                  onChange={e => setDraftText(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'z' || e.key === 'y') e.stopPropagation()
+                    if (e.key === 'Escape') setRevisionPendingComment(null)
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      if (draftText.trim()) addRevisionComment(revisionPendingComment.quote, draftText.trim())
+                    }
+                  }}
+                />
+                <div className="revision-comment-actions">
+                  <button
+                    className="revision-btn revision-btn--ghost"
+                    onClick={() => {
+                      // Strip temporary pending delimiters from the revision view
+                      const stripped = revisionContent
+                        .replace(/<x-comment-start data-id="pending"><\/x-comment-start>/g, '')
+                        .replace(/<x-comment-end data-id="pending"><\/x-comment-end>/g, '')
+                      setRevisionContent(stripped)
+                      setRevisionPendingComment(null)
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="revision-btn"
+                    disabled={!draftText.trim()}
+                    onClick={() => {
+                      if (draftText.trim())
+                        addRevisionComment(revisionPendingComment.quote, draftText.trim())
+                    }}
+                  >
+                    Comment
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeComments.length === 0 && !revisionPendingComment && (
+              <div className="revision-comments-empty">
+                <i className="ti ti-message-circle-off" aria-hidden="true" />
+                <p>No comments yet</p>
+                <p className="revision-comments-empty-hint">Select text to add one</p>
+              </div>
+            )}
+
+            {activeComments.map(c => (
+              <div
+                key={c.id}
+                className={`revision-comment${revisionActiveCommentId === c.id ? ' revision-comment--active' : ''}${c.resolved ? ' revision-comment--resolved' : ''}`}
+                onClick={() => setRevisionActiveCommentId(c.id === revisionActiveCommentId ? null : c.id)}
+              >
+                <div className="revision-comment-meta">
+                  <span className="revision-comment-author">{c.author}</span>
+                  <span className="revision-comment-date">
+                    {new Date(c.createdAt).toLocaleDateString(undefined, {
+                      month: 'short', day: 'numeric',
+                    })}
+                  </span>
+                </div>
+                <div className="revision-comment-quote">
+                  <i className="ti ti-quote" aria-hidden="true" />
+                  {c.quote.length > 100 ? c.quote.slice(0, 100) + '…' : c.quote}
+                </div>
+                <div className="revision-comment-text">
+                  {c.text}
+                </div>
+                <div className="revision-comment-actions">
+                  {!c.resolved ? (
+                    <button
+                      className="revision-btn revision-btn--ghost revision-btn--sm"
+                      onClick={e => { e.stopPropagation(); resolveRevisionComment(c.id) }}
+                    >
+                      <i className="ti ti-check" /> Resolve
+                    </button>
+                  ) : (
+                    <button
+                      className="revision-btn revision-btn--ghost revision-btn--sm"
+                      onClick={e => { e.stopPropagation(); unresolveRevisionComment(c.id) }}
+                    >
+                      <i className="ti ti-arrow-back-up" /> Unresolve
+                    </button>
+                  )}
+                  <button
+                    className="revision-btn revision-btn--ghost revision-btn--sm revision-btn--danger"
+                    onClick={e => { e.stopPropagation(); setConfirmDeleteRevisionComment(c.id) }}
+                  >
+                    <i className="ti ti-trash" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // #endregion
+
   // #region === RENDER HELPERS: LORE BOOK ===
 
   const LoreBookView = () => {
@@ -3649,7 +4093,7 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
         <span style={{ marginLeft: 'auto', fontSize: 11, color: '#858585', paddingRight: 12 }}>{saveLabel}</span>
       </div>
 
-      <div id="sidebar" className={`${binderOpen ? '' : 'collapsed'} ${workspace !== 'editor' ? 'hidden' : ''}`}>
+      <div id="sidebar" className={`${binderOpen ? '' : 'collapsed'} ${workspace !== 'editor' && workspace !== 'revision' ? 'hidden' : ''}`}>
         <div id="sidebar-header">
           {binderOpen && <span>Binder</span>}
           <div style={{ display: 'flex', flexDirection: binderOpen ? 'row' : 'column', gap: 2, alignItems: 'center' }}>
@@ -3902,6 +4346,25 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
             <span>Editor</span>
           </button>
           <button
+            className={workspace === 'revision' ? 'active' : ''}
+            onClick={() => {
+              if (revisionActiveId !== null) {
+                const tabs = sceneTabsRef.current
+                const lastIndex = tabs.length - 1
+                // Use bodyHtmlRef for the current live content
+                const updatedTabs = tabs.map((t, i) =>
+                  i === activeTabIndex ? { ...t, content: bodyHtmlRef.current } : t
+                )
+                setRevisionContent(updatedTabs[lastIndex]?.content ?? '')
+              }
+              setWorkspace('revision')
+            }}
+            title="Revision"
+          >
+            <i className="ti ti-message-circle" aria-hidden="true" />
+            <span>Revision</span>
+          </button>
+          <button
             className={workspace === 'lorebook' ? 'active' : ''}
             onClick={() => setWorkspace('lorebook')}
             title="Lore Book"
@@ -4015,6 +4478,23 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
         )}
 
         {workspace === 'lorebook' && <LoreBookView />}
+        {workspace === 'revision' && RevisionView()}
+
+        {confirmDeleteRevisionComment && (
+          <div className="modal-overlay">
+            <div className="modal-box">
+              <div className="modal-title">Delete Comment</div>
+              <div className="modal-body">This comment will be permanently deleted and cannot be recovered.</div>
+              <div className="modal-footer">
+                <button className="welcome-btn" onClick={() => setConfirmDeleteRevisionComment(null)}>Cancel</button>
+                <button className="welcome-btn" style={{ color: '#cc8888' }} onClick={async () => {
+                  await deleteRevisionComment(confirmDeleteRevisionComment)
+                  setConfirmDeleteRevisionComment(null)
+                }}>Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {workspace === 'mindmap' && (
           <div id="workspace-placeholder">
@@ -4329,7 +4809,6 @@ const [workspace, setWorkspace] = useState<'editor' | 'lorebook' | 'mindmap'>('e
           {/* Duplicate — not for protected nodes */}
           {contextMenu.node.id !== 1 && contextMenu.node.id !== 2 && (
             <button className="ctx-menu-item" onClick={async () => {
-              console.log('duplicate clicked, node:', contextMenu.node)
               await duplicateNode(contextMenu.node.id)
               setContextMenu(null)
             }}>
