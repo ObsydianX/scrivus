@@ -51,6 +51,8 @@ type Project = {
   path: string
   tree: TreeNode[]
   styles: ProjectStyles
+  settings: ProjectSettings
+  compileSelections: Record<string, string>
 }
 
 type ChapterStyle = {
@@ -112,19 +114,60 @@ type LoreBook = {
   categories: LoreCategory[]
 }
 
+type ProjectSettings = {
+  author: string
+  title: string
+  subtitle: string
+}
+
+type CompileSceneEntry = {
+  docId: number
+  fileId: string
+  label: string
+  tabs: string[]
+  selectedTab: string
+  included: boolean
+}
+
+type CompileChapterEntry = {
+  folderId: number
+  label: string
+  included: boolean
+  scenes: CompileSceneEntry[]
+}
+
 // A single inline comment anchored to a text selection in revision mode.
 type RevisionComment = {
   id: string
   sceneId: number
-  quote: string        // kept for display in the comment card
+  quote: string
   text: string
   createdAt: number
   resolved: boolean
+  startOffset: number
+  endOffset: number
 }
+
 
 // #endregion
 
 // #region === CONSTANTS & DEFAULTS ===
+
+const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
+  author: '',
+  title: '',
+  subtitle: '',
+}
+
+const COMPILE_STYLE_PRESETS = [
+  'Standard Manuscript',
+  'Beta Reader Copy',
+  'Personal Archive',
+]
+
+const LOREM_PREVIEW = `Lorem ipsum odor amet, consectetuer adipiscing elit. Rutrum quisque himenaeos volutpat dui faucibus ridiculus. Mus semper auctor nibh; mollis taciti natoque congue. Dis aliquam hendrerit ullamcorper accumsan fringilla. Pharetra dapibus consequat fringilla senectus porta. Tortor nisi quisque class fermentum amet tortor faucibus. Nascetur mi aptent facilisi; augue duis praesent condimentum lacinia. Vitae conubia blandit scelerisque nisi consequat proin feugiat netus eros.
+
+    Morbi fames eros facilisi scelerisque eleifend felis. Proin senectus pulvinar feugiat; rhoncus facilisi porta. Amet augue consequat porttitor per sodales. Taciti nascetur tempor porttitor egestas senectus vel.`
 
 // Default typography/style settings used for new projects and fallback loads.
 const DEFAULT_STYLES: ProjectStyles = {
@@ -171,7 +214,7 @@ function findParentFolder(nodes: TreeNode[], id: number, parent: FolderNode | nu
     if (n.id === id) return parent
     if (n.type === 'folder') {
       const found = findParentFolder(n.children, id, n)
-      if (found !== undefined) return found
+      if (found !== null) return found
     }
   }
   return null
@@ -240,6 +283,14 @@ function htmlToPlainLines(html: string): string[] {
   return lines.length ? lines : [div.textContent ?? '']
 }
 
+function escapeAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
 // #endregion
 
 // #region === PERSISTENCE HELPERS ===
@@ -255,6 +306,8 @@ async function saveProjectToDisk(project: Project, activeId?: number) {
     nextId,
     lastActiveId: activeId ?? null,
     styles: project.styles,
+    settings: project.settings ?? DEFAULT_PROJECT_SETTINGS,
+    compileSelections: project.compileSelections ?? {},
   }
   const projectFile = await join(project.path, 'project.json')
   await writeTextFile(projectFile, JSON.stringify(projectJson, null, 2))
@@ -500,6 +553,97 @@ async function collectCompileNodes(
   return result
 }
 
+// Reads all manuscript scenes and builds the compile chapter/scene selection structure.
+async function buildCompileChapters(
+  tree: TreeNode[],
+  projectPath: string
+): Promise<CompileChapterEntry[]> {
+  const manuscript = tree.find(n => n.id === 1)
+  if (!manuscript || manuscript.type !== 'folder') return []
+
+  const chapters: CompileChapterEntry[] = []
+
+  for (const n of manuscript.children) {
+    if (n.type === 'folder') {
+      const scenes: CompileSceneEntry[] = []
+      for (const child of n.children) {
+        if (child.type === 'doc') {
+          const raw = await readSceneFile(projectPath, child.file)
+          const tabs = parseSceneTabs(raw)
+          const tabNames = tabs.map(t => t.name)
+          scenes.push({
+            docId: child.id,
+            fileId: child.file,
+            label: child.label,
+            tabs: tabNames,
+            selectedTab: tabNames[tabNames.length - 1],
+            included: true,
+          })
+        }
+      }
+      chapters.push({
+        folderId: n.id,
+        label: n.label,
+        included: true,
+        scenes,
+      })
+    } else if (n.type === 'doc') {
+      // Top-level scene (no parent folder) — treat as its own chapter entry
+      const raw = await readSceneFile(projectPath, n.file)
+      const tabs = parseSceneTabs(raw)
+      const tabNames = tabs.map(t => t.name)
+      chapters.push({
+        folderId: n.id,
+        label: n.label,
+        included: true,
+        scenes: [{
+          docId: n.id,
+          fileId: n.file,
+          label: n.label,
+          tabs: tabNames,
+          selectedTab: tabNames[tabNames.length - 1],
+          included: true,
+        }],
+      })
+    }
+  }
+
+  return chapters
+}
+
+// Collects compile nodes respecting the user's chapter/scene selection and tab choice.
+async function collectCompileNodesFromSelection(
+  chapters: CompileChapterEntry[],
+  projectPath: string
+): Promise<({ type: 'heading'; label: string } | { type: 'body'; html: string })[]> {
+  const result: ({ type: 'heading'; label: string } | { type: 'body'; html: string })[] = []
+
+  for (const chapter of chapters) {
+    if (!chapter.included) continue
+    const includedScenes = chapter.scenes.filter(s => s.included)
+    if (includedScenes.length === 0) continue
+
+    // Only emit a heading if the chapter has more than one scene, or its label
+    // differs from the single scene label (i.e. it's a real folder, not a stub)
+    const isRealChapter = chapter.scenes.length > 1 || chapter.folderId !== chapter.scenes[0]?.docId
+    if (isRealChapter) {
+      result.push({ type: 'heading', label: chapter.label })
+    }
+
+    for (const scene of includedScenes) {
+      const raw = await readSceneFile(projectPath, scene.fileId)
+      const tabs = parseSceneTabs(raw)
+      const tab = scene.selectedTab === '__last__'
+        ? tabs[tabs.length - 1]
+        : (tabs.find(t => t.name === scene.selectedTab) ?? tabs[tabs.length - 1])
+      const html = tab?.content ?? ''
+      if (html.trim()) result.push({ type: 'body', html })
+    }
+  }
+
+  return result
+}
+
 // #endregion
 
 // #region === TIPTAP EXTENSIONS ===
@@ -721,6 +865,7 @@ export default function App() {
   const [confirmDelete, setConfirmDelete] = useState<{ sidecarId: string; node: TreeNode } | null>(null)
   const [confirmBinDelete, setConfirmBinDelete] = useState<{ id: number; label: string } | null>(null)
   const [confirmEmptyTrash, setConfirmEmptyTrash] = useState(false)
+  const sceneActiveTabRef = useRef<Record<number, number>>({})
 
 // ── Workspace state ──
   const [workspace, setWorkspace] = useState<'editor' | 'revision' | 'lorebook' | 'mindmap'>('editor')
@@ -804,6 +949,7 @@ export default function App() {
   // ── Scene Tabs state ──
   const [sceneTabs, setSceneTabs] = useState<SceneTab[]>([])
   const [activeTabIndex, setActiveTabIndex] = useState(0)
+  const activeTabIndexRef = useRef(0)
   const sceneTabsRef = useRef<SceneTab[]>([])
   const rawFileRef = useRef<string>('')
   const [renamingTabIndex, setRenamingTabIndex] = useState<number | null>(null)
@@ -812,6 +958,7 @@ export default function App() {
   const tabDragIndexRef = useRef<number | null>(null)
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; index: number } | null>(null)
   const [confirmDeleteTab, setConfirmDeleteTab] = useState<number | null>(null)
+  
 
   // ── Lore Book state ──
   const [loreBook, setLoreBook] = useState<LoreBook>({ categories: [] })
@@ -825,6 +972,14 @@ export default function App() {
   const [confirmDeleteLoreEntry, setConfirmDeleteLoreEntry] = useState<LoreEntry | null>(null)
   const [confirmHardDeleteField, setConfirmHardDeleteField] = useState<{ categoryId: string; fieldId: string; label: string } | null>(null)
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
+
+  // ── Compile modal state ──
+  const [showCompile, setShowCompile] = useState(false)
+  const [compileChapters, setCompileChapters] = useState<CompileChapterEntry[]>([])
+  const [compileLoading, setCompileLoading] = useState(false)
+  const [compileFrontMatter, setCompileFrontMatter] = useState(false)
+  const [compileFormat] = useState<'docx'>('docx')
+  const [compileStyle, setCompileStyle] = useState(COMPILE_STYLE_PRESETS[0])
 
   // ── Revision workspace state ──
   const [revisionComments, setRevisionComments] = useState<RevisionComment[]>([])
@@ -918,6 +1073,7 @@ export default function App() {
   useEffect(() => { activeIdRef.current = activeId }, [activeId])
   useEffect(() => { dragIdRef.current = dragId }, [dragId])
   useEffect(() => { dropTargetRef.current = dropTarget }, [dropTarget])
+  useEffect(() => { activeTabIndexRef.current = activeTabIndex }, [activeTabIndex])
 
   useEffect(() => {
     loadRecentProjects().then(setRecentProjects)
@@ -1114,7 +1270,7 @@ export default function App() {
     if (node && node.type === 'doc' && projectRef.current) {
       const cleanHtml = bodyHtmlRef.current.replace(/<mark data-fnr="" class="fnr-highlight">(.*?)<\/mark>/g, '$1')
       const updatedTabs = sceneTabsRef.current.map((t, i) =>
-        i === activeTabIndex ? { ...t, content: cleanHtml } : t
+        i === activeTabIndexRef.current ? { ...t, content: cleanHtml } : t  // ← use ref
       )
       sceneTabsRef.current = updatedTabs
       const serialized = serializeSceneTabs(updatedTabs, rawFileRef.current)
@@ -1126,7 +1282,7 @@ export default function App() {
     if (projectRef.current) {
       saveProjectToDisk({ ...projectRef.current, tree: clone }, activeIdRef.current ?? undefined)
     }
-  }, [activeTabIndex])
+  }, [])
 
   // Debounces autosave while the editor is changing.
   const triggerSave = useCallback(() => {
@@ -1153,9 +1309,15 @@ export default function App() {
       const tabs = parseSceneTabs(raw)
       setSceneTabs(tabs)
       sceneTabsRef.current = tabs
-      const lastIndex = tabs.length - 1
-      setActiveTabIndex(lastIndex)
-      const content = tabs[lastIndex]?.content ?? ''
+      const rememberedIndex = sceneActiveTabRef.current[id]
+      const safeIndex =
+        rememberedIndex !== undefined && rememberedIndex >= 0 && rememberedIndex < tabs.length
+          ? rememberedIndex
+          : tabs.length - 1
+
+      setActiveTabIndex(safeIndex)
+
+      const content = tabs[safeIndex]?.content ?? ''
       bodyHtmlRef.current = content
       editor?.commands.setContent(content, { emitUpdate: false })
       const div = document.createElement('div')
@@ -1163,7 +1325,7 @@ export default function App() {
       const text = div.textContent ?? ''
       setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0)
       setCharCount(text.length)
-      setTitleValue(tabs.length > 1 ? `${node.title} — ${tabs[lastIndex].name}` : node.title)
+      setTitleValue(tabs.length > 1 ? `${node.title} — ${tabs[safeIndex].name}` : node.title)
       const revisionContent = tabs[tabs.length - 1]?.content ?? ''
       setRevisionContent(revisionContent)
       setRevisionTitle(node.title)
@@ -1310,6 +1472,9 @@ export default function App() {
     }
     // Load new tab
     setActiveTabIndex(index)
+    if (activeIdRef.current !== null) {
+      sceneActiveTabRef.current[activeIdRef.current] = index
+    }
     const content = updatedTabs[index]?.content ?? ''
     bodyHtmlRef.current = content
     editor?.commands.setContent(content, { emitUpdate: false })
@@ -1967,33 +2132,74 @@ export default function App() {
     return div.innerHTML
   }
 
-  // Performs case-insensitive text replacement inside paragraph HTML.
-  const replaceInHtml = (html: string, find: string, replaceWith: string, onlyFirst = false): { result: string; count: number } => {
-    const div = document.createElement('div')
-    div.innerHTML = html
-    let count = 0
-    const q = find.toLowerCase()
-    const paragraphs = Array.from(div.querySelectorAll('p'))
+  // Performs case-insensitive text replacement inside actual text nodes.
+  // This preserves existing HTML tags and treats replacement text as plain text.
+  const replaceInHtml = (
+    html: string,
+    find: string,
+    replaceWith: string,
+    onlyFirst = false
+  ): { result: string; count: number } => {
+    const root = document.createElement('div')
+    root.innerHTML = html
 
-    for (let pi = 0; pi < paragraphs.length; pi++) {
-      const p = paragraphs[pi]
-      let text = p.innerHTML
-      let lower = text.toLowerCase()
-      let idx = lower.indexOf(q)
-      while (idx !== -1) {
-        text = text.slice(0, idx) + replaceWith + text.slice(idx + find.length)
-        count++
-        if (onlyFirst) {
-          p.innerHTML = text
-          return { result: div.innerHTML, count }
-        }
-        lower = text.toLowerCase()
-        idx = lower.indexOf(q, idx + replaceWith.length)
+    const needle = find.toLowerCase()
+    if (!needle) return { result: root.innerHTML, count: 0 }
+
+    let count = 0
+
+    const walker = document.createTreeWalker(
+      root,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode(node) {
+          const text = node.nodeValue ?? ''
+          return text.toLowerCase().includes(needle)
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_REJECT
+        },
       }
-      p.innerHTML = text
+    )
+
+    const textNodes: Text[] = []
+    let current = walker.nextNode()
+
+    while (current) {
+      textNodes.push(current as Text)
+      current = walker.nextNode()
     }
 
-    return { result: div.innerHTML, count }
+    for (const textNode of textNodes) {
+      const original = textNode.nodeValue ?? ''
+      const lower = original.toLowerCase()
+
+      let searchFrom = 0
+      let matchIndex = lower.indexOf(needle, searchFrom)
+
+      if (matchIndex === -1) continue
+
+      const fragment = document.createDocumentFragment()
+
+      while (matchIndex !== -1) {
+        fragment.appendChild(document.createTextNode(original.slice(searchFrom, matchIndex)))
+        fragment.appendChild(document.createTextNode(replaceWith))
+
+        count++
+        searchFrom = matchIndex + find.length
+
+        if (onlyFirst) break
+
+        matchIndex = lower.indexOf(needle, searchFrom)
+      }
+
+      fragment.appendChild(document.createTextNode(original.slice(searchFrom)))
+
+      textNode.parentNode?.replaceChild(fragment, textNode)
+
+      if (onlyFirst && count > 0) break
+    }
+
+    return { result: root.innerHTML, count }
   }
 
   // Replaces the next match in the current scene or manuscript.
@@ -2152,17 +2358,87 @@ export default function App() {
   }
 
   // Exports the manuscript folder to a DOCX document.
-  const compileProject = async () => {
+  // Opens the compile modal, reading all scene tabs up front.
+  const openCompileModal = async () => {
     if (!project) return
     setFileMenuOpen(false)
+    setCompileLoading(true)
+    setShowCompile(true)
+    const chapters = await buildCompileChapters(tree, project.path)
+    // Restore saved tab selections, defaulting to '__last__'
+    const selections = projectRef.current?.compileSelections ?? {}
+    const restored = chapters.map(ch => ({
+      ...ch,
+      scenes: ch.scenes.map(s => ({
+        ...s,
+        selectedTab: selections[s.fileId] ?? '__last__',
+      })),
+    }))
+    setCompileChapters(restored)
+    setCompileLoading(false)
+  }
 
-    const nodes = await collectCompileNodes(tree, project.path)
+  const updateCompileSelection = (fileId: string, value: string) => {
+    if (!projectRef.current) return
+    const updated: Project = {
+      ...projectRef.current,
+      compileSelections: {
+        ...projectRef.current.compileSelections,
+        [fileId]: value,
+      },
+    }
+    projectRef.current = updated
+    setProject(updated)
+    saveProjectToDisk(updated, activeIdRef.current ?? undefined)
+  }
+
+  // Exports the manuscript to DOCX using the current compile selection.
+  const compileProject = async () => {
+    if (!project) return
+
+    const nodes = await collectCompileNodesFromSelection(compileChapters, project.path)
     if (nodes.length === 0) {
-      showMessage('Nothing to export — add some content first.', 'Nothing to Export', 'warning')
+      showMessage('Nothing to export — no scenes are selected.', 'Nothing to Export', 'warning')
       return
     }
 
     const paragraphs = []
+
+    // ── Title page ──
+    if (compileFrontMatter) {
+      const settings = project.settings ?? DEFAULT_PROJECT_SETTINGS
+      if (settings.title) {
+        paragraphs.push(
+          new Paragraph({
+            children: [new TextRun({ text: settings.title, font: styles.chapter.font, size: styles.chapter.size * 2, bold: styles.chapter.bold, italics: styles.chapter.italic })],
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 3000, after: 200 },
+          })
+        )
+      }
+      if (settings.subtitle) {
+        paragraphs.push(
+          new Paragraph({
+            children: [new TextRun({ text: settings.subtitle, font: styles.body.font, size: (styles.body.size + 2) * 2 })],
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 0, after: 200 },
+          })
+        )
+      }
+      if (settings.author) {
+        paragraphs.push(
+          new Paragraph({
+            children: [new TextRun({ text: settings.author, font: styles.body.font, size: styles.body.size * 2 })],
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 200, after: 0 },
+          })
+        )
+      }
+      // Page break after title page
+      paragraphs.push(new Paragraph({ children: [], pageBreakBefore: true }))
+    }
+
+    // ── Body ──
     let firstHeading = true
     for (const node of nodes) {
       if (node.type === 'heading') {
@@ -2187,7 +2463,6 @@ export default function App() {
                   text: line,
                   font: styles.body.font,
                   size: styles.body.size * 2,
-                  bold: line === lines[0] ? false : undefined,
                 })
               ],
               spacing: {
@@ -2239,7 +2514,7 @@ export default function App() {
       if (!outputPath) return
 
       await writeFile(outputPath, uint8)
-      // const exportDir = outputPath.substring(0, Math.max(outputPath.lastIndexOf('/'), outputPath.lastIndexOf('\\')))
+      setShowCompile(false)
       showMessage(
         `Exported to ${outputPath}`,
         'Export Complete',
@@ -2299,7 +2574,14 @@ export default function App() {
       await writeSceneFile(projectPath, defaultFileId, defaultContent)
 
       const { defaultStyles } = await loadRecentData()
-      const newProj: Project = { name: newProjectName.trim(), path: projectPath, tree: defaultTree, styles: defaultStyles }
+      const newProj: Project = {
+        name: newProjectName.trim(),
+        path: projectPath,
+        tree: defaultTree,
+        styles: defaultStyles,
+        settings: DEFAULT_PROJECT_SETTINGS,
+        compileSelections: {},
+      }
 
       nextId = Math.max(nextId, 12)
       await saveProjectToDisk(newProj)
@@ -2329,6 +2611,8 @@ export default function App() {
       path,
       tree: loadedTree,
       styles: loadedStyles,
+      settings: (data.settings as ProjectSettings) ?? DEFAULT_PROJECT_SETTINGS,
+      compileSelections: (data.compileSelections as Record<string, string>) ?? {},
     }
     setProject(loadedProject)
     projectRef.current = loadedProject
@@ -2511,17 +2795,20 @@ export default function App() {
   // Deletes trashed files and sidecar metadata permanently.
   const permanentlyDelete = async (sidecarId: string, node: TreeNode) => {
     if (!projectRef.current) return
+
     try {
       const docs = collectDocs(node)
+
       for (const doc of docs) {
         const filePath = await join(projectRef.current.path, 'trash', `${doc.file}.md`)
         const fileExists = await exists(filePath)
         if (fileExists) await remove(filePath)
       }
+
       const sidecar = await join(projectRef.current.path, 'trash', `${sidecarId}.json`)
-      await remove(sidecar)
-      setTrashItems(prev => prev.filter(i => i.sidecarId !== sidecarId))
-      setConfirmDelete(null)
+      const sidecarExists = await exists(sidecar)
+      if (sidecarExists) await remove(sidecar)
+
       setTrashItems(prev => prev.filter(i => i.sidecarId !== sidecarId))
       setConfirmDelete(null)
 
@@ -2530,7 +2817,7 @@ export default function App() {
         setActiveId(null)
         setTitleValue('')
         bodyHtmlRef.current = ''
-        editor?.commands.setContent('')
+        editor?.commands.setContent('', { emitUpdate: false })
       }
     } catch (e) {
       showMessage('Failed to delete: ' + String(e), 'Error', 'error')
@@ -3036,7 +3323,7 @@ export default function App() {
           <div className="sep" />
           <button onClick={closeProject} disabled={!project}>Close Project</button>
           <div className="sep" />
-          <button onClick={compileProject} disabled={!project}>Compile</button>
+          <button onClick={() => openCompileModal()} disabled={!project}>Compile</button>
           <div className="sep" />
           <button onClick={() => exit(0)}>Exit</button>
         </div>
@@ -3100,7 +3387,7 @@ export default function App() {
   // Modal for creating a new project folder.
   const NewProjectModal = () => (
     <div className="modal-overlay">
-      <div className="modal-box" style={{ width: 400 }}>
+      <div className="modal-box modal-box-sm">
         <p className="modal-title">New Project</p>
         <div className="modal-field">
           <label className="modal-label">Project name</label>
@@ -3116,17 +3403,20 @@ export default function App() {
         </div>
         <div className="modal-field">
           <label className="modal-label">Location</label>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="modal-inline-row">
             <div className={`modal-input modal-path-display${!newProjectParent ? ' modal-path-empty' : ''}`}>
               {newProjectParent || 'No folder selected'}
             </div>
-            <button className="welcome-btn" style={{ whiteSpace: 'nowrap' }} onClick={pickParentFolder}>Browse…</button>
+            <button className="welcome-btn btn-nowrap" onClick={pickParentFolder}>Browse…</button>
           </div>
         </div>
         <div className="modal-footer">
           <button className="welcome-btn" onClick={() => { setShowNewProject(false); setNewProjectName(''); setNewProjectParent('') }}>Cancel</button>
-          <button className="welcome-btn modal-btn-create" onClick={createProject}
-            style={{ opacity: newProjectName.trim() && newProjectParent ? 1 : 0.4 }}>
+          <button
+            className={`welcome-btn modal-btn-create${newProjectName.trim() && newProjectParent ? '' : ' is-disabled-visual'
+              }`}
+            onClick={createProject}
+          >
             Create
           </button>
         </div>
@@ -3319,6 +3609,331 @@ export default function App() {
     )
   }
 
+  function CompileModal() {
+    return (
+      <div
+        style={{
+          position: 'fixed', inset: 0,
+          background: 'rgba(0,0,0,0.7)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 2000,
+        }}
+        onClick={() => setShowCompile(false)}
+      >
+        <div
+          style={{
+            background: '#1e1e1e',
+            border: '1px solid #111',
+            borderRadius: 6,
+            width: 860,
+            userSelect: 'none',
+            maxWidth: '95vw',
+            maxHeight: '85vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+            overflow: 'hidden',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+
+          {/* ── Header ── */}
+          <div style={{
+            padding: '12px 16px',
+            borderBottom: '1px solid #2a2a2a',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            flexShrink: 0,
+          }}>
+            <span style={{ color: '#c8c8c8', fontWeight: 600, fontSize: 13, letterSpacing: '0.04em' }}>
+              COMPILE MANUSCRIPT
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <select
+                value={compileStyle}
+                onChange={e => setCompileStyle(e.target.value)}
+                style={{
+                  background: '#2d2d2d', border: '1px solid #3a3a3a',
+                  borderRadius: 4, color: '#c8c8c8', fontSize: 12,
+                  padding: '4px 8px', cursor: 'pointer',
+                }}
+              >
+                {COMPILE_STYLE_PRESETS.map(p => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => setShowCompile(false)}
+                style={{
+                  background: 'none', border: 'none', color: '#666',
+                  cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 2,
+                }}
+              >
+                <i className="ti ti-x" />
+              </button>
+            </div>
+          </div>
+
+          {/* ── Body ── */}
+          {compileLoading
+            ? (
+              <div style={{
+                flex: 1, display: 'flex', alignItems: 'center',
+                justifyContent: 'center', color: '#555', fontSize: 13,
+              }}>
+                Reading scenes…
+              </div>
+            )
+            : (
+              <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+
+                {/* ── Left: Format ── */}
+                <div style={{
+                  width: 160, flexShrink: 0,
+                  borderRight: '1px solid #2a2a2a',
+                  padding: '16px 12px',
+                  display: 'flex', flexDirection: 'column', gap: 4,
+                }}>
+                  <div style={{ color: '#555', fontSize: 10, letterSpacing: '0.08em', marginBottom: 8 }}>
+                    FORMAT
+                  </div>
+                  {/* docx — active */}
+                  <label style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    color: '#c8c8c8', fontSize: 12, cursor: 'pointer',
+                  }}>
+                    <input
+                      type="radio"
+                      name="compile-format"
+                      checked={compileFormat === 'docx'}
+                      readOnly
+                      style={{ accentColor: '#888' }}
+                    />
+                    docx
+                  </label>
+                  {/* pdf — disabled stub */}
+                  <label style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    color: '#3a3a3a', fontSize: 12, cursor: 'not-allowed',
+                  }}>
+                    <input
+                      type="radio"
+                      name="compile-format"
+                      disabled
+                      style={{ accentColor: '#888' }}
+                    />
+                    pdf
+                  </label>
+
+                  {/* ── Front Matter ── */}
+                  <div style={{ color: '#555', fontSize: 10, letterSpacing: '0.08em', marginTop: 20, marginBottom: 8 }}>
+                    FRONT MATTER
+                  </div>
+                  <label style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    color: '#c8c8c8', fontSize: 12, cursor: 'pointer',
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={compileFrontMatter}
+                      onChange={e => setCompileFrontMatter(e.target.checked)}
+                      style={{ accentColor: '#888' }}
+                    />
+                    Title page
+                  </label>
+                </div>
+
+                {/* ── Middle: Preview ── */}
+                <div style={{
+                  flex: 1,
+                  borderRight: '1px solid #2a2a2a',
+                  padding: '16px',
+                  display: 'flex', flexDirection: 'column',
+                  overflow: 'hidden',
+                }}>
+                  <div style={{ color: '#555', fontSize: 10, letterSpacing: '0.08em', marginBottom: 12 }}>
+                    PREVIEW
+                  </div>
+                  <div style={{
+                    flex: 1,
+                    background: '#fff',
+                    borderRadius: 3,
+                    padding: '32px 40px',
+                    overflowY: 'auto',
+                  }}>
+                    {/* Simulated chapter heading */}
+                    <div style={{
+                      fontFamily: styles.chapter.font,
+                      fontSize: `${styles.chapter.size}pt`,
+                      fontWeight: styles.chapter.bold ? 700 : 400,
+                      fontStyle: styles.chapter.italic ? 'italic' : 'normal',
+                      color: '#111',
+                      marginBottom: 16,
+                    }}>
+                      Chapter One
+                    </div>
+                    {/* Lorem body paragraphs */}
+                    {LOREM_PREVIEW.split('\n\n').map((para, i) => (
+                      <p key={i} style={{
+                        fontFamily: styles.body.font,
+                        fontSize: `${styles.body.size}pt`,
+                        textAlign: styles.body.justification === 'both' ? 'justify'
+                          : styles.body.justification as 'left' | 'center' | 'right',
+                        textIndent: styles.body.firstLineIndent ? '2em' : '0',
+                        lineHeight: styles.body.lineSpacing > 0
+                          ? `${styles.body.lineSpacing * 1.2}em`
+                          : '1.85',
+                        margin: '0 0 8px 0',
+                        color: '#111',
+                      }}>
+                        {para.trim()}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ── Right: Scene Selection ── */}
+                <div style={{
+                  width: 260, flexShrink: 0,
+                  display: 'flex', flexDirection: 'column',
+                  overflow: 'hidden',
+                }}>
+                  <div style={{
+                    color: '#555', fontSize: 10, letterSpacing: '0.08em',
+                    padding: '16px 12px 8px',
+                    flexShrink: 0,
+                  }}>
+                    SCENE SELECTION
+                  </div>
+                  <div className="compile-scene-list" style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px' }}>
+                    {compileChapters.map((chapter, ci) => (
+                      <div key={chapter.folderId} style={{ marginBottom: 8 }}>
+
+                        {/* Chapter row */}
+                        <label style={{
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          color: '#c8c8c8', fontSize: 12, cursor: 'pointer',
+                          padding: '3px 0',
+                        }}>
+                          <input
+                            type="checkbox"
+                            className="compile-checkbox"
+                            checked={chapter.included}
+                            onChange={e => {
+                              const checked = e.target.checked
+                              setCompileChapters(prev => prev.map((ch, i) =>
+                                i !== ci ? ch : {
+                                  ...ch,
+                                  included: checked,
+                                  scenes: ch.scenes.map(s => ({ ...s, included: checked })),
+                                }
+                              ))
+                            }}
+                          />
+                          <span style={{ fontWeight: 600 }}>{chapter.label}</span>
+                        </label>
+
+                        {/* Scene rows */}
+                        {chapter.scenes.map((scene, si) => (
+                          <div key={scene.docId} style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            paddingLeft: 20, paddingTop: 2, paddingBottom: 2,
+                          }}>
+                            <input
+                              type="checkbox"
+                              checked={scene.included}
+                              style={{ accentColor: '#888', flexShrink: 0 }}
+                              onChange={e => {
+                                const checked = e.target.checked
+                                setCompileChapters(prev => prev.map((ch, ci2) => {
+                                  if (ci2 !== ci) return ch
+                                  const newScenes = ch.scenes.map((s, si2) =>
+                                    si2 !== si ? s : { ...s, included: checked }
+                                  )
+                                  const anyIncluded = newScenes.some(s => s.included)
+                                  return { ...ch, included: anyIncluded, scenes: newScenes }
+                                }))
+                              }}
+                            />
+                            <span style={{
+                              color: scene.included ? '#a0a0a0' : '#444',
+                              fontSize: 11, flex: 1,
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                            }}>
+                              {scene.label}
+                            </span>
+                            <select
+                              value={scene.selectedTab}
+                              disabled={!scene.included}
+                              onChange={e => {
+                                const val = e.target.value
+                                setCompileChapters(prev => prev.map((ch, ci2) =>
+                                  ci2 !== ci ? ch : {
+                                    ...ch,
+                                    scenes: ch.scenes.map((s, si2) =>
+                                      si2 !== si ? s : { ...s, selectedTab: val }
+                                    ),
+                                  }
+                                ))
+                                updateCompileSelection(scene.fileId, val)
+                              }}
+                              style={{
+                                background: '#2d2d2d',
+                                border: '1px solid #3a3a3a',
+                                borderRadius: 3,
+                                color: scene.included ? '#c8c8c8' : '#444',
+                                fontSize: 10,
+                                padding: '2px 4px',
+                                width: 110,
+                                minWidth: 110,
+                                maxWidth: 110,
+                                flexShrink: 0,
+                                overflow: 'hidden',
+                                cursor: scene.included ? 'pointer' : 'not-allowed',
+                              }}
+                            >
+                              <option value="__last__">Use Last Tab</option>
+                              {scene.tabs.map(t => (
+                                <option key={t} value={t}>{t}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+              </div>
+            )
+          }
+
+          {/* ── Footer ── */}
+          <div style={{
+            padding: '10px 16px',
+            borderTop: '1px solid #2a2a2a',
+            display: 'flex', justifyContent: 'flex-end', gap: 8,
+            flexShrink: 0,
+          }}>
+            <button
+              className="modal-btn"
+              onClick={() => setShowCompile(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="modal-btn modal-btn-primary"
+              onClick={compileProject}
+              disabled={compileLoading || compileChapters.every(ch => !ch.included)}
+            >
+              Export
+            </button>
+          </div>
+
+        </div>
+      </div>
+    )
+  }
+
   // #endregion
 
   // #region === HANDLERS: WORD COUNT ===
@@ -3381,48 +3996,55 @@ export default function App() {
       activeComments.forEach(c => {
         const isResolved = c.resolved
         const isActive = revisionActiveCommentId === c.id
+
         const cls = [
           'revision-highlight',
           isActive ? 'revision-highlight--active' : '',
           isResolved ? 'revision-highlight--resolved' : '',
         ].filter(Boolean).join(' ')
 
-        const startTag = `<x-comment-start data-id="${c.id}"></x-comment-start>`
-        const endTag = `<x-comment-end data-id="${c.id}"></x-comment-end>`
+        const safeId = escapeAttr(c.id)
+        const startTag = `<x-comment-start data-id="${safeId}"></x-comment-start>`
+        const endTag = `<x-comment-end data-id="${safeId}"></x-comment-end>`
 
-        if (!result.includes(startTag) || !result.includes(endTag)) return
+        const startIndex = result.indexOf(startTag)
+        const endIndex = result.indexOf(endTag)
 
-        // Split at the delimiters
-        const beforeStart = result.slice(0, result.indexOf(startTag))
-        const afterStart = result.slice(result.indexOf(startTag) + startTag.length)
+        if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) return
+
+        const beforeStart = result.slice(0, startIndex)
+        const afterStart = result.slice(startIndex + startTag.length)
         const middle = afterStart.slice(0, afterStart.indexOf(endTag))
         const afterEnd = afterStart.slice(afterStart.indexOf(endTag) + endTag.length)
 
-        // Split the middle into segments by paragraph boundaries
+        const wrap = (content: string) =>
+          `<mark class="${cls}" data-comment-id="${safeId}">${content}</mark>`
+
         const segments = middle.split(/(?=<p[^>]*>)|(?<=<\/p>)/)
+
         const wrappedMiddle = segments.map(segment => {
+          if (!segment) return segment
+
           if (segment.match(/^<p[^>]*>/)) {
-            // Complete or partial opening paragraph
-            return segment.replace(
-              /^(<p[^>]*>)([\s\S]*)(<\/p>)$/,
-              (_, open, content, close) =>
-                `${open}<mark class="${cls}" data-comment-id="${c.id}">${content}</mark>${close}`
-            ).replace(
-              /^(<p[^>]*>)([\s\S]*)$/,
-              (_, open, content) =>
-                `${open}<mark class="${cls}" data-comment-id="${c.id}">${content}</mark>`
-            )
+            return segment
+              .replace(
+                /^(<p[^>]*>)([\s\S]*)(<\/p>)$/,
+                (_match, open, content, close) => `${open}${wrap(content)}${close}`
+              )
+              .replace(
+                /^(<p[^>]*>)([\s\S]*)$/,
+                (_match, open, content) => `${open}${wrap(content)}`
+              )
           }
-          // Leading fragment (text before first paragraph close)
+
           return segment.replace(
             /^([\s\S]*?)(<\/p>)$/,
-            (_, content, close) =>
-              `<mark class="${cls}" data-comment-id="${c.id}">${content}</mark>${close}`
+            (_match, content, close) => `${wrap(content)}${close}`
           )
         }).join('')
 
         const finalMiddle = wrappedMiddle === middle
-          ? `<mark class="${cls}" data-comment-id="${c.id}">${middle}</mark>`
+          ? wrap(middle)
           : wrappedMiddle
 
         result = beforeStart + finalMiddle + afterEnd
@@ -3539,7 +4161,6 @@ export default function App() {
                 onClick={() => setRevisionActiveCommentId(c.id === revisionActiveCommentId ? null : c.id)}
               >
                 <div className="revision-comment-meta">
-                  <span className="revision-comment-author">{c.author}</span>
                   <span className="revision-comment-date">
                     {new Date(c.createdAt).toLocaleDateString(undefined, {
                       month: 'short', day: 'numeric',
@@ -4048,6 +4669,7 @@ export default function App() {
         {confirmDeleteLoreCategory && <ConfirmDeleteLoreCategoryModal />}
         {confirmDeleteLoreEntry && <ConfirmDeleteLoreEntryModal />}
         {confirmHardDeleteField && <ConfirmHardDeleteFieldModal />}
+        {showCompile && <CompileModal />}
         <i className="ti ti-feather welcome-icon" aria-hidden="true" />
         <p className="welcome-label">No project open</p>
         <div className={`welcome-actions${recentProjects.length ? ' welcome-actions-spaced' : ''}`}>
@@ -4903,6 +5525,7 @@ export default function App() {
       {confirmDeleteLoreCategory && <ConfirmDeleteLoreCategoryModal />}
       {confirmDeleteLoreEntry && <ConfirmDeleteLoreEntryModal />}
       {confirmHardDeleteField && <ConfirmHardDeleteFieldModal />}
+      {showCompile && <CompileModal />}
       
     </div>
   )

@@ -289,6 +289,46 @@ body,
   border-radius: 2px;
 }
 
+/* Compile modal scene selection scrollbar */
+.compile-scene-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.compile-scene-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.compile-scene-list::-webkit-scrollbar-thumb {
+  background: #3c3c3c;
+  border-radius: 2px;
+}
+
+.compile-scene-list::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+.modal-box-sm {
+  width: 400px;
+}
+
+.modal-box-xs {
+  width: 380px;
+}
+
+.modal-inline-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-nowrap {
+  white-space: nowrap;
+}
+
+.is-disabled-visual {
+  opacity: 0.4;
+}
+
 /* Shared row style for folders, scenes, and trash entries. */
 .tree-item {
   display: flex;
@@ -455,6 +495,40 @@ body,
 
 .welcome-btn:hover {
   background: #3c3c3c;
+  color: #ffffff;
+}
+
+/* Standard modal action buttons (Cancel / confirm). */
+.modal-btn {
+  border: 1px solid #3c3c3c;
+  background: #2d2d2d;
+  color: #cccccc;
+  cursor: pointer;
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.modal-btn:hover:not(:disabled) {
+  background: #3c3c3c;
+  color: #ffffff;
+}
+
+.modal-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.modal-btn-primary {
+  background: #007acc;
+  border-color: #007acc;
+  color: #ffffff;
+}
+
+.modal-btn-primary:hover:not(:disabled) {
+  background: #005fa3;
+  border-color: #005fa3;
   color: #ffffff;
 }
 
@@ -2006,9 +2080,17 @@ mark.fnr-highlight {
   background: #2a2d2e;
 }
 
+input[type="checkbox"] {
+  accent-color: #007acc;
+}
+
 .checklist-checkbox {
   flex-shrink: 0;
   cursor: pointer;
+}
+
+.compile-checkbox {
+  flex-shrink: 0;
   accent-color: #007acc;
 }
 
