@@ -37,3 +37,16 @@ Before publishing a Windows installer:
 - Confirm the Start Menu shortcut is placed under Scrivus.
 - Confirm uninstall removes the app and shortcuts.
 - Confirm uninstall does not delete project folders, app data settings, or local backups.
+
+## GitHub Actions Release Builds
+
+The release workflow in `.github/workflows/release.yml` builds Scrivus on Windows, Linux, and macOS using Tauri's official GitHub Action.
+
+To start a release build, update the app version in `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`, then push a matching version tag:
+
+```bash
+git tag v0.1.9
+git push origin v0.1.9
+```
+
+The workflow creates a draft GitHub Release and attaches the generated installers. Review the draft release assets before publishing.
