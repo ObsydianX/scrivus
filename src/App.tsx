@@ -461,7 +461,7 @@ export default function App() {
       attributes: {
         spellcheck: 'false',
       },
-      handleKeyDown: (_view, _event) => {
+      handleKeyDown: (_view: unknown, _event: KeyboardEvent) => {
         const active = document.activeElement
         const editorEl = document.querySelector('.ProseMirror')
         if (active && active !== editorEl && !editorEl?.contains(active)) {
@@ -470,7 +470,7 @@ export default function App() {
         return false
       },
       handleDOMEvents: {
-        click: (_view, event) => {
+        click: (_view: unknown, event: Event) => {
           const mouseEvent = event as MouseEvent
           if (!mouseEvent.ctrlKey && !mouseEvent.metaKey) return false
           const target = mouseEvent.target as HTMLElement | null
