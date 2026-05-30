@@ -2,6 +2,10 @@
 
 All notable Scrivus changes are tracked here.
 
+## 0.2.0
+
+- Removed inactive Compile Manuscript style options so only the functional Standard Manuscript style is shown.
+
 ## 0.1.9
 
 - Added project metadata with Scrivus version and project format version.

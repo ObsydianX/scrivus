@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { COMPILE_STYLE_PRESETS, LOREM_PREVIEW } from '../constants'
+import { LOREM_PREVIEW } from '../constants'
 import type { CompileChapterEntry, ProjectStyles } from '../types'
 
 type CompileModalProps = {
@@ -11,7 +11,6 @@ type CompileModalProps = {
   projectStyles: ProjectStyles
   onClose: () => void
   onFrontMatterChange: (value: boolean) => void
-  onStyleChange: (style: string) => void
   onChaptersChange: Dispatch<SetStateAction<CompileChapterEntry[]>>
   onSelectionChange: (fileId: string, value: string) => void
   onExport: () => void
@@ -26,7 +25,6 @@ export function CompileModal({
   projectStyles,
   onClose,
   onFrontMatterChange,
-  onStyleChange,
   onChaptersChange,
   onSelectionChange,
   onExport,
@@ -67,19 +65,17 @@ export function CompileModal({
             COMPILE MANUSCRIPT
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <select
-              value={style}
-              onChange={e => onStyleChange(e.target.value)}
+            <span
               style={{
-                background: 'var(--input-bg)', border: '1px solid var(--border-soft)',
-                borderRadius: 4, color: 'var(--text-main)', fontSize: 12,
-                padding: '4px 8px', cursor: 'pointer',
+                color: 'var(--text-muted)',
+                fontSize: 12,
+                border: '1px solid var(--border-soft)',
+                borderRadius: 4,
+                padding: '4px 8px',
               }}
             >
-              {COMPILE_STYLE_PRESETS.map(p => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
+              {style}
+            </span>
             <button
               onClick={onClose}
               style={{

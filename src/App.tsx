@@ -364,7 +364,7 @@ export default function App() {
   const [compileLoading, setCompileLoading] = useState(false)
   const [compileFrontMatter, setCompileFrontMatter] = useState(false)
   const [compileFormat] = useState<'docx'>('docx')
-  const [compileStyle, setCompileStyle] = useState(COMPILE_STYLE_PRESETS[0])
+  const compileStyle = COMPILE_STYLE_PRESETS[0]
 
   // ── Revision workspace state ──
   const [revisionComments, setRevisionComments] = useState<RevisionComment[]>([])
@@ -3619,7 +3619,6 @@ export default function App() {
           projectStyles={styles}
           onClose={() => setShowCompile(false)}
           onFrontMatterChange={setCompileFrontMatter}
-          onStyleChange={setCompileStyle}
           onChaptersChange={setCompileChapters}
           onSelectionChange={updateCompileSelection}
           onExport={compileProject}
