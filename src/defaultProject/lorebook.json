@@ -1,0 +1,45 @@
+{
+  "categories": [
+    {
+      "id": "lmpsf7ntzlq66",
+      "name": "Characters",
+      "template": [
+        {
+          "id": "lmpsf8bscyxk1",
+          "type": "divider",
+          "removed": false
+        },
+        {
+          "id": "lmpsf83t155qf",
+          "type": "image",
+          "label": "Portrait",
+          "removed": false
+        },
+        {
+          "id": "lmpsf804i81ub",
+          "type": "field",
+          "label": "Age",
+          "removed": false
+        },
+        {
+          "id": "lmpsf8q2rhw6s",
+          "type": "textarea",
+          "label": "Backstory",
+          "removed": false
+        }
+      ],
+      "entries": [
+        {
+          "id": "lmpsfakzdq9gf",
+          "name": "John Doe",
+          "fields": {
+            "lmpsf8q2rhw6s": "Left his career after a back injury forced him into an unexpected sabbatical. What started as frustrating downtime became a turning point - he spent two years traveling the Pacific Northwest in a converted van, picking up odd jobs and rekindling a childhood interest in amateur radio. He now lives in a small rented house on the outskirts of Boise, Idaho, where he does freelance cartographic work and volunteers at a local community center on weekends. He's quiet, methodical, and occasionally awkward in conversation, but fiercely loyal to the handful of people he lets close.",
+            "lmpsf804i81ub": "34",
+            "lmpsf83t155qf": "lorebook/images/lmpsfakzdq9gf_lmpsf83t155qf_mpsfjr6hypwz3.png"
+          },
+          "keywords": ["character"]
+        }
+      ]
+    }
+  ]
+}

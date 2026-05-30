@@ -2,814 +2,177 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Imports
 // ─────────────────────────────────────────────────────────────────────────────
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { open, save } from '@tauri-apps/plugin-dialog'
-import { writeTextFile, readTextFile, mkdir, exists, writeFile, rename, readDir, remove } from '@tauri-apps/plugin-fs'
-import { join, appDataDir } from '@tauri-apps/api/path'
+import { exists, readFile, readTextFile, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
+import { join } from '@tauri-apps/api/path'
 import { exit } from '@tauri-apps/plugin-process'
-import { Packer, Document, Paragraph, HeadingLevel, AlignmentType, TextRun } from 'docx'
-import { Mark, Node as TiptapNode } from '@tiptap/core'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { convertFileSrc } from '@tauri-apps/api/core'
+import { Packer, Document, Paragraph, HeadingLevel, AlignmentType, PageBreak, TextRun } from 'docx'
+import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener'
+import changelog from '../CHANGELOG.md?raw'
+import projectFormatCompatibility from '../PROJECT_FORMAT.md?raw'
+import privacyNote from '../PRIVACY.md?raw'
+import thirdPartyLicenses from '../THIRD_PARTY_LICENSES.txt?raw'
+import {
+  AboutModal,
+  AppMessageModal,
+  ConfirmBinDeleteModal,
+  ConfirmDeleteLoreCategoryModal,
+  ConfirmDeleteLoreEntryModal,
+  ConfirmDeleteModal,
+  ConfirmDeleteTabModal,
+  ConfirmEmptyTrashModal,
+  ProjectRecoveryModal,
+  RestoreBackupModal,
+  type AppMessage,
+} from './components/ConfirmModals'
+import { AppMenus } from './components/AppMenus'
+import {
+  createProjectBackup,
+  getProjectBackupRoot,
+  listProjectBackups,
+  restoreLatestProjectBackup,
+  restoreProjectBackup,
+  type BackupReason,
+  type ProjectBackup,
+} from './backups'
+import { BinderSidebar } from './components/BinderSidebar'
+import { CompileModal } from './components/CompileModal'
+import { BinderContextMenu, SpellcheckContextMenu, TabContextMenu } from './components/ContextMenus'
+import { InspectorPanel } from './components/InspectorPanel'
+import {
+  LoreEntryEditorModal,
+  LoreTemplateEditorModal,
+} from './components/LoreEditorModals'
+import {
+  NewProjectModal,
+  PreferencesModal,
+  ProjectSettingsModal,
+  StylesModal,
+} from './components/ProjectModals'
+import {
+  addDocToTree,
+  addFolderToTree,
+  duplicateNodesInTree,
+  duplicateNodeInTree,
+  moveNodeInTree,
+  moveNodesInTree,
+  removeNodesFromTree,
+  removeNodeFromTree,
+  renameNodeInTree,
+  toggleFolderInTree,
+} from './binderMutations'
+import {
+  FindReplacePanel,
+  SearchPanel,
+} from './components/SearchReplacePanels'
+import { WorkspaceShell, type Workspace } from './components/WorkspaceShell'
+import { buildCompileChapters, collectCompileNodesFromSelection } from './compile'
+import {
+  COMPILE_STYLE_PRESETS,
+  ATLAS_MAX_SIDE,
+  ATLAS_WARNING_MEGAPIXELS,
+  DEFAULT_ATLAS,
+  DEFAULT_MIND_MAP,
+  PROJECT_FORMAT_VERSION,
+  SCRIVUS_VERSION,
+  DEFAULT_SCENE_METADATA,
+  DEFAULT_STYLES,
+  normalizeMindMap,
+  normalizeAtlas,
+  normalizeProjectSettings,
+  normalizeSceneMetadata,
+  normalizeProjectStyles,
+} from './constants'
+import { allocateNextId, getNextIdValue, setNextIdValue } from './idCounter'
+import { createProjectOnDisk, projectPackageFolderName, readProjectJson } from './projectFiles'
+import { migrateProjectData } from './projectMigrations'
+import { searchProject, type SearchResult } from './search'
+import { parseSceneTabs, serializeSceneTabs, softDeleteTab } from './sceneTabs'
+import { createSpellchecker, findWordAt, type Spellchecker } from './spellcheck'
+import { SCRIVUS_GITHUB_URL, checkForScrivusUpdate } from './updates'
+import {
+  addToRecentProjects,
+  copyAtlasImage,
+  copyLoreImage,
+  deleteAtlasImage,
+  deleteLoreImage,
+  generateFileId,
+  loadRecentData,
+  loadRecentProjects,
+  readLoreBookFile,
+  readAtlasFile,
+  readCanvasFile,
+  readNotesFile,
+  readProjectDictionary,
+  readRevisionFile,
+  readSceneFile,
+  saveDefaultStyles,
+  saveProjectToDisk,
+  saveRecentProjects,
+  trashNode,
+  writeProjectDictionary,
+  writeAtlasFile,
+  writeLoreBookFile,
+  writeCanvasFile,
+  writeNotesFile,
+  writeRevisionFile,
+  writeSceneFile,
+} from './storage'
+import {
+  emptyTrashFolder,
+  loadTrashItems,
+  permanentlyDeleteTrashItem,
+  readTrashPreviewContent,
+  restoreTrashItem,
+  type TrashItem,
+} from './trash'
+import {
+  CommentEnd,
+  CommentStart,
+  FnrHighlight,
+  LoreLinkExtension,
+  loreLinkPluginKey,
+  SpellcheckExtension,
+  spellcheckPluginKey,
+  UnderlineMark,
+  type LoreLinkMatch,
+} from './tiptapExtensions'
+import {
+  collectDocs,
+  findNode,
+  findParentFolder,
+} from './tree'
+import type {
+  Atlas,
+  AtlasImportCandidate,
+  AtlasMap,
+  ChecklistItem,
+  CompileChapterEntry,
+  DocNode,
+  DropTarget,
+  FolderNode,
+  LoreBook,
+  LoreCategory,
+  LoreEntry,
+  MindMap,
+  MindMapNode,
+  MindMapSceneOption,
+  OutlineRow,
+  Project,
+  ProjectSettings,
+  ProjectStyles,
+  RevisionComment,
+  SceneMetadata,
+  SceneStatus,
+  SceneTab,
+  ThemeId,
+  TreeNode,
+} from './types'
 import './App.css'
-
-// #endregion
-
-// #region === TYPES & INTERFACES ===
-// ─────────────────────────────────────────────────────────────────────────────
-// Core project data types
-// ─────────────────────────────────────────────────────────────────────────────
-type DocNode = {
-  id: number
-  type: 'doc'
-  label: string
-  title: string
-  file: string
-}
-
-type FolderNode = {
-  id: number
-  type: 'folder'
-  label: string
-  open: boolean
-  children: TreeNode[]
-}
-
-type TreeNode = DocNode | FolderNode
-
-type DropTarget =
-  | { type: 'before'; id: number }
-  | { type: 'after'; id: number }
-  | { type: 'inside'; id: number }
-  | null
-
-type Project = {
-  name: string
-  path: string
-  tree: TreeNode[]
-  styles: ProjectStyles
-  settings: ProjectSettings
-  compileSelections: Record<string, string>
-}
-
-type ChapterStyle = {
-  font: string
-  size: number
-  bold: boolean
-  italic: boolean
-}
-
-type BodyStyle = {
-  font: string
-  size: number
-  justification: 'left' | 'center' | 'right' | 'both'
-  firstLineIndent: boolean
-  lineSpacing: number
-}
-
-type ProjectStyles = {
-  chapter: ChapterStyle
-  body: BodyStyle
-}
-
-// Represents a single checklist entry with order tracking.
-type ChecklistItem = {
-  id: number
-  label: string
-  checked: boolean
-  order: number
-}
-
-type SceneTab = {
-  name: string
-  content: string
-}
-
-type LoreFieldType = 'field' | 'textarea' | 'image' | 'divider'
-
-type LoreTemplateElement = {
-  id: string
-  type: LoreFieldType
-  label?: string
-  removed: boolean
-}
-
-type LoreEntry = {
-  id: string
-  name: string
-  fields: Record<string, string>
-}
-
-type LoreCategory = {
-  id: string
-  name: string
-  template: LoreTemplateElement[]
-  entries: LoreEntry[]
-}
-
-type LoreBook = {
-  categories: LoreCategory[]
-}
-
-type ProjectSettings = {
-  author: string
-  title: string
-  subtitle: string
-}
-
-type CompileSceneEntry = {
-  docId: number
-  fileId: string
-  label: string
-  tabs: string[]
-  selectedTab: string
-  included: boolean
-}
-
-type CompileChapterEntry = {
-  folderId: number
-  label: string
-  included: boolean
-  scenes: CompileSceneEntry[]
-}
-
-// A single inline comment anchored to a text selection in revision mode.
-type RevisionComment = {
-  id: string
-  sceneId: number
-  quote: string
-  text: string
-  createdAt: number
-  resolved: boolean
-  startOffset: number
-  endOffset: number
-}
-
-
-// #endregion
-
-// #region === CONSTANTS & DEFAULTS ===
-
-const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
-  author: '',
-  title: '',
-  subtitle: '',
-}
-
-const COMPILE_STYLE_PRESETS = [
-  'Standard Manuscript',
-  'Beta Reader Copy',
-  'Personal Archive',
-]
-
-const LOREM_PREVIEW = `Lorem ipsum odor amet, consectetuer adipiscing elit. Rutrum quisque himenaeos volutpat dui faucibus ridiculus. Mus semper auctor nibh; mollis taciti natoque congue. Dis aliquam hendrerit ullamcorper accumsan fringilla. Pharetra dapibus consequat fringilla senectus porta. Tortor nisi quisque class fermentum amet tortor faucibus. Nascetur mi aptent facilisi; augue duis praesent condimentum lacinia. Vitae conubia blandit scelerisque nisi consequat proin feugiat netus eros.
-
-    Morbi fames eros facilisi scelerisque eleifend felis. Proin senectus pulvinar feugiat; rhoncus facilisi porta. Amet augue consequat porttitor per sodales. Taciti nascetur tempor porttitor egestas senectus vel.`
-
-// Default typography/style settings used for new projects and fallback loads.
-const DEFAULT_STYLES: ProjectStyles = {
-  chapter: {
-    font: 'Georgia',
-    size: 24,
-    bold: true,
-    italic: false,
-  },
-  body: {
-    font: 'Georgia',
-    size: 12,
-    justification: 'both',
-    firstLineIndent: true,
-    lineSpacing: 0,
-  },
-}
-
-// Runtime id counter for newly-created folders/scenes. Persisted in project.json.
-let nextId = 10
-
-// #endregion
-
-// #region === TREE TRAVERSAL HELPERS ===
-// ─────────────────────────────────────────────────────────────────────────────
-// Tree traversal helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Recursively finds a scene or folder by id.
-function findNode(nodes: TreeNode[], id: number): TreeNode | null {
-  for (const n of nodes) {
-    if (n.id === id) return n
-    if (n.type === 'folder') {
-      const found = findNode(n.children, id)
-      if (found) return found
-    }
-  }
-  return null
-}
-
-// Recursively finds the parent folder for a given node id.
-function findParentFolder(nodes: TreeNode[], id: number, parent: FolderNode | null = null): FolderNode | null {
-  for (const n of nodes) {
-    if (n.id === id) return parent
-    if (n.type === 'folder') {
-      const found = findParentFolder(n.children, id, n)
-      if (found !== null) return found
-    }
-  }
-  return null
-}
-
-// Flattens a folder subtree into a list of scene documents.
-function collectDocs(node: TreeNode): DocNode[] {
-  if (node.type === 'doc') return [node]
-  const results: DocNode[] = []
-  for (const child of node.children) {
-    results.push(...collectDocs(child))
-  }
-  return results
-}
-
-// Removes a node from a tree in-place. Returns true when successful.
-function removeNode(nodes: TreeNode[], id: number): boolean {
-  for (let i = 0; i < nodes.length; i++) {
-    if (nodes[i].id === id) { nodes.splice(i, 1); return true }
-    if (nodes[i].type === 'folder') {
-      if (removeNode((nodes[i] as FolderNode).children, id)) return true
-    }
-  }
-  return false
-}
-
-// Inserts a dragged node before, after, or inside a drop target.
-function insertNode(nodes: TreeNode[], node: TreeNode, target: NonNullable<DropTarget>): TreeNode[] {
-  if (target.type === 'inside') {
-    return nodes.map(n => {
-      if (n.id === target.id && n.type === 'folder') {
-        return { ...n, children: [...n.children, node] }
-      }
-      if (n.type === 'folder') {
-        return { ...n, children: insertNode(n.children, node, target) }
-      }
-      return n
-    })
-  }
-  const result: TreeNode[] = []
-  for (const n of nodes) {
-    if (target.type === 'before' && n.id === target.id) result.push(node)
-    if (n.type === 'folder') {
-      result.push({ ...n, children: insertNode(n.children, node, target) })
-    } else {
-      result.push(n)
-    }
-    if (target.type === 'after' && n.id === target.id) result.push(node)
-  }
-  return result
-}
-
-// #endregion
-
-// #region === TEXT & HTML HELPERS ===
-// ─────────────────────────────────────────────────────────────────────────────
-// Text and HTML helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Converts editor HTML into plain paragraph lines for DOCX export.
-function htmlToPlainLines(html: string): string[] {
-  const div = document.createElement('div')
-  div.innerHTML = html
-  const lines: string[] = []
-  div.querySelectorAll('p').forEach(p => lines.push(p.textContent ?? ''))
-  return lines.length ? lines : [div.textContent ?? '']
-}
-
-function escapeAttr(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
-
-// #endregion
-
-// #region === PERSISTENCE HELPERS ===
-// ─────────────────────────────────────────────────────────────────────────────
-// Persistence helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Writes project metadata, tree structure, style data, and last active scene.
-async function saveProjectToDisk(project: Project, activeId?: number) {
-  const projectJson = {
-    name: project.name,
-    tree: project.tree,
-    nextId,
-    lastActiveId: activeId ?? null,
-    styles: project.styles,
-    settings: project.settings ?? DEFAULT_PROJECT_SETTINGS,
-    compileSelections: project.compileSelections ?? {},
-  }
-  const projectFile = await join(project.path, 'project.json')
-  await writeTextFile(projectFile, JSON.stringify(projectJson, null, 2))
-}
-
-// Loads recently opened projects from app data.
-async function loadRecentProjects(): Promise<{ name: string; path: string }[]> {
-  try {
-    const appData = await appDataDir()
-    await mkdir(appData, { recursive: true })
-    const recentFile = await join(appData, 'recent.json')
-    const fileExists = await exists(recentFile)
-    if (!fileExists) return []
-    const raw = await readTextFile(recentFile)
-    const data = JSON.parse(raw)
-    return data.recents ?? []
-  } catch {
-    return []
-  }
-}
-
-// Saves the recent projects list while preserving other app preferences.
-async function saveRecentProjects(recents: { name: string; path: string }[]) {
-  try {
-    const appData = await appDataDir()
-    await mkdir(appData, { recursive: true })
-    const recentFile = await join(appData, 'recent.json')
-    const existing = await loadRecentData()
-    await writeTextFile(recentFile, JSON.stringify({ ...existing, recents }, null, 2))
-  } catch {
-    // silently fail
-  }
-}
-
-// Loads app-level recent project data and default style preferences.
-async function loadRecentData(): Promise<{ recents: { name: string; path: string }[]; defaultStyles: ProjectStyles }> {
-  try {
-    const appData = await appDataDir()
-    const recentFile = await join(appData, 'recent.json')
-    const fileExists = await exists(recentFile)
-    if (!fileExists) return { recents: [], defaultStyles: DEFAULT_STYLES }
-    const raw = await readTextFile(recentFile)
-    const data = JSON.parse(raw)
-    return {
-      recents: data.recents ?? [],
-      defaultStyles: data.defaultStyles ?? DEFAULT_STYLES,
-    }
-  } catch {
-    return { recents: [], defaultStyles: DEFAULT_STYLES }
-  }
-}
-
-// Saves style settings as the default for future new projects.
-async function saveDefaultStyles(styles: ProjectStyles) {
-  try {
-    const appData = await appDataDir()
-    await mkdir(appData, { recursive: true })
-    const recentFile = await join(appData, 'recent.json')
-    const existing = await loadRecentData()
-    await writeTextFile(recentFile, JSON.stringify({ ...existing, defaultStyles: styles }, null, 2))
-  } catch {
-    // silently fail
-  }
-}
-
-// Adds or promotes a project in the recent projects list.
-async function addToRecentProjects(name: string, path: string) {
-  const { recents } = await loadRecentData()
-  const filtered = recents.filter(r => r.path !== path)
-  const updated = [{ name, path }, ...filtered].slice(0, 8)
-  await saveRecentProjects(updated)
-}
-
-// #endregion
-
-// #region === COMPILE HELPERS ===
-
-// Generates a short random file id for scene files.
-function generateFileId(): string {
-  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
-  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
-}
-
-// Writes a scene body file under the project scenes folder.
-async function writeSceneFile(projectPath: string, fileId: string, content: string) {
-  const scenesDir = await join(projectPath, 'scenes')
-  await mkdir(scenesDir, { recursive: true })
-  const filePath = await join(scenesDir, `${fileId}.md`)
-  await writeTextFile(filePath, content)
-}
-
-// Reads a scene body file, returning an empty string if missing.
-async function readSceneFile(projectPath: string, fileId: string): Promise<string> {
-  try {
-    const filePath = await join(projectPath, 'scenes', `${fileId}.md`)
-    const fileExists = await exists(filePath)
-    if (!fileExists) return ''
-    return await readTextFile(filePath)
-  } catch {
-    return ''
-  }
-}
-
-// Reads the project-wide notes file, returning defaults if missing.
-async function readNotesFile(projectPath: string): Promise<{
-  quickNote: string
-  checklist: ChecklistItem[]
-}> {
-  try {
-    const filePath = await join(projectPath, 'notes.json')
-    const fileExists = await exists(filePath)
-    if (!fileExists) return { quickNote: '', checklist: [] }
-    const raw = await readTextFile(filePath)
-    return { quickNote: '', checklist: [], ...JSON.parse(raw) }
-  } catch {
-    return { quickNote: '', checklist: [], }
-  }
-}
-
-// Writes the project-wide notes file.
-async function writeNotesFile(projectPath: string, data: {
-  quickNote: string
-  checklist: ChecklistItem[]
-}) {
-  try {
-    const filePath = await join(projectPath, 'notes.json')
-    await writeTextFile(filePath, JSON.stringify(data, null, 2))
-  } catch { /* silently fail */ }
-}
-
-// Reads the lorebook file, returning empty categories if missing.
-async function readLoreBookFile(projectPath: string): Promise<LoreBook> {
-  try {
-    const filePath = await join(projectPath, 'lorebook.json')
-    const fileExists = await exists(filePath)
-    if (!fileExists) return { categories: [] }
-    const raw = await readTextFile(filePath)
-    return { categories: [], ...JSON.parse(raw) }
-  } catch {
-    return { categories: [] }
-  }
-}
-
-// Writes the lorebook file.
-async function writeLoreBookFile(projectPath: string, data: LoreBook) {
-  try {
-    const filePath = await join(projectPath, 'lorebook.json')
-    await writeTextFile(filePath, JSON.stringify(data, null, 2))
-  } catch { /* silently fail */ }
-}
-
-// Reads revision comments for the project.
-async function readRevisionFile(projectPath: string): Promise<RevisionComment[]> {
-  try {
-    const filePath = await join(projectPath, 'revision.json')
-    const fileExists = await exists(filePath)
-    if (!fileExists) return []
-    const raw = await readTextFile(filePath)
-    return JSON.parse(raw) ?? []
-  } catch {
-    return []
-  }
-}
-
-// Writes revision comments for the project.
-async function writeRevisionFile(projectPath: string, comments: RevisionComment[]) {
-  try {
-    const filePath = await join(projectPath, 'revision.json')
-    await writeTextFile(filePath, JSON.stringify(comments, null, 2))
-  } catch { /* silently fail */ }
-}
-
-// Copies an image into the project lorebook/images folder and returns the relative path.
-async function copyLoreImage(projectPath: string, sourcePath: string, entryId: string, fieldId: string): Promise<string> {
-  const ext = sourcePath.split('.').pop() ?? 'png'
-  const destName = `${entryId}_${fieldId}.${ext}`
-  const imagesDir = await join(projectPath, 'lorebook', 'images')
-  await mkdir(imagesDir, { recursive: true })
-  const destPath = await join(imagesDir, destName)
-  const { readFile } = await import('@tauri-apps/plugin-fs')
-  const bytes = await readFile(sourcePath)
-  await writeFile(destPath, bytes)
-  return `lorebook/images/${destName}`.replace(/\\/g, '/')
-}
-
-// Moves a scene or folder subtree into project trash with recovery metadata.
-async function trashNode(projectPath: string, node: TreeNode, originalFolderId: number) {
-  try {
-    const trashDir = await join(projectPath, 'trash')
-    await mkdir(trashDir, { recursive: true })
-
-    // Move all doc files to trash
-    const docs = collectDocs(node)
-    for (const doc of docs) {
-      const from = await join(projectPath, 'scenes', `${doc.file}.md`)
-      const to = await join(trashDir, `${doc.file}.md`)
-      const fileExists = await exists(from)
-      if (fileExists) await rename(from, to)
-    }
-
-    // Write a single sidecar for the whole subtree
-    const sidecarId = node.type === 'doc' ? node.file : `folder_${node.id}`
-    const sidecar = await join(trashDir, `${sidecarId}.json`)
-    await writeTextFile(sidecar, JSON.stringify({
-      node,
-      originalFolderId,
-      deletedAt: Date.now(),
-      originalChildren: node.type === 'folder'
-        ? (node as FolderNode).children.map(c => c.id)
-        : [],
-    }))
-  } catch {
-    // silently fail
-  }
-}
-
-// Collects manuscript folders/scenes into ordered chunks for DOCX export.
-async function collectCompileNodes(
-  nodes: TreeNode[],
-  projectPath: string
-): Promise<({ type: 'heading'; label: string } | { type: 'body'; html: string })[]> {
-  const manuscript = nodes.find(n => n.id === 1)
-  if (!manuscript || manuscript.type !== 'folder') return []
-  const result: ({ type: 'heading'; label: string } | { type: 'body'; html: string })[] = []
-  for (const n of manuscript.children) {
-    if (n.type === 'folder') {
-      result.push({ type: 'heading', label: n.label })
-      for (const child of n.children) {
-        if (child.type === 'doc') {
-          const raw = await readSceneFile(projectPath, child.file)
-          const tabs = parseSceneTabs(raw)
-          const html = tabs[tabs.length - 1]?.content ?? ''
-          if (html.trim()) result.push({ type: 'body', html })
-        }
-      }
-    } else if (n.type === 'doc') {
-      const raw = await readSceneFile(projectPath, n.file)
-      const tabs = parseSceneTabs(raw)
-      const html = tabs[tabs.length - 1]?.content ?? ''
-      if (html.trim()) result.push({ type: 'body', html })
-    }
-  }
-  return result
-}
-
-// Reads all manuscript scenes and builds the compile chapter/scene selection structure.
-async function buildCompileChapters(
-  tree: TreeNode[],
-  projectPath: string
-): Promise<CompileChapterEntry[]> {
-  const manuscript = tree.find(n => n.id === 1)
-  if (!manuscript || manuscript.type !== 'folder') return []
-
-  const chapters: CompileChapterEntry[] = []
-
-  for (const n of manuscript.children) {
-    if (n.type === 'folder') {
-      const scenes: CompileSceneEntry[] = []
-      for (const child of n.children) {
-        if (child.type === 'doc') {
-          const raw = await readSceneFile(projectPath, child.file)
-          const tabs = parseSceneTabs(raw)
-          const tabNames = tabs.map(t => t.name)
-          scenes.push({
-            docId: child.id,
-            fileId: child.file,
-            label: child.label,
-            tabs: tabNames,
-            selectedTab: tabNames[tabNames.length - 1],
-            included: true,
-          })
-        }
-      }
-      chapters.push({
-        folderId: n.id,
-        label: n.label,
-        included: true,
-        scenes,
-      })
-    } else if (n.type === 'doc') {
-      // Top-level scene (no parent folder) — treat as its own chapter entry
-      const raw = await readSceneFile(projectPath, n.file)
-      const tabs = parseSceneTabs(raw)
-      const tabNames = tabs.map(t => t.name)
-      chapters.push({
-        folderId: n.id,
-        label: n.label,
-        included: true,
-        scenes: [{
-          docId: n.id,
-          fileId: n.file,
-          label: n.label,
-          tabs: tabNames,
-          selectedTab: tabNames[tabNames.length - 1],
-          included: true,
-        }],
-      })
-    }
-  }
-
-  return chapters
-}
-
-// Collects compile nodes respecting the user's chapter/scene selection and tab choice.
-async function collectCompileNodesFromSelection(
-  chapters: CompileChapterEntry[],
-  projectPath: string
-): Promise<({ type: 'heading'; label: string } | { type: 'body'; html: string })[]> {
-  const result: ({ type: 'heading'; label: string } | { type: 'body'; html: string })[] = []
-
-  for (const chapter of chapters) {
-    if (!chapter.included) continue
-    const includedScenes = chapter.scenes.filter(s => s.included)
-    if (includedScenes.length === 0) continue
-
-    // Only emit a heading if the chapter has more than one scene, or its label
-    // differs from the single scene label (i.e. it's a real folder, not a stub)
-    const isRealChapter = chapter.scenes.length > 1 || chapter.folderId !== chapter.scenes[0]?.docId
-    if (isRealChapter) {
-      result.push({ type: 'heading', label: chapter.label })
-    }
-
-    for (const scene of includedScenes) {
-      const raw = await readSceneFile(projectPath, scene.fileId)
-      const tabs = parseSceneTabs(raw)
-      const tab = scene.selectedTab === '__last__'
-        ? tabs[tabs.length - 1]
-        : (tabs.find(t => t.name === scene.selectedTab) ?? tabs[tabs.length - 1])
-      const html = tab?.content ?? ''
-      if (html.trim()) result.push({ type: 'body', html })
-    }
-  }
-
-  return result
-}
-
-// #endregion
-
-// #region === TIPTAP EXTENSIONS ===
-
-// TipTap mark used only for temporary find-and-replace highlights.
-const FnrHighlight = Mark.create({
-  name: 'fnrHighlight',
-  parseHTML() {
-    return [{ tag: 'mark[data-fnr]' }]
-  },
-  renderHTML() {
-    return ['mark', { 'data-fnr': '', class: 'fnr-highlight' }, 0]
-  },
-})
-
-const CommentStart = TiptapNode.create({
-  name: 'commentStart',
-  group: 'inline',
-  inline: true,
-  atom: true,
-  selectable: false,
-  draggable: false,
-
-  addAttributes() {
-    return {
-      'data-id': { default: null },
-    }
-  },
-
-  parseHTML() {
-    return [{ tag: 'x-comment-start' }]
-  },
-
-  renderHTML({ HTMLAttributes }) {
-    return ['x-comment-start', HTMLAttributes]
-  },
-})
-
-const CommentEnd = TiptapNode.create({
-  name: 'commentEnd',
-  group: 'inline',
-  inline: true,
-  atom: true,
-  selectable: false,
-  draggable: false,
-
-  addAttributes() {
-    return {
-      'data-id': { default: null },
-    }
-  },
-
-  parseHTML() {
-    return [{ tag: 'x-comment-end' }]
-  },
-
-  renderHTML({ HTMLAttributes }) {
-    return ['x-comment-end', HTMLAttributes]
-  },
-})
-
-// #endregion
-
-// #region === SCENE TAB HELPERS ===
-
-const TAB_DELIMITER = (name: string) => `<!--TAB:${name}-->`
-const DELETED_DELIMITER = (name: string, ts: number) => `<!--DELETED:${name}:${ts}-->`
-
-// Splits a raw scene file into active tabs, skipping deleted blocks.
-function parseSceneTabs(raw: string): SceneTab[] {
-  if (!raw.trim()) return [{ name: 'First Draft', content: '' }]
-  const lines = raw.split('\n')
-  const tabs: SceneTab[] = []
-  let currentName: string | null = null
-  let currentLines: string[] = []
-  let inDeleted = false
-
-  for (const line of lines) {
-    const tabMatch = line.match(/^<!--TAB:(.*?)-->$/)
-    const deletedMatch = line.match(/^<!--DELETED:(.*?):(\d+)-->$/)
-    if (tabMatch) {
-      if (currentName !== null && !inDeleted) {
-        tabs.push({ name: currentName, content: currentLines.join('\n').trim() })
-      }
-      currentName = tabMatch[1]
-      currentLines = []
-      inDeleted = false
-    } else if (deletedMatch) {
-      if (currentName !== null && !inDeleted) {
-        tabs.push({ name: currentName, content: currentLines.join('\n').trim() })
-      }
-      currentName = deletedMatch[1]
-      currentLines = []
-      inDeleted = true
-    } else {
-      currentLines.push(line)
-    }
-  }
-  // Push last block if active
-  if (currentName !== null && !inDeleted) {
-    tabs.push({ name: currentName, content: currentLines.join('\n').trim() })
-  }
-
-  // Legacy: file has content but no tab delimiters — treat as single First Draft tab
-  if (tabs.length === 0 && raw.trim()) {
-    return [{ name: 'First Draft', content: raw.trim() }]
-  }
-
-  return tabs.length > 0 ? tabs : [{ name: 'First Draft', content: '' }]
-}
-
-// Extracts only the deleted blocks from a raw file string, preserving them.
-function extractDeletedBlocks(raw: string): string {
-  const lines = raw.split('\n')
-  const blocks: string[] = []
-  let inDeleted = false
-  let currentLines: string[] = []
-  let currentHeader = ''
-
-  for (const line of lines) {
-    const deletedMatch = line.match(/^<!--DELETED:(.*?):(\d+)-->$/)
-    const tabMatch = line.match(/^<!--TAB:(.*?)-->$/)
-    if (deletedMatch) {
-      if (inDeleted && currentHeader) {
-        blocks.push(currentHeader + '\n' + currentLines.join('\n'))
-      }
-      currentHeader = line
-      currentLines = []
-      inDeleted = true
-    } else if (tabMatch) {
-      if (inDeleted && currentHeader) {
-        blocks.push(currentHeader + '\n' + currentLines.join('\n'))
-      }
-      inDeleted = false
-      currentHeader = ''
-      currentLines = []
-    } else if (inDeleted) {
-      currentLines.push(line)
-    }
-  }
-  if (inDeleted && currentHeader) {
-    blocks.push(currentHeader + '\n' + currentLines.join('\n'))
-  }
-  return blocks.length > 0 ? '\n' + blocks.join('\n') : ''
-}
-
-// Serializes active tabs back to a file string, preserving deleted blocks.
-function serializeSceneTabs(tabs: SceneTab[], raw: string): string {
-  const activePart = tabs
-    .map(t => `${TAB_DELIMITER(t.name)}\n${t.content}`)
-    .join('\n')
-  const deletedPart = extractDeletedBlocks(raw)
-  return activePart + deletedPart
-}
-
-// Moves a tab to a soft-deleted block in the raw file string.
-function softDeleteTab(tabs: SceneTab[], tabIndex: number, raw: string): string {
-  const tab = tabs[tabIndex]
-  const remaining = tabs.filter((_, i) => i !== tabIndex)
-  const activePart = remaining
-    .map(t => `${TAB_DELIMITER(t.name)}\n${t.content}`)
-    .join('\n')
-  const existingDeleted = extractDeletedBlocks(raw)
-  const newDeleted = `\n${DELETED_DELIMITER(tab.name, Date.now())}\n${tab.content}`
-  return activePart + existingDeleted + newDeleted
-}
 
 // #endregion
 
@@ -822,12 +185,7 @@ export default function App() {
   // #region === STATE ===
 
   // ── App Message system ──
-  const [appMessage, setAppMessage] = useState<{
-    title: string
-    body: string
-    kind: 'info' | 'warning' | 'error'
-    action?: { label: string; onClick: () => void }
-  } | null>(null)
+  const [appMessage, setAppMessage] = useState<AppMessage | null>(null)
 
   // ── Binder drag/drop and project selection state ──
   const [dragId, setDragId] = useState<number | null>(null)
@@ -835,6 +193,8 @@ export default function App() {
   const [project, setProject] = useState<Project | null>(null)
   const [tree, setTree] = useState<TreeNode[]>([])
   const [activeId, setActiveId] = useState<number | null>(null)
+  const [selectedBinderIds, setSelectedBinderIds] = useState<Set<number>>(new Set())
+  const [binderSelectionAnchorId, setBinderSelectionAnchorId] = useState<number | null>(null)
   const [renamingId, setRenamingId] = useState<number | null>(null)
   const [titleValue, setTitleValue] = useState('')
   const [saveLabel, setSaveLabel] = useState('')
@@ -844,49 +204,71 @@ export default function App() {
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectParent, setNewProjectParent] = useState('')
   const [recentProjects, setRecentProjects] = useState<{ name: string; path: string }[]>([])
+  const [startupLoaded, setStartupLoaded] = useState(false)
   const [fileMenuOpen, setFileMenuOpen] = useState(false)
   const [styles, setStyles] = useState<ProjectStyles>(DEFAULT_STYLES)
   const [showStyles, setShowStyles] = useState(false)
   const [stylesTab, setStylesTab] = useState<'chapter' | 'body'>('chapter')
+  const [showProjectSettings, setShowProjectSettings] = useState(false)
+  const [projectSettingsTab, setProjectSettingsTab] = useState<'book' | 'styles' | 'backups' | 'dictionary'>('book')
+  const [projectDictionary, setProjectDictionary] = useState<string[]>([])
   const [editMenuOpen, setEditMenuOpen] = useState(false)
+  const [helpMenuOpen, setHelpMenuOpen] = useState(false)
+  const [showAbout, setShowAbout] = useState(false)
+  const [showPreferences, setShowPreferences] = useState(false)
+  const [projectRecovery, setProjectRecovery] = useState<{ name: string; path: string; details: string } | null>(null)
 
   // ── Editor stats and trash state ──
   const [wordCount, setWordCount] = useState(0)
   const [, setCharCount] = useState(0)
-  const [trashItems, setTrashItems] = useState<{
-    sidecarId: string
-    label: string
-    node: TreeNode
-    originalFolderId: number
-  }[]>([])
+  const [trashItems, setTrashItems] = useState<TrashItem[]>([])
   const [trashOpen, setTrashOpen] = useState(false)
   const [trashExpanded, setTrashExpanded] = useState<Set<string>>(new Set())
   const [isTrashPreview, setIsTrashPreview] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<{ sidecarId: string; node: TreeNode } | null>(null)
   const [confirmBinDelete, setConfirmBinDelete] = useState<{ id: number; label: string } | null>(null)
+  const [confirmBulkBinDelete, setConfirmBulkBinDelete] = useState<{ ids: number[]; label: string } | null>(null)
+  const [bulkRenameTarget, setBulkRenameTarget] = useState<{ ids: number[]; value: string } | null>(null)
   const [confirmEmptyTrash, setConfirmEmptyTrash] = useState(false)
   const sceneActiveTabRef = useRef<Record<number, number>>({})
+  const [restoreBackupOpen, setRestoreBackupOpen] = useState(false)
+  const [availableBackups, setAvailableBackups] = useState<ProjectBackup[]>([])
+  const [selectedBackupName, setSelectedBackupName] = useState<string | null>(null)
 
 // ── Workspace state ──
-  const [workspace, setWorkspace] = useState<'editor' | 'revision' | 'lorebook' | 'mindmap'>('editor')
+  const [workspace, setWorkspace] = useState<Workspace>('editor')
 
   // ── Binder states ──
   const [binderOpen, setBinderOpen] = useState(true)
 
   // ── Context Menu states ──
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: TreeNode; depth: number } | null>(null)
+  const [spellcheckMenu, setSpellcheckMenu] = useState<{
+    x: number
+    y: number
+    word: string
+    from: number
+    to: number
+    suggestions: string[]
+  } | null>(null)
 
 
   // ── Mutable refs used by async handlers and delayed saves ──
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveLabelTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const projectRef = useRef<Project | null>(null)
   const treeRef = useRef<TreeNode[]>([])
   const activeIdRef = useRef<number | null>(null)
   const fileMenuRef = useRef<HTMLDivElement>(null)
   const editMenuRef = useRef<HTMLDivElement>(null)
+  const helpMenuRef = useRef<HTMLDivElement>(null)
   const dragIdRef = useRef<number | null>(null)
   const dropTargetRef = useRef<DropTarget>(null)
+  const selectedBinderIdsRef = useRef<Set<number>>(new Set())
+  const spellcheckerRef = useRef<Spellchecker | null>(null)
+  const projectDictionaryRef = useRef<string[]>([])
   const bodyHtmlRef = useRef<string>('')
+  const backupInProgressRef = useRef(false)
 
 
   // ── Manuscript/chapter statistics ──
@@ -897,16 +279,7 @@ export default function App() {
   // ── Project search panel state ──
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<{
-    docId: number
-    title: string
-    excerpt: string
-    source: string
-    fileId: string
-    isTrash: boolean
-    trashNode?: TreeNode
-    trashFolderId?: number
-  }[]>([])
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
@@ -929,11 +302,6 @@ export default function App() {
   // ── Statusbar Panel ──
   const [isNarrow, setIsNarrow] = useState(window.innerWidth < 600);
 
-  // ── Drawer Panel ──
-  const [drawerOpen, setDrawerOpen] = useState<Record<string, boolean>>({
-    quickNote: false,
-    checklist: false,
-  })
 
   // ── Inspector / notes state ──
   const [quickNote, setQuickNote] = useState('')
@@ -945,6 +313,21 @@ export default function App() {
   const [checklistDragId, setChecklistDragId] = useState<number | null>(null)
   const [checklistDropIndex, setChecklistDropIndex] = useState<number | null>(null)
   const checklistDragIdRef = useRef<number | null>(null)
+
+  // â”€â”€ Outline workspace state â”€â”€
+  const [outlineRows, setOutlineRows] = useState<OutlineRow[]>([])
+  const outlineWordCountsRef = useRef<Map<number, number>>(new Map())
+  const outlineProjectPathRef = useRef<string | null>(null)
+
+  // Mind Map workspace state
+  const [mindMap, setMindMap] = useState<MindMap>(DEFAULT_MIND_MAP)
+  const mindMapRef = useRef<MindMap>(DEFAULT_MIND_MAP)
+  const mindMapSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Atlas workspace state
+  const [atlas, setAtlas] = useState<Atlas>(DEFAULT_ATLAS)
+  const atlasRef = useRef<Atlas>(DEFAULT_ATLAS)
+  const atlasSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Scene Tabs state ──
   const [sceneTabs, setSceneTabs] = useState<SceneTab[]>([])
@@ -963,6 +346,9 @@ export default function App() {
   // ── Lore Book state ──
   const [loreBook, setLoreBook] = useState<LoreBook>({ categories: [] })
   const loreBookRef = useRef<LoreBook>({ categories: [] })
+  const loreLinkMatchesRef = useRef<LoreLinkMatch[]>([])
+  const [loreLinksEnabled, setLoreLinksEnabled] = useState(true)
+  const loreLinksEnabledRef = useRef(true)
   const [loreView, setLoreView] = useState<'home' | 'category'>('home')
   const [activeLoreCategoryId, setActiveLoreCategoryId] = useState<string | null>(null)
   const [loreTemplateEditor, setLoreTemplateEditor] = useState<LoreCategory | null>(null)
@@ -970,7 +356,6 @@ export default function App() {
   const [loreEntryEditor, setLoreEntryEditor] = useState<LoreEntry | null>(null)
   const [confirmDeleteLoreCategory, setConfirmDeleteLoreCategory] = useState<LoreCategory | null>(null)
   const [confirmDeleteLoreEntry, setConfirmDeleteLoreEntry] = useState<LoreEntry | null>(null)
-  const [confirmHardDeleteField, setConfirmHardDeleteField] = useState<{ categoryId: string; fieldId: string; label: string } | null>(null)
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
 
   // ── Compile modal state ──
@@ -990,6 +375,8 @@ export default function App() {
   const [revisionPendingComment, setRevisionPendingComment] = useState<{
     quote: string
     wrappedHtml: string
+    startOffset: number
+    endOffset: number
   } | null>(null)
   const [revisionActiveCommentId, setRevisionActiveCommentId] = useState<string | null>(null)
   const [draftText, setDraftText] = useState('')
@@ -999,8 +386,32 @@ export default function App() {
 
 
   // Settings helpers
+  const THEME_IDS: ThemeId[] = [
+    'dark',
+    'light',
+    'contrastLight',
+    'contrastDark',
+    'lavenderLight',
+    'lavenderDark',
+    'mintLight',
+    'mintDark',
+    'roseLight',
+    'roseDark',
+    'skyLight',
+    'skyDark',
+    'neonCyber',
+    'neonViolet',
+    'neonEmber',
+    'neonLagoon',
+  ]
+
+  function normalizeTheme(theme: unknown): ThemeId {
+    return typeof theme === 'string' && THEME_IDS.includes(theme as ThemeId) ? theme as ThemeId : 'dark'
+  }
+
   const DEFAULT_SETTINGS = {
     zoom: 100,
+    theme: 'dark' as ThemeId,
   };
 
   type AppSettings = typeof DEFAULT_SETTINGS;
@@ -1009,7 +420,8 @@ export default function App() {
     try {
       const raw = localStorage.getItem('scrivus-settings');
       if (!raw) return { ...DEFAULT_SETTINGS };
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+      const parsed = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+      return { ...parsed, theme: normalizeTheme(parsed.theme) };
     } catch {
       return { ...DEFAULT_SETTINGS };
     }
@@ -1021,21 +433,34 @@ export default function App() {
 
   // --- ZOOM STATE ---
   const ZOOM_PRESETS = [50, 75, 90, 100, 110, 125, 150, 175, 200, 300];
-  const [zoom, setZoom] = useState(() => loadSettings().zoom);
+  const initialSettings = loadSettings()
+  const [zoom, setZoom] = useState(() => initialSettings.zoom);
+  const [appTheme, setAppTheme] = useState<ThemeId>(() => initialSettings.theme);
   const [zoomOpen, setZoomOpen] = useState(false);
 
   // ── TipTap editor configuration ──
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({ underline: false }),
       Placeholder.configure({ placeholder: 'Begin writing…' }),
+      UnderlineMark,
       FnrHighlight,
+      SpellcheckExtension.configure({
+        getSpellchecker: () => spellcheckerRef.current,
+      }),
+      LoreLinkExtension.configure({
+        getMatches: () => loreLinkMatchesRef.current,
+        enabled: () => loreLinksEnabledRef.current,
+      }),
       CommentStart,
       CommentEnd,
     ],
     content: '',
     immediatelyRender: false,
     editorProps: {
+      attributes: {
+        spellcheck: 'false',
+      },
       handleKeyDown: (_view, _event) => {
         const active = document.activeElement
         const editorEl = document.querySelector('.ProseMirror')
@@ -1043,6 +468,67 @@ export default function App() {
           return true
         }
         return false
+      },
+      handleDOMEvents: {
+        click: (_view, event) => {
+          const mouseEvent = event as MouseEvent
+          if (!mouseEvent.ctrlKey && !mouseEvent.metaKey) return false
+          const target = mouseEvent.target as HTMLElement | null
+          const link = target?.closest?.('.lore-link-highlight') as HTMLElement | null
+          if (!link) return false
+          const entryId = link.dataset.loreEntryId
+          const categoryId = link.dataset.loreCategoryId
+          if (!entryId || !categoryId) return false
+          mouseEvent.preventDefault()
+          setWorkspace('lorebook')
+          setLoreView('category')
+          setActiveLoreCategoryId(categoryId)
+          setExpandedEntryId(entryId)
+          return true
+        },
+        contextmenu: (view, event) => {
+          event.preventDefault()
+          const mouseEvent = event as MouseEvent
+          const coords = view.posAtCoords({ left: mouseEvent.clientX, top: mouseEvent.clientY })
+          const spellchecker = spellcheckerRef.current
+          if (!coords || !spellchecker) {
+            setSpellcheckMenu(null)
+            return true
+          }
+
+          const resolved = view.state.doc.resolve(coords.pos)
+          const parentOffset = resolved.parentOffset
+          const after = resolved.parent.childAfter(parentOffset)
+          const before = resolved.parent.childBefore(parentOffset)
+          const textNodeInfo = after.node?.isText
+            ? after
+            : before.node?.isText
+              ? before
+              : null
+          const textNode = textNodeInfo?.node ?? null
+          if (!textNode?.isText || !textNode.text) {
+            setSpellcheckMenu(null)
+            return true
+          }
+
+          const textOffset = parentOffset - (textNodeInfo?.offset ?? parentOffset)
+          const word = findWordAt(textNode.text, textOffset)
+          if (!word || spellchecker.check(word.word)) {
+            setSpellcheckMenu(null)
+            return true
+          }
+
+          const from = resolved.start() + (textNodeInfo?.offset ?? 0) + word.start
+          setSpellcheckMenu({
+            x: mouseEvent.clientX,
+            y: mouseEvent.clientY,
+            word: word.word,
+            from,
+            to: from + word.word.length,
+            suggestions: spellchecker.suggest(word.word),
+          })
+          return true
+        },
       }
     },
     editable: true,
@@ -1064,7 +550,116 @@ export default function App() {
   // Effects: refs, project loading, styles, menus, trash preview, shortcuts
   // ───────────────────────────────────────────────────────────────────────────
 
+  const countHtmlWords = (html: string) => {
+    const div = document.createElement('div')
+    div.innerHTML = html
+    const text = div.textContent ?? ''
+    return text.trim() ? text.trim().split(/\s+/).length : 0
+  }
+
+  const refreshOutlineRows = useCallback(async () => {
+    if (!projectRef.current) {
+      setOutlineRows([])
+      outlineWordCountsRef.current.clear()
+      outlineProjectPathRef.current = null
+      return
+    }
+
+    if (outlineProjectPathRef.current !== projectRef.current.path) {
+      outlineWordCountsRef.current.clear()
+      outlineProjectPathRef.current = projectRef.current.path
+    }
+
+    const manuscript = findNode(treeRef.current, 1)
+    if (!manuscript || manuscript.type !== 'folder') {
+      setOutlineRows([])
+      return
+    }
+
+    const rows: OutlineRow[] = []
+    const getSceneWordCount = async (node: DocNode) => {
+      if (node.id === activeIdRef.current) {
+        const tabs = sceneTabsRef.current.map((tab, index) =>
+          index === activeTabIndexRef.current ? { ...tab, content: bodyHtmlRef.current } : tab)
+        const selectedTab = projectRef.current!.compileSelections[node.file]
+        const tab = tabs.find(t => t.name === selectedTab) ?? tabs[tabs.length - 1] ?? tabs[0]
+        const count = countHtmlWords(tab?.content ?? '')
+        outlineWordCountsRef.current.set(node.id, count)
+        return count
+      }
+
+      const cached = outlineWordCountsRef.current.get(node.id)
+      if (cached !== undefined) return cached
+
+      const tabs = parseSceneTabs(await readSceneFile(projectRef.current!.path, node.file))
+      const selectedTab = projectRef.current!.compileSelections[node.file]
+      const tab = tabs.find(t => t.name === selectedTab) ?? tabs[tabs.length - 1] ?? tabs[0]
+      const count = countHtmlWords(tab?.content ?? '')
+      outlineWordCountsRef.current.set(node.id, count)
+      return count
+    }
+
+    const buildSceneRow = async (node: DocNode, chapterLabel: string, depth: number): Promise<OutlineRow> => {
+      const metadata = normalizeSceneMetadata(node.metadata)
+      return {
+        id: node.id,
+        type: 'scene',
+        chapter: chapterLabel,
+        title: node.title,
+        wordCount: await getSceneWordCount(node),
+        depth,
+        status: metadata.status,
+        metadata,
+      }
+    }
+
+    const visit = async (nodes: TreeNode[], chapterLabel: string, depth: number): Promise<OutlineRow[]> => {
+      const collected: OutlineRow[] = []
+      for (const node of nodes) {
+        if (node.type === 'folder') {
+          const childRows = await visit(node.children, node.label, depth + 1)
+          const childScenes = childRows.filter(row => row.type === 'scene')
+          collected.push({
+            id: node.id,
+            type: 'chapter',
+            chapter: chapterLabel,
+            title: node.label,
+            wordCount: childScenes.reduce((total, row) => total + row.wordCount, 0),
+            depth,
+            status: childScenes.length > 0 && childScenes.every(row => row.status === 'complete')
+              ? 'complete'
+              : 'inProgress',
+          })
+          collected.push(...childRows)
+          continue
+        }
+
+        collected.push(await buildSceneRow(node, chapterLabel, depth))
+      }
+      return collected
+    }
+
+    rows.push(...await visit(manuscript.children, manuscript.label, 0))
+    setOutlineRows(rows)
+  }, [])
+
   // #endregion
+
+  const clearSaveTimers = useCallback(() => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current)
+      saveTimer.current = null
+    }
+    if (saveLabelTimer.current) {
+      clearTimeout(saveLabelTimer.current)
+      saveLabelTimer.current = null
+    }
+  }, [])
+
+  const clearSaveStatus = useCallback(() => {
+    clearSaveTimers()
+    setSaveLabel('')
+  }, [clearSaveTimers])
 
   // #region === EFFECTS ===
 
@@ -1073,16 +668,76 @@ export default function App() {
   useEffect(() => { activeIdRef.current = activeId }, [activeId])
   useEffect(() => { dragIdRef.current = dragId }, [dragId])
   useEffect(() => { dropTargetRef.current = dropTarget }, [dropTarget])
+  useEffect(() => { selectedBinderIdsRef.current = selectedBinderIds }, [selectedBinderIds])
   useEffect(() => { activeTabIndexRef.current = activeTabIndex }, [activeTabIndex])
+  useEffect(() => { loreLinksEnabledRef.current = loreLinksEnabled }, [loreLinksEnabled])
+  useEffect(() => { mindMapRef.current = mindMap }, [mindMap])
+  useEffect(() => { atlasRef.current = atlas }, [atlas])
 
   useEffect(() => {
-    loadRecentProjects().then(setRecentProjects)
+    refreshOutlineRows()
+  }, [project?.path, tree, refreshOutlineRows])
+
+  const mindMapSceneOptions = useMemo<MindMapSceneOption[]>(() => (
+    outlineRows
+      .filter(row => row.type === 'scene')
+      .map(row => ({
+        id: row.id,
+        title: row.title,
+        chapter: row.chapter,
+      }))
+  ), [outlineRows])
+
+  useEffect(() => {
+    let cancelled = false
+    loadRecentProjects()
+      .then(recents => {
+        if (!cancelled) setRecentProjects(recents)
+      })
+      .finally(() => {
+        if (!cancelled) setStartupLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
+    projectDictionaryRef.current = projectDictionary
+    spellcheckerRef.current = createSpellchecker(projectDictionary)
+    if (editor) {
+      editor.view.dispatch(editor.state.tr.setMeta(spellcheckPluginKey, true))
+    }
+  }, [projectDictionary, editor])
+
+  useEffect(() => {
+    const seen = new Set<string>()
+    const matches: LoreLinkMatch[] = []
+    loreBook.categories.forEach(category => {
+      category.entries.forEach(entry => {
+        const keywords = [entry.name, ...(entry.keywords ?? [])]
+        keywords.forEach(keyword => {
+          const normalized = keyword.trim()
+          if (normalized.length < 2) return
+          const key = normalized.toLowerCase()
+          if (seen.has(key)) return
+          seen.add(key)
+          matches.push({
+            keyword: normalized,
+            entryId: entry.id,
+            categoryId: category.id,
+          })
+        })
+      })
+    })
+    loreLinkMatchesRef.current = matches
+    if (editor) editor.view.dispatch(editor.state.tr.setMeta(loreLinkPluginKey, true))
+  }, [loreBook, loreLinksEnabled, editor])
+
+  useEffect(() => {
     const root = document.documentElement
-    root.style.setProperty('--editor-body-font', styles.body.font)
-    root.style.setProperty('--editor-body-size', `${styles.body.size}pt`)
+    root.style.setProperty('--editor-body-font', styles.editor.font)
+    root.style.setProperty('--editor-body-size', `${styles.editor.size}pt`)
     root.style.setProperty('--editor-body-indent', styles.body.firstLineIndent ? '2em' : '0')
     root.style.setProperty('--editor-body-align',
       styles.body.justification === 'both' ? 'justify' : styles.body.justification)
@@ -1090,9 +745,8 @@ export default function App() {
     root.style.setProperty('--editor-chapter-size', `${styles.chapter.size}pt`)
     root.style.setProperty('--editor-chapter-weight', styles.chapter.bold ? '700' : '400')
     root.style.setProperty('--editor-chapter-style', styles.chapter.italic ? 'italic' : 'normal')
-    root.style.setProperty('--editor-body-line-height', styles.body.lineSpacing > 0
-      ? `${styles.body.lineSpacing * 1.2}em`
-      : '1.85')
+    root.style.setProperty('--editor-body-line-height', String(styles.editor.lineHeight))
+    root.style.setProperty('--editor-content-width', `${styles.editor.contentWidth}px`)
   }, [styles])
 
   useEffect(() => {
@@ -1102,6 +756,9 @@ export default function App() {
       }
       if (editMenuRef.current && !editMenuRef.current.contains(e.target as Node)) {
         setEditMenuOpen(false)
+      }
+      if (helpMenuRef.current && !helpMenuRef.current.contains(e.target as Node)) {
+        setHelpMenuOpen(false)
       }
     }
     document.addEventListener('mousedown', handler)
@@ -1198,6 +855,11 @@ export default function App() {
     saveSettings({ ...loadSettings(), zoom });
   }, [zoom]);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = appTheme
+    saveSettings({ ...loadSettings(), theme: appTheme })
+  }, [appTheme])
+
   // --- Collapse panels on small window EFFECT --- 
   useEffect(() => {
     const handleResize = () => {
@@ -1249,6 +911,13 @@ export default function App() {
   }, [tabContextMenu])
 
   useEffect(() => {
+    if (!spellcheckMenu) return
+    const handle = () => setSpellcheckMenu(null)
+    window.addEventListener('click', handle)
+    return () => window.removeEventListener('click', handle)
+  }, [spellcheckMenu])
+
+  useEffect(() => {
     const handleMouseUp = () => {
       setTimeout(handleTextSelect, 10)
     }
@@ -1287,15 +956,24 @@ export default function App() {
   // Debounces autosave while the editor is changing.
   const triggerSave = useCallback(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
+    if (saveLabelTimer.current) {
+      clearTimeout(saveLabelTimer.current)
+      saveLabelTimer.current = null
+    }
     setSaveLabel('editing…')
     saveTimer.current = setTimeout(() => {
       saveActive()
       computeManuscriptWordCount()
       computeChapterWordCount()
+      refreshOutlineRows()
+      saveTimer.current = null
       setSaveLabel('saved')
-      setTimeout(() => setSaveLabel(''), 1200)
+      saveLabelTimer.current = setTimeout(() => {
+        setSaveLabel('')
+        saveLabelTimer.current = null
+      }, 1200)
     }, 900)
-  }, [saveActive])
+  }, [saveActive, refreshOutlineRows])
 
   // Opens a scene from the binder and loads its content into TipTap.
   const selectDoc = async (id: number) => {
@@ -1344,6 +1022,136 @@ export default function App() {
   ) => {
     setAppMessage({ title, body, kind, action })
   }
+
+  const flushProjectFiles = async () => {
+    if (!projectRef.current) return
+
+    if (activeIdRef.current !== null) {
+      const node = findNode(treeRef.current, activeIdRef.current)
+      if (node && node.type === 'doc') {
+        const cleanHtml = bodyHtmlRef.current.replace(/<mark data-fnr="" class="fnr-highlight">(.*?)<\/mark>/g, '$1')
+        const updatedTabs = sceneTabsRef.current.map((tab, index) =>
+          index === activeTabIndexRef.current ? { ...tab, content: cleanHtml } : tab)
+        sceneTabsRef.current = updatedTabs
+        const serialized = serializeSceneTabs(updatedTabs, rawFileRef.current)
+        rawFileRef.current = serialized
+        await writeSceneFile(projectRef.current.path, node.file, serialized)
+      }
+    }
+
+    await writeNotesFile(projectRef.current.path, {
+      quickNote: quickNoteRef.current,
+      checklist: checklistRef.current,
+    })
+    if (mindMapSaveTimerRef.current) {
+      clearTimeout(mindMapSaveTimerRef.current)
+      mindMapSaveTimerRef.current = null
+    }
+    await writeCanvasFile(projectRef.current.path, mindMapRef.current)
+    if (atlasSaveTimerRef.current) {
+      clearTimeout(atlasSaveTimerRef.current)
+      atlasSaveTimerRef.current = null
+    }
+    await writeAtlasFile(projectRef.current.path, atlasRef.current)
+    await saveProjectToDisk({ ...projectRef.current, tree: treeRef.current }, activeIdRef.current ?? undefined)
+  }
+
+  const runProjectBackup = async (reason: BackupReason, showNotification = false) => {
+    if (!projectRef.current || backupInProgressRef.current) return
+    backupInProgressRef.current = true
+    const currentProject = projectRef.current
+    try {
+      if (reason !== 'open') await flushProjectFiles()
+      const backup = await createProjectBackup(
+        currentProject.path,
+        currentProject.name,
+        reason,
+        normalizeProjectSettings(currentProject.settings).backups.retentionCount,
+      )
+      if (showNotification) {
+        showMessage(`Backup created:\n${backup.name}`, 'Backup Complete')
+      }
+    } catch (e) {
+      if (showNotification) showMessage('Backup failed: ' + String(e), 'Backup Failed', 'error')
+    } finally {
+      backupInProgressRef.current = false
+    }
+  }
+
+  const restoreLatestBackup = async () => {
+    if (!projectRef.current) return
+    const currentProject = projectRef.current
+    try {
+      await flushProjectFiles()
+      const restored = await restoreLatestProjectBackup(
+        currentProject.path,
+        currentProject.name,
+        normalizeProjectSettings(currentProject.settings).backups.retentionCount,
+      )
+      if (!restored) {
+        showMessage('No backups were found for this project yet.', 'No Backups', 'warning')
+        return
+      }
+      const data = await readProjectJson(currentProject.path)
+      if (!data) {
+        showMessage('The backup was copied, but project.json could not be loaded.', 'Restore Warning', 'warning')
+        return
+      }
+      await loadProjectData(data, currentProject.path)
+      showMessage(`Restored backup:\n${restored.name}`, 'Backup Restored')
+    } catch (e) {
+      showMessage('Restore failed: ' + String(e), 'Restore Failed', 'error')
+    }
+  }
+
+  const openRestoreBackupPicker = async () => {
+    if (!projectRef.current) return
+    setFileMenuOpen(false)
+    try {
+      const backups = await listProjectBackups(projectRef.current.path, projectRef.current.name)
+      setAvailableBackups(backups)
+      setSelectedBackupName(backups[0]?.name ?? null)
+      setRestoreBackupOpen(true)
+    } catch (e) {
+      showMessage('Failed to load backups: ' + String(e), 'Backup Restore Failed', 'error')
+    }
+  }
+
+  const restoreSelectedBackup = async () => {
+    if (!projectRef.current) return
+    const selected = availableBackups.find(backup => backup.name === selectedBackupName)
+    if (!selected) return
+    const currentProject = projectRef.current
+    try {
+      setRestoreBackupOpen(false)
+      await flushProjectFiles()
+      const restored = await restoreProjectBackup(
+        currentProject.path,
+        currentProject.name,
+        selected,
+        normalizeProjectSettings(currentProject.settings).backups.retentionCount,
+      )
+      const data = await readProjectJson(currentProject.path)
+      if (!data) {
+        showMessage('The backup was copied, but project.json could not be loaded.', 'Restore Warning', 'warning')
+        return
+      }
+      await loadProjectData(data, currentProject.path)
+      showMessage(`Restored backup:\n${restored.name}`, 'Backup Restored')
+    } catch (e) {
+      showMessage('Restore failed: ' + String(e), 'Restore Failed', 'error')
+    }
+  }
+
+  useEffect(() => {
+    if (!project?.path) return
+    const backupSettings = normalizeProjectSettings(project.settings).backups
+    if (!backupSettings.enabled) return
+    const interval = window.setInterval(() => {
+      runProjectBackup('auto')
+    }, backupSettings.intervalMinutes * 60 * 1000)
+    return () => window.clearInterval(interval)
+  }, [project?.path, project?.settings.backups.enabled, project?.settings.backups.intervalMinutes])
 
   // Generates a short unique id for lore entries and fields.
   const generateLoreId = () => `l${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
@@ -1602,6 +1410,12 @@ export default function App() {
     const revisionBody = document.getElementById('revision-body')
     if (!revisionBody || !revisionBody.contains(range.commonAncestorContainer)) return
 
+    const preSelectionRange = range.cloneRange()
+    preSelectionRange.selectNodeContents(revisionBody)
+    preSelectionRange.setEnd(range.startContainer, range.startOffset)
+    const startOffset = preSelectionRange.toString().length
+    const endOffset = startOffset + range.toString().length
+
     const tempId = 'pending'
     const endMarker = document.createElement('x-comment-end')
     endMarker.setAttribute('data-id', tempId)
@@ -1618,7 +1432,7 @@ export default function App() {
     window.getSelection()?.removeAllRanges()
 
     const wrappedHtml = revisionBody.innerHTML
-    setRevisionPendingComment({ quote, wrappedHtml })
+    setRevisionPendingComment({ quote, wrappedHtml, startOffset, endOffset })
     setDraftText('')
   }
 
@@ -1692,6 +1506,8 @@ export default function App() {
     const newComment: RevisionComment = {
       id, sceneId: revisionActiveId, quote, text,
       createdAt: Date.now(), resolved: false,
+      startOffset: revisionPendingComment.startOffset,
+      endOffset: revisionPendingComment.endOffset,
     }
 
     // Replace the temporary 'pending' id with the real comment id
@@ -1816,30 +1632,6 @@ export default function App() {
     setConfirmDeleteLoreEntry(null)
   }
 
-  // Hard-deletes a template field and wipes its data from all entries.
-  const hardDeleteLoreField = async (categoryId: string, fieldId: string) => {
-    const updated = { ...loreBookRef.current }
-    updated.categories = updated.categories.map(c => {
-      if (c.id !== categoryId) return c
-      const template = c.template.filter(f => f.id !== fieldId)
-      const entries = c.entries.map(e => {
-        const fields = { ...e.fields }
-        delete fields[fieldId]
-        return { ...e, fields }
-      })
-      return { ...c, template, entries }
-    })
-    await saveLoreBook(updated)
-    // Also update template editor if open
-    if (loreTemplateEditor?.id === categoryId) {
-      setLoreTemplateEditor(prev => prev ? {
-        ...prev,
-        template: prev.template.filter(f => f.id !== fieldId),
-      } : null)
-    }
-    setConfirmHardDeleteField(null)
-  }
-
   // #endregion
   
   // #region === HANDLERS: TRASH ===
@@ -1847,136 +1639,26 @@ export default function App() {
   // Reads trash sidecar files so deleted scenes/folders can be listed.
   const loadTrash = async () => {
     if (!projectRef.current) return
-    try {
-      const trashDir = await join(projectRef.current.path, 'trash')
-      const dirExists = await exists(trashDir)
-      if (!dirExists) { setTrashItems([]); return }
-      const entries = await readDir(trashDir)
-      const items: { sidecarId: string; label: string; node: TreeNode; originalFolderId: number }[] = []
-      for (const entry of entries) {
-        if (entry.name?.endsWith('.json')) {
-          const sidecarId = entry.name.replace('.json', '')
-          const sidecarPath = await join(trashDir, entry.name)
-          const raw = await readTextFile(sidecarPath)
-          const data = JSON.parse(raw)
-          items.push({
-            sidecarId,
-            label: data.node.label,
-            node: data.node,
-            originalFolderId: data.originalFolderId,
-          })
-        }
-      }
-      setTrashItems(items)
-    } catch {
-      setTrashItems([])
-    }
+    setTrashItems(await loadTrashItems(projectRef.current.path))
   }
 
   // Restores a trashed scene/folder and moves its files back into scenes.
   const restoreFromTrash = async (sidecarId: string, node: TreeNode, originalFolderId: number, parentSidecarId?: string) => {
     if (!projectRef.current) return
     try {
-      const docs = collectDocs(node)
+      const restored = await restoreTrashItem({
+        projectPath: projectRef.current.path,
+        tree: treeRef.current,
+        sidecarId,
+        node,
+        originalFolderId,
+        parentSidecarId,
+      })
 
-      // Move all doc files back to scenes
-      for (const doc of docs) {
-        const from = await join(projectRef.current.path, 'trash', `${doc.file}.md`)
-        const to = await join(projectRef.current.path, 'scenes', `${doc.file}.md`)
-        const fileExists = await exists(from)
-        if (fileExists) await rename(from, to)
-      }
-
-      // Read parent sidecar BEFORE modifying it so we can use it for tree re-insert
-      let parentFolderNode: FolderNode | null = null
-      let originalChildOrder: number[] = []
-      if (parentSidecarId) {
-        const sidecarPath = await join(projectRef.current.path, 'trash', `${parentSidecarId}.json`)
-        const sidecarExists = await exists(sidecarPath)
-        if (sidecarExists) {
-          const raw = await readTextFile(sidecarPath)
-          const data = JSON.parse(raw)
-
-          // Capture the original full folder node before any modifications
-          if (data.node.type === 'folder') {
-            parentFolderNode = JSON.parse(JSON.stringify(data.node)) as FolderNode
-          }
-
-          // Use stored originalChildren for sort order, fall back to current node children
-          originalChildOrder = data.originalChildren ??
-            (data.node.type === 'folder' ? data.node.children.map((c: TreeNode) => c.id) : [])
-
-          // Remove this node from the sidecar
-          const removeFromNode = (n: TreeNode, id: number): TreeNode | null => {
-            if (n.type !== 'folder') return n
-            const filtered = n.children.filter(c => c.id !== id)
-            if (filtered.length !== n.children.length) {
-              return { ...n, children: filtered }
-            }
-            return { ...n, children: n.children.map(c => removeFromNode(c, id)).filter(Boolean) as TreeNode[] }
-          }
-          const updatedNode = removeFromNode(data.node, node.id)
-          const remaining = updatedNode ? collectDocs(updatedNode) : []
-          if (remaining.length === 0) {
-            await remove(sidecarPath)
-            setTrashItems(prev => prev.filter(i => i.sidecarId !== parentSidecarId))
-          } else {
-            await writeTextFile(sidecarPath, JSON.stringify({ ...data, node: updatedNode }, null, 2))
-            await loadTrash()
-          }
-        }
-      } else {
-        // Top-level sidecar — delete it entirely
-        const sidecar = await join(projectRef.current.path, 'trash', `${sidecarId}.json`)
-        await remove(sidecar)
-        setTrashItems(prev => prev.filter(i => i.sidecarId !== sidecarId))
-      }
-
-      // Re-insert into tree
-      const newTree = JSON.parse(JSON.stringify(treeRef.current)) as TreeNode[]
-      const manuscript = findNode(newTree, 1) as FolderNode | null
-
-      if (parentFolderNode) {
-        // Restoring a child from a trashed folder — find or recreate the parent folder
-        const existingFolder = findNode(newTree, parentFolderNode.id) as FolderNode | null
-        if (existingFolder && existingFolder.type === 'folder') {
-          existingFolder.children.push(node)
-          // Sort by original order from the sidecar
-          existingFolder.children.sort((a, b) => {
-            const ai = originalChildOrder.indexOf(a.id)
-            const bi = originalChildOrder.indexOf(b.id)
-            return ai - bi
-          })
-        } else {
-          // Recreate the folder with just this scene
-          const restoredFolder: FolderNode = {
-            id: parentFolderNode.id,
-            type: 'folder',
-            label: parentFolderNode.label,
-            open: true,
-            children: [node],
-          }
-          if (manuscript) {
-            manuscript.children.push(restoredFolder)
-          } else {
-            newTree.push(restoredFolder)
-          }
-        }
-      } else {
-        // Top-level restore — use originalFolderId
-        const targetFolder = findNode(newTree, originalFolderId) as FolderNode | null
-        if (targetFolder && targetFolder.type === 'folder') {
-          targetFolder.children.push(node)
-        } else if (manuscript) {
-          manuscript.children.push(node)
-        } else {
-          newTree.push(node)
-        }
-      }
-
-      setTree(newTree)
-      treeRef.current = newTree
-      saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+      setTree(restored.tree)
+      treeRef.current = restored.tree
+      setTrashItems(restored.trashItems)
+      saveProjectToDisk({ ...projectRef.current, tree: restored.tree }, activeIdRef.current ?? undefined)
 
       if (isTrashPreview) {
         setIsTrashPreview(false)
@@ -1994,16 +1676,7 @@ export default function App() {
   const emptyTrash = async () => {
     if (!projectRef.current) return
     try {
-      const trashDir = await join(projectRef.current.path, 'trash')
-      const dirExists = await exists(trashDir)
-      if (!dirExists) return
-      const entries = await readDir(trashDir)
-      for (const entry of entries) {
-        if (entry.name) {
-          const filePath = await join(trashDir, entry.name)
-          await remove(filePath)
-        }
-      }
+      await emptyTrashFolder(projectRef.current.path)
       setTrashItems([])
       setTrashOpen(false)
     } catch (e) {
@@ -2012,7 +1685,6 @@ export default function App() {
   }
 
   // #endregion
-
   // #region === HANDLERS: SEARCH ===
 
   // Searches manuscript, notes, and trash for a text query.
@@ -2022,74 +1694,14 @@ export default function App() {
       return
     }
     setSearchLoading(true)
-    const results: typeof searchResults = []
-    const q = query.toLowerCase()
-
-    const searchDocs = async (docs: DocNode[], source: string, isTrash = false, trashNode?: TreeNode, trashFolderId?: number) => {
-      for (const doc of docs) {
-        const dir = isTrash ? 'trash' : 'scenes'
-        const filePath = await join(projectRef.current!.path, dir, `${doc.file}.md`)
-        const fileExists = await exists(filePath)
-        if (!fileExists) continue
-        const content = await readTextFile(filePath)
-        const div = document.createElement('div')
-        div.innerHTML = content
-        const text = div.textContent ?? ''
-        const idx = text.toLowerCase().indexOf(q)
-        if (idx === -1) continue
-        const start = Math.max(0, idx - 60)
-        const end = Math.min(text.length, idx + query.length + 60)
-        const excerpt = (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '')
-        results.push({
-          docId: doc.id,
-          title: doc.title,
-          excerpt,
-          source,
-          fileId: doc.file,
-          isTrash,
-          trashNode,
-          trashFolderId,
-        })
-      }
-    }
-
-    // Search Manuscript
-    const manuscript = findNode(treeRef.current, 1)
-    if (manuscript && manuscript.type === 'folder') {
-      await searchDocs(collectDocs(manuscript), 'Manuscript')
-    }
-
-    // Search Notes
-    const notes = findNode(treeRef.current, 2)
-    if (notes && notes.type === 'folder') {
-      await searchDocs(collectDocs(notes), 'Notes')
-    }
-
-    // Search Trash
     try {
-      const trashDir = await join(projectRef.current.path, 'trash')
-      const dirExists = await exists(trashDir)
-      if (dirExists) {
-        const entries = await readDir(trashDir)
-        for (const entry of entries) {
-          if (entry.name?.endsWith('.json')) {
-            const sidecarPath = await join(projectRef.current.path, 'trash', entry.name)
-            const raw = await readTextFile(sidecarPath)
-            const data = JSON.parse(raw)
-            const node = data.node as TreeNode
-            const docs = collectDocs(node)
-            await searchDocs(docs, 'Trash', true, node, data.originalFolderId)
-          }
-        }
-      }
-    } catch { /* silently fail */ }
-
-    setSearchResults(results)
-    setSearchLoading(false)
+      setSearchResults(await searchProject(projectRef.current.path, treeRef.current, query))
+    } finally {
+      setSearchLoading(false)
+    }
   }
-
   // Opens a selected search result, previewing trash results read-only.
-  const openSearchResult = async (result: typeof searchResults[0]) => {
+  const openSearchResult = async (result: SearchResult) => {
     if (result.isTrash) {
       // Preview trash scene
       const doc = result.trashNode ? collectDocs(result.trashNode).find(d => d.file === result.fileId) : null
@@ -2250,6 +1862,10 @@ export default function App() {
         const { result, count } = replaceInHtml(clean, fnrFind, fnrReplace, true)
         if (count > 0) {
           await writeSceneFile(projectRef.current.path, doc.file, result)
+          const tabs = parseSceneTabs(result)
+          const selectedTab = projectRef.current.compileSelections[doc.file]
+          const tab = tabs.find(t => t.name === selectedTab) ?? tabs[tabs.length - 1] ?? tabs[0]
+          outlineWordCountsRef.current.set(doc.id, countHtmlWords(tab?.content ?? ''))
           if (activeIdRef.current === doc.id) {
             bodyHtmlRef.current = result
             editor?.commands.setContent(result, { emitUpdate: false })
@@ -2288,6 +1904,10 @@ export default function App() {
         if (count > 0) {
           snapshot.push({ fileId: doc.file, content })
           await writeSceneFile(projectRef.current.path, doc.file, result)
+          const tabs = parseSceneTabs(result)
+          const selectedTab = projectRef.current.compileSelections[doc.file]
+          const tab = tabs.find(t => t.name === selectedTab) ?? tabs[tabs.length - 1] ?? tabs[0]
+          outlineWordCountsRef.current.set(doc.id, countHtmlWords(tab?.content ?? ''))
           if (activeIdRef.current === doc.id) {
             bodyHtmlRef.current = result
             editor?.commands.setContent(result, { emitUpdate: false })
@@ -2306,17 +1926,55 @@ export default function App() {
 
   // #endregion
 
+  // #region === HANDLERS: SPELLCHECK ===
+
+  const refreshSpellcheck = () => {
+    if (!editor) return
+    editor.view.dispatch(editor.state.tr.setMeta(spellcheckPluginKey, true))
+  }
+
+  const replaceMisspelledWord = (replacement: string) => {
+    if (!editor || !spellcheckMenu) return
+    editor.chain().focus().insertContentAt({ from: spellcheckMenu.from, to: spellcheckMenu.to }, replacement).run()
+    setSpellcheckMenu(null)
+    refreshSpellcheck()
+  }
+
+  const addWordToProjectDictionary = async (word: string) => {
+    if (!projectRef.current) return
+    const normalizedWord = word.trim()
+    if (!normalizedWord) return
+    const next = Array.from(new Set([...projectDictionaryRef.current, normalizedWord]))
+      .sort((a, b) => a.localeCompare(b))
+    projectDictionaryRef.current = next
+    setProjectDictionary(next)
+    await writeProjectDictionary(projectRef.current.path, next)
+    setSpellcheckMenu(null)
+    refreshSpellcheck()
+  }
+
+  // #endregion
+
   // #region === HANDLERS: PROJECT MANAGEMENT ===
 
   // Flushes pending changes and returns to the welcome screen.
   const closeProject = () => {
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current)
-      saveTimer.current = null
+    clearSaveTimers()
+    if (mindMapSaveTimerRef.current) {
+      clearTimeout(mindMapSaveTimerRef.current)
+      mindMapSaveTimerRef.current = null
+      if (projectRef.current) writeCanvasFile(projectRef.current.path, mindMapRef.current)
+    }
+    if (atlasSaveTimerRef.current) {
+      clearTimeout(atlasSaveTimerRef.current)
+      atlasSaveTimerRef.current = null
+      if (projectRef.current) writeAtlasFile(projectRef.current.path, atlasRef.current)
     }
     saveActive()
     setProject(null)
     projectRef.current = null
+    outlineWordCountsRef.current.clear()
+    outlineProjectPathRef.current = null
     setTree([])
     treeRef.current = []
     setActiveId(null)
@@ -2330,10 +1988,6 @@ export default function App() {
     quickNoteRef.current = ''
     setChecklist([])
     checklistRef.current = []
-    setDrawerOpen({
-      quickNote: false,
-      checklist: false,
-    })
     setSceneTabs([])
     sceneTabsRef.current = []
     rawFileRef.current = ''
@@ -2355,6 +2009,12 @@ export default function App() {
     setRevisionPendingComment(null)
     setRevisionActiveCommentId(null)
     setDraftText('')
+    setProjectDictionary([])
+    setMindMap(DEFAULT_MIND_MAP)
+    mindMapRef.current = DEFAULT_MIND_MAP
+    setAtlas(DEFAULT_ATLAS)
+    atlasRef.current = DEFAULT_ATLAS
+    setSpellcheckMenu(null)
   }
 
   // Exports the manuscript folder to a DOCX document.
@@ -2362,6 +2022,7 @@ export default function App() {
   const openCompileModal = async () => {
     if (!project) return
     setFileMenuOpen(false)
+    await runProjectBackup('compile')
     setCompileLoading(true)
     setShowCompile(true)
     const chapters = await buildCompileChapters(tree, project.path)
@@ -2392,6 +2053,134 @@ export default function App() {
     saveProjectToDisk(updated, activeIdRef.current ?? undefined)
   }
 
+  type CompileMarks = {
+    bold?: boolean
+    italics?: boolean
+    underline?: boolean
+  }
+
+  const createCompileRun = (text: string, marks: CompileMarks) => new TextRun({
+    text,
+    font: styles.body.font,
+    size: styles.body.size * 2,
+    bold: marks.bold,
+    italics: marks.italics,
+    underline: marks.underline ? {} : undefined,
+  })
+
+  const collectTextRuns = (node: Node, marks: CompileMarks = {}): TextRun[] => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent ?? ''
+      return text ? [createCompileRun(text, marks)] : []
+    }
+
+    if (!(node instanceof HTMLElement)) return []
+
+    if (node.tagName === 'BR') {
+      return [new TextRun({ break: 1 })]
+    }
+
+    const nextMarks: CompileMarks = {
+      ...marks,
+      bold: marks.bold || node.tagName === 'STRONG' || node.tagName === 'B',
+      italics: marks.italics || node.tagName === 'EM' || node.tagName === 'I',
+      underline: marks.underline || node.tagName === 'U',
+    }
+
+    return Array.from(node.childNodes).flatMap(child => collectTextRuns(child, nextMarks))
+  }
+
+  const collectListItemRuns = (item: HTMLElement): TextRun[] => {
+    const runs: TextRun[] = []
+    item.childNodes.forEach(child => {
+      if (child instanceof HTMLElement && (child.tagName === 'UL' || child.tagName === 'OL')) return
+      if (child instanceof HTMLElement && child.tagName === 'P') {
+        child.childNodes.forEach(pChild => runs.push(...collectTextRuns(pChild)))
+        return
+      }
+      runs.push(...collectTextRuns(child))
+    })
+    return runs
+  }
+
+  const bodyParagraphOptions = () => ({
+    spacing: {
+      after: 0,
+      line: styles.body.lineSpacing * 240,
+      lineRule: 'auto' as const,
+    },
+    alignment: styles.body.justification === 'both' ? AlignmentType.JUSTIFIED
+      : styles.body.justification === 'center' ? AlignmentType.CENTER
+        : styles.body.justification === 'right' ? AlignmentType.RIGHT
+          : AlignmentType.LEFT,
+    indent: styles.body.firstLineIndent ? { firstLine: 720 } : undefined,
+  })
+
+  const compileHtmlToParagraphs = (html: string): Paragraph[] => {
+    const root = document.createElement('div')
+    root.innerHTML = html
+    const paragraphs: Paragraph[] = []
+
+    const addTextParagraph = (runs: TextRun[], extra: Record<string, unknown> = {}) => {
+      if (runs.length === 0) return
+      paragraphs.push(new Paragraph({
+        ...bodyParagraphOptions(),
+        ...extra,
+        children: runs,
+      }))
+    }
+
+    const processList = (list: HTMLElement, depth = 0) => {
+      const ordered = list.tagName === 'OL'
+      const listItems = Array.from(list.children).filter((child): child is HTMLElement => child instanceof HTMLElement && child.tagName === 'LI')
+      listItems.forEach((item, index) => {
+        const prefix = ordered
+          ? `${index + 1}. `
+          : depth === 0 ? '• ' : depth === 1 ? '◦ ' : '▪ '
+        addTextParagraph([
+          createCompileRun(prefix, {}),
+          ...collectListItemRuns(item),
+        ], {
+          indent: { left: 720 + depth * 360, hanging: 360 },
+        })
+
+        Array.from(item.children).forEach(child => {
+          if (child instanceof HTMLElement && (child.tagName === 'UL' || child.tagName === 'OL')) {
+            processList(child, depth + 1)
+          }
+        })
+      })
+    }
+
+    const processBlock = (element: HTMLElement) => {
+      if (element.tagName === 'P') {
+        addTextParagraph(collectTextRuns(element))
+      } else if (element.tagName === 'HR') {
+        paragraphs.push(new Paragraph({
+          children: [createCompileRun('* * *', {})],
+          spacing: { before: 200, after: 200 },
+          alignment: AlignmentType.CENTER,
+        }))
+      } else if (element.tagName === 'BLOCKQUOTE') {
+        const quoteBlocks = Array.from(element.children).filter((child): child is HTMLElement => child instanceof HTMLElement)
+        const targets = quoteBlocks.length ? quoteBlocks : [element]
+        targets.forEach(target => {
+          addTextParagraph(collectTextRuns(target, { italics: true }), {
+            indent: { left: 720 },
+          })
+        })
+      } else if (element.tagName === 'UL' || element.tagName === 'OL') {
+        processList(element)
+      }
+    }
+
+    Array.from(root.children).forEach(child => {
+      if (child instanceof HTMLElement) processBlock(child)
+    })
+
+    return paragraphs
+  }
+
   // Exports the manuscript to DOCX using the current compile selection.
   const compileProject = async () => {
     if (!project) return
@@ -2404,38 +2193,59 @@ export default function App() {
 
     const paragraphs = []
 
-    // ── Title page ──
     if (compileFrontMatter) {
-      const settings = project.settings ?? DEFAULT_PROJECT_SETTINGS
-      if (settings.title) {
+      const settings = normalizeProjectSettings(project.settings)
+      const coverTitle = (settings.title || project.name).trim()
+      const coverSubtitle = settings.subtitle.trim()
+      const coverAuthor = settings.author.trim()
+
+      paragraphs.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: coverTitle.toUpperCase(),
+              font: styles.chapter.font,
+              size: 32 * 2,
+              bold: true,
+            }),
+          ],
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 3300, after: 240 },
+        })
+      )
+
+      if (coverSubtitle) {
         paragraphs.push(
           new Paragraph({
-            children: [new TextRun({ text: settings.title, font: styles.chapter.font, size: styles.chapter.size * 2, bold: styles.chapter.bold, italics: styles.chapter.italic })],
+            children: [
+              new TextRun({
+                text: coverSubtitle.toUpperCase(),
+                font: styles.body.font,
+                size: 12 * 2,
+              }),
+            ],
             alignment: AlignmentType.CENTER,
-            spacing: { before: 3000, after: 200 },
+            spacing: { before: 0, after: 520 },
           })
         )
       }
-      if (settings.subtitle) {
-        paragraphs.push(
-          new Paragraph({
-            children: [new TextRun({ text: settings.subtitle, font: styles.body.font, size: (styles.body.size + 2) * 2 })],
-            alignment: AlignmentType.CENTER,
-            spacing: { before: 0, after: 200 },
-          })
-        )
-      }
-      if (settings.author) {
-        paragraphs.push(
-          new Paragraph({
-            children: [new TextRun({ text: settings.author, font: styles.body.font, size: styles.body.size * 2 })],
-            alignment: AlignmentType.CENTER,
-            spacing: { before: 200, after: 0 },
-          })
-        )
-      }
-      // Page break after title page
-      paragraphs.push(new Paragraph({ children: [], pageBreakBefore: true }))
+
+      paragraphs.push(
+        new Paragraph({
+          children: [
+            ...(coverAuthor
+              ? [new TextRun({
+                text: coverAuthor.toUpperCase(),
+                font: styles.body.font,
+                size: 14 * 2,
+              })]
+              : []),
+            new PageBreak(),
+          ],
+          alignment: AlignmentType.CENTER,
+          spacing: { before: coverSubtitle ? 420 : 760, after: 0 },
+        })
+      )
     }
 
     // ── Body ──
@@ -2454,30 +2264,7 @@ export default function App() {
           })
         )
       } else {
-        const lines = htmlToPlainLines(node.html)
-        for (const line of lines) {
-          paragraphs.push(
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: line,
-                  font: styles.body.font,
-                  size: styles.body.size * 2,
-                })
-              ],
-              spacing: {
-                after: 0,
-                line: styles.body.lineSpacing > 0 ? styles.body.lineSpacing * 240 : 276,
-                lineRule: 'auto' as const,
-              },
-              alignment: styles.body.justification === 'both' ? AlignmentType.JUSTIFIED
-                : styles.body.justification === 'center' ? AlignmentType.CENTER
-                  : styles.body.justification === 'right' ? AlignmentType.RIGHT
-                    : AlignmentType.LEFT,
-              indent: styles.body.firstLineIndent ? { firstLine: 720 } : undefined,
-            })
-          )
-        }
+        paragraphs.push(...compileHtmlToParagraphs(node.html))
       }
     }
 
@@ -2542,55 +2329,51 @@ export default function App() {
   // Creates a new project folder, default tree, and project.json.
   const createProject = async () => {
     if (!newProjectName.trim() || !newProjectParent) return
-    closeProject()
     try {
-      const projectPath = await join(newProjectParent, newProjectName.trim())
-      await mkdir(projectPath, { recursive: true })
-      const scenesDir = await join(projectPath, 'scenes')
-      await mkdir(scenesDir, { recursive: true })
-
-      nextId = 10
-      const chapterId = nextId++
-      const sceneId = nextId++
-
-      const defaultFileId = generateFileId()
-      const defaultTree: TreeNode[] = [
-        {
-          id: 1, type: 'folder', label: 'Manuscript', open: true,
-          children: [
-            {
-              id: chapterId, type: 'folder', label: 'Chapter 1', open: true,
-              children: [
-                { id: sceneId, type: 'doc', label: 'Scene 1', title: 'Scene 1', file: defaultFileId }
-              ]
-            }
-          ]
-        },
-        { id: 2, type: 'folder', label: 'Notes', open: false, children: [] },
-      ]
-
-      const defaultContent = `<p>This is the beginning of your story. Somewhere in these pages, a character is waiting to surprise you — someone whose voice you don't yet know, whose choices will lead somewhere you haven't imagined. Let them.</p><p>The world you're building exists nowhere else. Every detail you set down — the quality of light through a particular window, the way two people talk around what they mean, the rules of a place that has never existed — belongs entirely to you. There is no wrong way to begin.</p><p>Write the first true sentence. The rest will follow.</p>`
-
-      await writeSceneFile(projectPath, defaultFileId, defaultContent)
-
-      const { defaultStyles } = await loadRecentData()
-      const newProj: Project = {
-        name: newProjectName.trim(),
-        path: projectPath,
-        tree: defaultTree,
-        styles: defaultStyles,
-        settings: DEFAULT_PROJECT_SETTINGS,
-        compileSelections: {},
+      const packageName = projectPackageFolderName(newProjectName)
+      const projectPath = await join(newProjectParent, packageName)
+      if (await exists(projectPath)) {
+        showMessage(
+          `A project package named "${packageName}" already exists in that location. Choose a different project name or location.`,
+          'Project Package Exists',
+          'warning',
+        )
+        return
       }
 
-      nextId = Math.max(nextId, 12)
-      await saveProjectToDisk(newProj)
-      await addToRecentProjects(newProjectName.trim(), projectPath)
+      closeProject()
+      setNextIdValue(10)
+      const chapterId = allocateNextId()
+      const sceneId = allocateNextId()
+      const defaultFileId = generateFileId()
+      const { defaultStyles } = await loadRecentData()
+
+      const newProj = await createProjectOnDisk({
+        parentPath: newProjectParent,
+        name: newProjectName.trim(),
+        chapterId,
+        sceneId,
+        sceneFileId: defaultFileId,
+        styles: defaultStyles,
+      })
+
+      setNextIdValue(Math.max(getNextIdValue(), 12))
+      await addToRecentProjects(newProj.name, newProj.path)
+      const loadedLoreBook = await readLoreBookFile(newProj.path)
+      const loadedMindMap = await readCanvasFile(newProj.path)
+      const loadedAtlas = await readAtlasFile(newProj.path)
       setProject(newProj)
       projectRef.current = newProj
       setStyles(defaultStyles)
-      setTree(defaultTree)
-      treeRef.current = defaultTree
+      setProjectDictionary([])
+      setLoreBook(loadedLoreBook)
+      loreBookRef.current = loadedLoreBook
+      setMindMap(loadedMindMap)
+      mindMapRef.current = loadedMindMap
+      setAtlas(loadedAtlas)
+      atlasRef.current = loadedAtlas
+      setTree(newProj.tree)
+      treeRef.current = newProj.tree
       setShowNewProject(false)
       setNewProjectName('')
       setNewProjectParent('')
@@ -2600,18 +2383,19 @@ export default function App() {
       showMessage('Failed to create project: ' + String(e), 'Error', 'error')
     }
   }
-
   // Hydrates project state from project.json and restores the last active scene.
   const loadProjectData = async (data: Record<string, unknown>, path: string) => {
-    const loadedStyles = (data.styles as ProjectStyles) ?? DEFAULT_STYLES
+    clearSaveStatus()
+    const loadedStyles = normalizeProjectStyles(data.styles as Partial<ProjectStyles> | undefined)
     const loadedTree = data.tree as TreeNode[]
-    nextId = (data.nextId as number) ?? 10
+    setNextIdValue((data.nextId as number) ?? 10)
+    const loadedSettings = normalizeProjectSettings(data.settings as Partial<ProjectSettings> | undefined)
     const loadedProject: Project = {
       name: data.name as string,
       path,
       tree: loadedTree,
       styles: loadedStyles,
-      settings: (data.settings as ProjectSettings) ?? DEFAULT_PROJECT_SETTINGS,
+      settings: loadedSettings,
       compileSelections: (data.compileSelections as Record<string, string>) ?? {},
     }
     setProject(loadedProject)
@@ -2629,9 +2413,18 @@ export default function App() {
     const revComments = await readRevisionFile(path)
     setRevisionComments(revComments)
     revisionCommentsRef.current = revComments
+    const loadedMindMap = await readCanvasFile(path)
+    setMindMap(loadedMindMap)
+    mindMapRef.current = loadedMindMap
+    const loadedAtlas = await readAtlasFile(path)
+    setAtlas(loadedAtlas)
+    atlasRef.current = loadedAtlas
+    const dictionaryWords = await readProjectDictionary(path)
+    setProjectDictionary(dictionaryWords)
     setStyles(loadedStyles)
     const restoredId = (data.lastActiveId as number | null) ?? null
     setActiveId(restoredId)
+    activeIdRef.current = restoredId
     if (restoredId !== null) {
       const restoredNode = findNode(loadedTree, restoredId)
       if (restoredNode && restoredNode.type === 'doc') {
@@ -2642,19 +2435,30 @@ export default function App() {
         setSceneTabs(tabs)
         sceneTabsRef.current = tabs
         setActiveTabIndex(0)
+        activeTabIndexRef.current = 0
         const content = tabs[0]?.content ?? ''
         bodyHtmlRef.current = content
         editor?.commands.setContent(content, { emitUpdate: false })
+        setRevisionActiveId(restoredId)
+        setRevisionTitle(restoredNode.title)
+        setRevisionContent(tabs[tabs.length - 1]?.content ?? '')
         const div = document.createElement('div')
         div.innerHTML = content
         const text = div.textContent ?? ''
         setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0)
         setCharCount(text.length)
+      } else {
+        setRevisionActiveId(null)
+        setRevisionTitle('')
+        setRevisionContent('')
       }
     } else {
       setTitleValue('')
       bodyHtmlRef.current = ''
       editor?.commands.setContent('')
+      setRevisionActiveId(null)
+      setRevisionTitle('')
+      setRevisionContent('')
       setWordCount(0)
       setCharCount(0)
     }
@@ -2665,44 +2469,211 @@ export default function App() {
     }, 200)
   }
 
+  const saveProjectSettings = (settings: ProjectSettings, nextStyles: ProjectStyles, dictionaryWords: string[]) => {
+    if (!projectRef.current) return
+    const normalizedStyles = normalizeProjectStyles(nextStyles)
+    const normalizedSettings = normalizeProjectSettings(settings)
+    const normalizedDictionary = Array.from(new Set(dictionaryWords.map(word => word.trim()).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b))
+    const updated = { ...projectRef.current, settings: normalizedSettings, styles: normalizedStyles }
+    projectRef.current = updated
+    setProject(updated)
+    setStyles(normalizedStyles)
+    setProjectDictionary(normalizedDictionary)
+    writeProjectDictionary(updated.path, normalizedDictionary)
+    saveProjectToDisk(updated, activeIdRef.current ?? undefined)
+    setShowProjectSettings(false)
+  }
+
+  const savePreferences = (theme: ThemeId) => {
+    setAppTheme(theme)
+    setShowPreferences(false)
+  }
+
+  const projectNameFromPath = (path: string) => {
+    return path.split(/[\\/]/).filter(Boolean).pop() ?? 'Project'
+  }
+
+  const showProjectRecovery = (path: string, name: string, details: unknown) => {
+    setProjectRecovery({
+      path,
+      name: name.trim() || projectNameFromPath(path),
+      details: String(details),
+    })
+  }
+
+  const loadProjectWithRecovery = async (data: Record<string, unknown>, path: string, name: string) => {
+    try {
+      await loadProjectAndRemember(data, path)
+      return true
+    } catch (e) {
+      showProjectRecovery(path, name, e)
+      return false
+    }
+  }
+
+  const openLoadedProject = async (data: Record<string, unknown>, path: string) => {
+    const migration = migrateProjectData(data)
+    const projectName = typeof migration.data.name === 'string' && migration.data.name.trim()
+      ? migration.data.name
+      : 'Untitled Project'
+
+    if (migration.toFormatVersion > PROJECT_FORMAT_VERSION) {
+      showMessage(
+        `This project uses Scrivus project format ${migration.toFormatVersion}, but this copy of Scrivus only supports format ${PROJECT_FORMAT_VERSION}. Please update Scrivus before opening it.`,
+        'Project Is Too New',
+        'warning',
+      )
+      return false
+    }
+
+    const settings = normalizeProjectSettings(migration.data.settings as Partial<ProjectSettings> | undefined)
+    try {
+      await createProjectBackup(path, projectName, 'open', settings.backups.retentionCount)
+    } catch (e) {
+      showMessage(
+        `Scrivus could not create a safety backup before opening this project.\n\n${String(e)}`,
+        'Backup Failed',
+        'warning',
+        {
+          label: 'Open Anyway',
+          onClick: () => {
+            void loadProjectWithRecovery(migration.data, path, projectName)
+          },
+        },
+      )
+      return false
+    }
+
+    if (migration.changed) {
+      try {
+        await writeTextFile(await join(path, 'project.json'), JSON.stringify(migration.data, null, 2))
+      } catch (e) {
+        showMessage(
+          `Scrivus created a safety backup, but could not save the migrated project metadata.\n\n${String(e)}`,
+          'Migration Save Failed',
+          'warning',
+          {
+            label: 'Open Anyway',
+            onClick: () => {
+              void loadProjectWithRecovery(migration.data, path, projectName)
+            },
+          },
+        )
+        return false
+      }
+    }
+
+    return loadProjectWithRecovery(migration.data, path, projectName)
+  }
+
+  const loadProjectAndRemember = async (data: Record<string, unknown>, path: string) => {
+    await loadProjectData(data, path)
+    const projectName = typeof data.name === 'string' && data.name.trim() ? data.name : 'Untitled Project'
+    await addToRecentProjects(projectName, path)
+    setRecentProjects(await loadRecentProjects())
+  }
+
+  const checkForUpdates = async () => {
+    setHelpMenuOpen(false)
+    showMessage('Checking GitHub Releases for the latest Scrivus version.', 'Checking for Updates')
+
+    try {
+      const result = await checkForScrivusUpdate(SCRIVUS_VERSION)
+      if (result.status === 'available') {
+        showMessage(
+          `Scrivus ${result.latestVersion} is available. You are currently running ${result.currentVersion}.`,
+          'Update Available',
+          'info',
+          {
+            label: 'View Release',
+            onClick: () => {
+              void openUrl(result.releaseUrl)
+            },
+          },
+        )
+        return
+      }
+
+      showMessage(
+        `You are up to date. Scrivus ${result.currentVersion} is the latest released version.`,
+        'Scrivus Is Up to Date',
+      )
+    } catch (e) {
+      showMessage(
+        `Scrivus could not check GitHub Releases right now.\n\n${String(e)}`,
+        'Update Check Failed',
+        'warning',
+      )
+    }
+  }
+
+  const restoreRecoveryBackup = async () => {
+    if (!projectRecovery) return
+    const target = projectRecovery
+    setProjectRecovery(null)
+    try {
+      const restored = await restoreLatestProjectBackup(target.path, target.name)
+      if (!restored) {
+        showMessage('No backups were found for this project yet.', 'No Backups', 'warning')
+        return
+      }
+      const data = await readProjectJson(target.path)
+      if (!data) {
+        showMessage('The backup was restored, but project.json could not be loaded.', 'Restore Warning', 'warning')
+        return
+      }
+      await openLoadedProject(data, target.path)
+      showMessage(`Restored backup:\n${restored.name}`, 'Backup Restored')
+    } catch (e) {
+      showMessage('Restore failed: ' + String(e), 'Restore Failed', 'error')
+    }
+  }
+
+  const openRecoveryBackupFolder = async () => {
+    if (!projectRecovery) return
+    try {
+      const backupRoot = await getProjectBackupRoot(projectRecovery.path, projectRecovery.name)
+      await revealItemInDir(backupRoot)
+    } catch (e) {
+      showMessage('Could not open the backup folder: ' + String(e), 'Backup Folder Failed', 'warning')
+    }
+  }
+
   // Opens an existing project by asking the user for a project folder.
   const openProject = async () => {
-    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null }
+    clearSaveTimers()
     saveActive()
     setFileMenuOpen(false)
     const selectedPath = await open({ title: 'Open Project', directory: true })
     if (!selectedPath || Array.isArray(selectedPath)) return
-    const projectFile = await join(selectedPath as string, 'project.json')
-    const fileExists = await exists(projectFile)
-    if (!fileExists) { showMessage('That folder does not contain a Scrivus project.', 'Invalid Project', 'warning'); return }
-    const raw = await readTextFile(projectFile)
-    const data = JSON.parse(raw)
-    await loadProjectData(data, selectedPath as string)
-    await addToRecentProjects(data.name, selectedPath as string)
-    setRecentProjects(await loadRecentProjects())
+    const path = selectedPath as string
+    try {
+      const data = await readProjectJson(path)
+      if (!data) { showMessage('That folder does not contain a Scrivus project.', 'Invalid Project', 'warning'); return }
+      await openLoadedProject(data, path)
+    } catch (e) {
+      showProjectRecovery(path, projectNameFromPath(path), e)
+    }
   }
 
   // Opens a recent project directly from its saved path.
   const openProjectByPath = async (path: string) => {
-    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null }
+    clearSaveTimers()
     saveActive()
     try {
-      const projectFile = await join(path, 'project.json')
-      const fileExists = await exists(projectFile)
-      if (!fileExists) {
+      const data = await readProjectJson(path)
+      if (!data) {
         showMessage('That project could not be found. It may have been moved or deleted.', 'Project Not Found', 'warning')
         const updated = recentProjects.filter(r => r.path !== path)
         setRecentProjects(updated)
         await saveRecentProjects(updated)
         return
       }
-      const raw = await readTextFile(projectFile)
-      const data = JSON.parse(raw)
-      await loadProjectData(data, path)
-      await addToRecentProjects(data.name, path)
-      setRecentProjects(await loadRecentProjects())
+      await openLoadedProject(data, path)
     } catch (e) {
-      showMessage('Failed to open project: ' + String(e), 'Error', 'error')
+      const recent = recentProjects.find(project => project.path === path)
+      showProjectRecovery(path, recent?.name ?? projectNameFromPath(path), e)
     }
   }
 
@@ -2710,33 +2681,112 @@ export default function App() {
 
   // #region === HANDLERS: BINDER (TREE, DRAG & DROP, SCENES) ===
 
+  const isSelectableBinderNode = (id: number) => id !== 1 && id !== 2
+
+  const collectVisibleBinderIds = (nodes: TreeNode[]): number[] => {
+    const ids: number[] = []
+    const visit = (items: TreeNode[]) => {
+      items.forEach(node => {
+        ids.push(node.id)
+        if (node.type === 'folder' && node.open) visit(node.children)
+      })
+    }
+    visit(nodes)
+    return ids
+  }
+
+  const getSelectedBinderActionIds = (nodeId: number) => {
+    if (!isSelectableBinderNode(nodeId)) return []
+    const selected = selectedBinderIdsRef.current.has(nodeId)
+      ? selectedBinderIdsRef.current
+      : new Set([nodeId])
+    return collectVisibleBinderIds(treeRef.current)
+      .filter(id => selected.has(id) && isSelectableBinderNode(id))
+  }
+
+  const getTopLevelBinderActionIds = (ids: number[]) => {
+    const selected = new Set(ids)
+    const topLevelIds: number[] = []
+    const visit = (nodes: TreeNode[], ancestorSelected = false) => {
+      nodes.forEach(node => {
+        const isSelected = selected.has(node.id)
+        if (isSelected && !ancestorSelected && isSelectableBinderNode(node.id)) {
+          topLevelIds.push(node.id)
+        }
+        if (node.type === 'folder') visit(node.children, ancestorSelected || isSelected)
+      })
+    }
+    visit(treeRef.current)
+    return topLevelIds
+  }
+
+  const getBulkRenameSeed = (ids: number[]) => {
+    const firstNode = findNode(treeRef.current, ids[0])
+    return firstNode?.label ?? 'Scene 1'
+  }
+
+  const updateBinderSelection = (id: number, mode: 'toggle' | 'range') => {
+    if (!isSelectableBinderNode(id)) return
+
+    if (mode === 'range') {
+      const visibleIds = collectVisibleBinderIds(treeRef.current).filter(isSelectableBinderNode)
+      const anchor = binderSelectionAnchorId ?? activeIdRef.current ?? id
+      const anchorIndex = visibleIds.indexOf(anchor)
+      const idIndex = visibleIds.indexOf(id)
+      if (anchorIndex === -1 || idIndex === -1) {
+        setSelectedBinderIds(new Set([id]))
+        setBinderSelectionAnchorId(id)
+        return
+      }
+      const [start, end] = anchorIndex < idIndex ? [anchorIndex, idIndex] : [idIndex, anchorIndex]
+      setSelectedBinderIds(new Set(visibleIds.slice(start, end + 1)))
+      return
+    }
+
+    setSelectedBinderIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+    setBinderSelectionAnchorId(id)
+  }
+
   // Expands or collapses a binder folder.
   const toggleFolder = (id: number) => {
     setTree(prev => {
-      const clone = JSON.parse(JSON.stringify(prev)) as TreeNode[]
-      const node = findNode(clone, id)
-      if (node && node.type === 'folder') node.open = !node.open
-      if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: clone }, activeIdRef.current ?? undefined)
-      return clone
+      const newTree = toggleFolderInTree(prev, id)
+      if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+      return newTree
     })
+  }
+
+  const setAllBinderFoldersOpen = (open: boolean) => {
+    const updateFolders = (nodes: TreeNode[]): TreeNode[] => nodes.map(node => {
+      if (node.type !== 'folder') return node
+      return {
+        ...node,
+        open,
+        children: updateFolders(node.children),
+      }
+    })
+
+    const newTree = updateFolders(treeRef.current)
+    setTree(newTree)
+    treeRef.current = newTree
+    if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
   }
 
   // Adds a new scene to the selected folder, then starts rename mode.
   const addDoc = (targetFolderId?: number) => {
-    const id = nextId++
+    const id = allocateNextId()
     const fileId = generateFileId()
-    const node: DocNode = { id, type: 'doc', label: 'New scene', title: 'New scene', file: fileId }
-    const newTree = JSON.parse(JSON.stringify(treeRef.current)) as TreeNode[]
-    const folderId = targetFolderId ?? 1
-    const target = findNode(newTree, folderId) as FolderNode | null
-    if (target && target.type === 'folder') {
-      target.open = true
-      target.children.push(node)
-    } else {
-      newTree.push(node)
-    }
+    const node: DocNode = { id, type: 'doc', label: 'New scene', title: 'New scene', file: fileId, metadata: DEFAULT_SCENE_METADATA }
+    const newTree = addDocToTree(treeRef.current, targetFolderId, node)
     setTree(newTree)
     treeRef.current = newTree
+    setSelectedBinderIds(new Set())
+    setBinderSelectionAnchorId(null)
     const defaultTabs: SceneTab[] = [{ name: 'First Draft', content: '' }]
     const defaultRaw = serializeSceneTabs(defaultTabs, '')
     if (projectRef.current) {
@@ -2751,27 +2801,182 @@ export default function App() {
     selectDoc(id)
   }
 
-  // Adds a new binder folder, then starts rename mode.
-  const addFolder = (targetFolderId?: number) => {
-    const id = nextId++
-    const newFolder: FolderNode = { id, type: 'folder', label: 'New folder', open: true, children: [] }
-    const newTree = JSON.parse(JSON.stringify(treeRef.current)) as TreeNode[]
-    const folderId = targetFolderId ?? 1
-    const target = findNode(newTree, folderId) as FolderNode | null
-    if (target && target.type === 'folder') {
-      target.open = true
-      target.children.push(newFolder)
-    } else {
-      newTree.push(newFolder)
-    }
+  const updateMindMap = (nextMap: MindMap) => {
+    const normalized = normalizeMindMap(nextMap)
+    setMindMap(normalized)
+    mindMapRef.current = normalized
+    if (!projectRef.current) return
+    const projectPath = projectRef.current.path
+    if (mindMapSaveTimerRef.current) clearTimeout(mindMapSaveTimerRef.current)
+    mindMapSaveTimerRef.current = setTimeout(() => {
+      writeCanvasFile(projectPath, mindMapRef.current)
+      mindMapSaveTimerRef.current = null
+    }, 350)
+  }
+
+  const createSceneFromMindMapNode = async (mindMapNode: MindMapNode): Promise<number | null> => {
+    if (!projectRef.current) return null
+    const title = mindMapNode.text.trim().split(/\s+/).slice(0, 8).join(' ') || 'New scene'
+    const id = allocateNextId()
+    const fileId = generateFileId()
+    const node: DocNode = { id, type: 'doc', label: title, title, file: fileId, metadata: DEFAULT_SCENE_METADATA }
+    const activeParent = activeIdRef.current !== null ? findParentFolder(treeRef.current, activeIdRef.current) : null
+    const newTree = addDocToTree(treeRef.current, activeParent?.id ?? 1, node)
+    const defaultTabs: SceneTab[] = [{ name: 'First Draft', content: '' }]
+    const defaultRaw = serializeSceneTabs(defaultTabs, '')
+
     setTree(newTree)
     treeRef.current = newTree
+    await writeSceneFile(projectRef.current.path, fileId, defaultRaw)
+    await saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+    await selectDoc(id)
+    return id
+  }
+
+  const updateAtlas = (nextAtlas: Atlas) => {
+    const normalized = normalizeAtlas(nextAtlas)
+    setAtlas(normalized)
+    atlasRef.current = normalized
+    if (!projectRef.current) return
+    const projectPath = projectRef.current.path
+    if (atlasSaveTimerRef.current) clearTimeout(atlasSaveTimerRef.current)
+    atlasSaveTimerRef.current = setTimeout(() => {
+      writeAtlasFile(projectPath, atlasRef.current)
+      atlasSaveTimerRef.current = null
+    }, 350)
+  }
+
+  const getImageDimensions = async (sourcePath: string): Promise<{ width: number; height: number }> => {
+    const bytes = await readFile(sourcePath)
+    const blobUrl = URL.createObjectURL(new Blob([bytes]))
+    try {
+      return await new Promise((resolve, reject) => {
+        const image = new Image()
+        image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight })
+        image.onerror = () => reject(new Error('The selected image could not be loaded.'))
+        image.src = blobUrl
+      })
+    } finally {
+      URL.revokeObjectURL(blobUrl)
+    }
+  }
+
+  const chooseAtlasImage = async (): Promise<AtlasImportCandidate | null> => {
+    const selectedPath = await open({
+      title: 'Import Atlas Map',
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    })
+    if (!selectedPath || Array.isArray(selectedPath)) return null
+    try {
+      const { width, height } = await getImageDimensions(selectedPath as string)
+      const megapixels = (width * height) / 1_000_000
+      if (width > ATLAS_MAX_SIDE || height > ATLAS_MAX_SIDE) {
+        showMessage(
+          `This map is ${width.toLocaleString()} x ${height.toLocaleString()} px. Atlas maps are limited to ${ATLAS_MAX_SIDE.toLocaleString()} px on either side.`,
+          'Map Too Large',
+          'warning',
+        )
+        return null
+      }
+      const fileName = (selectedPath as string).split(/[\\/]/).pop() ?? 'Untitled Map'
+      const name = fileName.replace(/\.[^.]+$/, '') || 'Untitled Map'
+      return {
+        sourcePath: selectedPath as string,
+        name,
+        width,
+        height,
+        megapixels,
+        overWarningThreshold: megapixels > ATLAS_WARNING_MEGAPIXELS,
+      }
+    } catch (e) {
+      showMessage('Failed to read map image: ' + String(e), 'Import Failed', 'error')
+      return null
+    }
+  }
+
+  const importAtlasMap = async (candidate: AtlasImportCandidate) => {
+    if (!projectRef.current) return
+    const mapId = `map_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
+    const imagePath = await copyAtlasImage(projectRef.current.path, candidate.sourcePath, mapId)
+    const nextMap: AtlasMap = {
+      id: mapId,
+      name: candidate.name,
+      imagePath,
+      imageWidth: candidate.width,
+      imageHeight: candidate.height,
+      imageSampling: 'linear',
+      viewport: {
+        x: candidate.width / 2,
+        y: candidate.height / 2,
+        zoom: 1,
+      },
+      markers: [],
+    }
+    updateAtlas({
+      activeMapId: mapId,
+      maps: [...atlasRef.current.maps, nextMap],
+    })
+  }
+
+  const deleteAtlasMap = async (mapId: string) => {
+    if (!projectRef.current) return
+    const target = atlasRef.current.maps.find(map => map.id === mapId)
+    if (!target) return
+    await deleteAtlasImage(projectRef.current.path, target.imagePath)
+    const maps = atlasRef.current.maps.filter(map => map.id !== mapId)
+    updateAtlas({
+      activeMapId: maps[0]?.id ?? null,
+      maps,
+    })
+  }
+
+  const replaceAtlasMapImage = async (mapId: string, candidate: AtlasImportCandidate) => {
+    if (!projectRef.current) return
+    const target = atlasRef.current.maps.find(map => map.id === mapId)
+    if (!target) return
+    const oldImagePath = target.imagePath
+    const replacementAssetId = `${mapId}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
+    const imagePath = await copyAtlasImage(projectRef.current.path, candidate.sourcePath, mapId, replacementAssetId)
+    await deleteAtlasImage(projectRef.current.path, oldImagePath)
+    updateAtlas({
+      activeMapId: mapId,
+      maps: atlasRef.current.maps.map(map => map.id === mapId
+        ? {
+          ...map,
+          imagePath,
+          imageWidth: candidate.width,
+          imageHeight: candidate.height,
+          viewport: {
+            x: candidate.width / 2,
+            y: candidate.height / 2,
+            zoom: 1,
+          },
+        }
+        : map),
+    })
+  }
+
+  // Adds a new binder folder, then starts rename mode.
+  const addFolder = (targetFolderId?: number) => {
+    const id = allocateNextId()
+    const newFolder: FolderNode = { id, type: 'folder', label: 'New folder', open: true, children: [] }
+    const newTree = addFolderToTree(treeRef.current, targetFolderId, newFolder)
+    setTree(newTree)
+    treeRef.current = newTree
+    setSelectedBinderIds(new Set())
+    setBinderSelectionAnchorId(null)
     if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
     setRenamingId(id)
   }
 
   // Moves a binder node to trash instead of deleting it permanently.
   const deleteNode = (id: number) => {
+    setSelectedBinderIds(prev => {
+      if (!prev.has(id)) return prev
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
     const node = findNode(treeRef.current, id)
     if (node && projectRef.current) {
       const parentFolder = findParentFolder(treeRef.current, id)
@@ -2780,12 +2985,47 @@ export default function App() {
         .then(() => loadTrash())
     }
     setTree(prev => {
-      const clone = JSON.parse(JSON.stringify(prev)) as TreeNode[]
-      removeNode(clone, id)
-      if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: clone }, activeIdRef.current ?? undefined)
-      return clone
+      const newTree = removeNodeFromTree(prev, id)
+      if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+      return newTree
     })
     if (activeId === id) {
+      setActiveId(null)
+      bodyHtmlRef.current = ''
+      editor?.commands.setContent('')
+    }
+  }
+
+  const deleteNodes = async (ids: number[]) => {
+    if (!projectRef.current) return
+    const actionIds = getTopLevelBinderActionIds(ids)
+    if (actionIds.length === 0) return
+
+    const nodesToTrash = actionIds
+      .map(id => {
+        const node = findNode(treeRef.current, id)
+        if (!node) return null
+        const parentFolder = findParentFolder(treeRef.current, id)
+        return { id, node, folderId: parentFolder?.id ?? 1 }
+      })
+      .filter((entry): entry is { id: number; node: TreeNode; folderId: number } => Boolean(entry))
+
+    await Promise.all(nodesToTrash.map(entry =>
+      trashNode(projectRef.current!.path, entry.node, entry.folderId)
+    ))
+    await loadTrash()
+
+    const newTree = removeNodesFromTree(treeRef.current, actionIds)
+    setTree(newTree)
+    treeRef.current = newTree
+    saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+
+    setSelectedBinderIds(prev => {
+      const next = new Set(prev)
+      actionIds.forEach(id => next.delete(id))
+      return next
+    })
+    if (activeIdRef.current !== null && actionIds.some(id => findNode(nodesToTrash.map(entry => entry.node), id))) {
       setActiveId(null)
       bodyHtmlRef.current = ''
       editor?.commands.setContent('')
@@ -2797,18 +3037,7 @@ export default function App() {
     if (!projectRef.current) return
 
     try {
-      const docs = collectDocs(node)
-
-      for (const doc of docs) {
-        const filePath = await join(projectRef.current.path, 'trash', `${doc.file}.md`)
-        const fileExists = await exists(filePath)
-        if (fileExists) await remove(filePath)
-      }
-
-      const sidecar = await join(projectRef.current.path, 'trash', `${sidecarId}.json`)
-      const sidecarExists = await exists(sidecar)
-      if (sidecarExists) await remove(sidecar)
-
+      await permanentlyDeleteTrashItem(projectRef.current.path, sidecarId, node)
       setTrashItems(prev => prev.filter(i => i.sidecarId !== sidecarId))
       setConfirmDelete(null)
 
@@ -2828,18 +3057,7 @@ export default function App() {
   const previewTrashScene = async (doc: DocNode) => {
     if (!projectRef.current) return
 
-    // Try scenes folder first, then trash folder
-    let content = ''
-    const scenePath = await join(projectRef.current.path, 'scenes', `${doc.file}.md`)
-    const sceneExists = await exists(scenePath)
-    if (sceneExists) {
-      content = await readTextFile(scenePath)
-    } else {
-      const trashPath = await join(projectRef.current.path, 'trash', `${doc.file}.md`)
-      const trashExists = await exists(trashPath)
-      if (trashExists) content = await readTextFile(trashPath)
-    }
-
+    const content = await readTrashPreviewContent(projectRef.current.path, doc)
     setIsTrashPreview(true)
     setTitleValue(doc.title)
     bodyHtmlRef.current = content
@@ -2854,14 +3072,9 @@ export default function App() {
   // Renames a binder item and syncs document titles for scenes.
   const renameNode = (id: number, label: string) => {
     setTree(prev => {
-      const clone = JSON.parse(JSON.stringify(prev)) as TreeNode[]
-      const node = findNode(clone, id)
-      if (node) {
-        node.label = label
-        if (node.type === 'doc') node.title = label
-      }
-      if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: clone }, activeIdRef.current ?? undefined)
-      return clone
+      const newTree = renameNodeInTree(prev, id, label)
+      if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+      return newTree
     })
     if (id === activeIdRef.current) {
       setTitleValue(label)
@@ -2869,45 +3082,56 @@ export default function App() {
     setRenamingId(null)
   }
 
-  // Duplicates a node in the binder tree.
-  const duplicateNode = async (id: number) => {
-    const cloneNode = async (n: TreeNode): Promise<TreeNode> => {
-      const newId = nextId++
-      if (n.type === 'doc') {
-        const newFileId = generateFileId()
-        if (projectRef.current) {
-          try {
-            const srcPath = await join(projectRef.current.path, 'scenes', `${n.file}.md`)
-            const content = await readTextFile(srcPath)
-            await writeSceneFile(projectRef.current.path, newFileId, content)
-          } catch {
-            await writeSceneFile(projectRef.current.path, newFileId, '')
-          }
-        }
-        return { ...n, id: newId, file: newFileId, label: `${n.label} (copy)`, title: `${n.title} (copy)` }
-      } else {
-        const clonedChildren = await Promise.all((n as FolderNode).children.map(cloneNode))
-        return { ...n, id: newId, label: `${n.label} (copy)`, children: clonedChildren }
+  const parseBulkRenameStart = (value: string) => {
+    const match = value.trim().match(/^(.*?)(\d+)$/)
+    if (!match) return null
+    return {
+      prefix: match[1],
+      start: Number(match[2]),
+      width: match[2].length,
+    }
+  }
+
+  const applyBulkRename = () => {
+    if (!bulkRenameTarget) return
+    const parsed = parseBulkRenameStart(bulkRenameTarget.value)
+    if (!parsed) return
+
+    let newTree = treeRef.current
+    bulkRenameTarget.ids.forEach((id, index) => {
+      const nextNumber = String(parsed.start + index).padStart(parsed.width, '0')
+      newTree = renameNodeInTree(newTree, id, `${parsed.prefix}${nextNumber}`)
+    })
+    setTree(newTree)
+    treeRef.current = newTree
+    if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+    if (activeIdRef.current !== null && bulkRenameTarget.ids.includes(activeIdRef.current)) {
+      const activeNode = findNode(newTree, activeIdRef.current)
+      if (activeNode) setTitleValue(activeNode.label)
+    }
+    setBulkRenameTarget(null)
+  }
+
+  const copySceneForDuplicate = async (doc: DocNode) => {
+    const newFileId = generateFileId()
+    if (projectRef.current) {
+      try {
+        const srcPath = await join(projectRef.current.path, 'scenes', `${doc.file}.md`)
+        const content = await readTextFile(srcPath)
+        await writeSceneFile(projectRef.current.path, newFileId, content)
+      } catch {
+        await writeSceneFile(projectRef.current.path, newFileId, '')
       }
     }
+    return newFileId
+  }
 
-    const newTree = JSON.parse(JSON.stringify(treeRef.current)) as TreeNode[]
-
-    const insertAfter = async (nodes: TreeNode[]): Promise<boolean> => {
-      for (let i = 0; i < nodes.length; i++) {
-        if (nodes[i].id === id) {
-          const clone = await cloneNode(nodes[i])
-          nodes.splice(i + 1, 0, clone)
-          return true
-        }
-        if (nodes[i].type === 'folder') {
-          if (await insertAfter((nodes[i] as FolderNode).children)) return true
-        }
-      }
-      return false
-    }
-
-    await insertAfter(newTree)
+  const duplicateBinderNodes = async (ids: number[]) => {
+    const actionIds = getTopLevelBinderActionIds(ids)
+    if (actionIds.length === 0) return
+    const newTree = actionIds.length === 1
+      ? await duplicateNodeInTree(treeRef.current, actionIds[0], allocateNextId, copySceneForDuplicate)
+      : await duplicateNodesInTree(treeRef.current, actionIds, allocateNextId, copySceneForDuplicate)
     setTree(newTree)
     treeRef.current = newTree
     if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
@@ -2922,1017 +3146,57 @@ export default function App() {
       setDropTarget(null)
       return
     }
+    const selectedDragIds = selectedBinderIdsRef.current.has(currentDragId)
+      ? Array.from(selectedBinderIdsRef.current)
+      : [currentDragId]
     setTree(prev => {
-      const clone = JSON.parse(JSON.stringify(prev)) as TreeNode[]
-      const dragged = findNode(clone, currentDragId)
-      if (!dragged) return prev
-      removeNode(clone, currentDragId)
-      const result = insertNode(clone, dragged, currentDropTarget)
-      if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: result }, activeIdRef.current ?? undefined)
-      return result
+      const newTree = selectedDragIds.length > 1
+        ? moveNodesInTree(prev, selectedDragIds, currentDropTarget)
+        : moveNodeInTree(prev, currentDragId, currentDropTarget)
+      if (!newTree) return prev
+      treeRef.current = newTree
+      if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+      return newTree
     })
     setDragId(null)
     setDropTarget(null)
   }
 
+  const updateSceneMetadata = (id: number, metadata: SceneMetadata) => {
+    if (isTrashPreview) return
+    const normalized = normalizeSceneMetadata(metadata)
+    const newTree = JSON.parse(JSON.stringify(treeRef.current)) as TreeNode[]
+    const node = findNode(newTree, id)
+    if (!node || node.type !== 'doc') return
+    node.metadata = normalized
+    setTree(newTree)
+    treeRef.current = newTree
+    if (projectRef.current) {
+      const updatedProject = { ...projectRef.current, tree: newTree }
+      projectRef.current = updatedProject
+      setProject(updatedProject)
+      saveProjectToDisk(updatedProject, activeIdRef.current ?? undefined)
+    }
+  }
+
+  const updateActiveSceneMetadata = (metadata: SceneMetadata) => {
+    if (activeIdRef.current === null) return
+    updateSceneMetadata(activeIdRef.current, metadata)
+  }
+
+  const updateOutlineSceneStatus = (id: number, status: SceneStatus) => {
+    const node = findNode(treeRef.current, id)
+    if (!node || node.type !== 'doc') return
+    updateSceneMetadata(id, { ...normalizeSceneMetadata(node.metadata), status })
+  }
+
   // Derived editor visibility state.
   const activeNode = activeId !== null ? findNode(tree, activeId) : null
   const showEditor = activeNode?.type === 'doc' || isTrashPreview
-
-  // #endregion
-
-  // #region === RENDER HELPERS: BINDER TREE ===
-
-  // Renders one trash entry, including nested deleted folders.
-  const renderTrashItem = (sidecarId: string, node: TreeNode, originalFolderId: number, depth: number): React.ReactNode => {
-    const isExpanded = trashExpanded.has(`${sidecarId}-${node.id}`)
-    const toggleExpand = (e: React.MouseEvent) => {
-      e.stopPropagation()
-      setTrashExpanded(prev => {
-        const next = new Set(prev)
-        const key = `${sidecarId}-${node.id}`
-        if (next.has(key)) next.delete(key)
-        else next.add(key)
-        return next
-      })
-    }
-
-    return (
-      <div key={`${sidecarId}-${node.id}`}>
-        <div
-          className="tree-item"
-          onClick={() => {
-            if (node.type === 'doc') previewTrashScene(node)
-            else toggleExpand({ stopPropagation: () => { } } as React.MouseEvent)
-          }}
-        >
-          <span style={{ width: depth * 14 + 4, flexShrink: 0, display: 'inline-block' }} />
-          {node.type === 'folder'
-            ? <span className="toggle" onClick={toggleExpand}>
-              <i className={`ti ti-chevron-${isExpanded ? 'down' : 'right'}`} aria-hidden="true" />
-            </span>
-            : <span style={{ width: 16, flexShrink: 0 }} />
-          }
-          <span className="item-icon">
-            <i className={`ti ti-${node.type === 'folder' ? 'folder' : 'file-text'}`} aria-hidden="true" />
-          </span>
-          <span className="item-label">{node.label}</span>
-          <span className="item-actions" onClick={e => e.stopPropagation()}>
-            <button
-              title="Restore"
-              onClick={e => {
-                e.stopPropagation()
-                const isChildNode = node.id !== trashItems.find(i => i.sidecarId === sidecarId)?.node.id
-                restoreFromTrash(sidecarId, node, originalFolderId, isChildNode ? sidecarId : undefined)
-              }}
-            >
-              <i className="ti ti-restore" aria-hidden="true" />
-            </button>
-            <button
-              title="Delete permanently"
-              onClick={e => { e.stopPropagation(); setConfirmDelete({ sidecarId, node }) }}
-            >
-              <i className="ti ti-x" aria-hidden="true" />
-            </button>
-          </span>
-        </div>
-        {node.type === 'folder' && isExpanded && node.children.map(child =>
-          renderTrashItem(sidecarId, child, originalFolderId, depth + 1)
-        )}
-      </div>
-    )
-  }
-
-  // Recursively renders the binder tree with drag/drop affordances.
-  const renderNodes = (nodes: TreeNode[], depth: number): React.ReactNode => {
-    return nodes.map(n => {
-      const isProtected = n.id === 1 || n.id === 2
-      const isDragging = dragId === n.id
-      const isDropFolder = dropTarget?.type === 'inside' && dropTarget.id === n.id
-      const isDropBefore = dropTarget?.type === 'before' && dropTarget.id === n.id
-      const isDropAfter = dropTarget?.type === 'after' && dropTarget.id === n.id
-
-      return (
-        <div key={n.id} style={{ opacity: isDragging ? 0.4 : 1 }}>
-          {isDropBefore && !isProtected && <div className="drop-line" />}
-          <div
-            className={`tree-item${activeId === n.id ? ' active' : ''}${isDropFolder ? ' drag-over-folder' : ''}`}
-            draggable={!isProtected && renamingId !== n.id}
-            onDragStart={(!isProtected && renamingId !== n.id) ? e => {
-              e.stopPropagation()
-              dragIdRef.current = n.id
-              setDragId(n.id)
-              e.dataTransfer.effectAllowed = 'move'
-              document.getElementById('tree')?.classList.add('dragging')
-            } : undefined}
-            onDragEnd={(!isProtected && renamingId !== n.id) ? () => {
-              document.getElementById('tree')?.classList.remove('dragging')
-              setDragId(null)
-              setDropTarget(null)
-              dragIdRef.current = null
-              dropTargetRef.current = null
-            } : undefined}
-            onDragOver={e => {
-              e.preventDefault()
-              e.stopPropagation()
-              if (dragIdRef.current === n.id) return
-              if (isProtected && n.type === 'folder') {
-                dropTargetRef.current = { type: 'inside', id: n.id }
-                setDropTarget({ type: 'inside', id: n.id })
-                return
-              }
-              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-              const y = e.clientY - rect.top
-              const h = rect.height
-              let next: DropTarget
-              if (n.type === 'folder') {
-                if (y < h * 0.25) next = { type: 'before', id: n.id }
-                else if (y > h * 0.75) next = { type: 'after', id: n.id }
-                else next = { type: 'inside', id: n.id }
-              } else {
-                if (y < h * 0.5) next = { type: 'before', id: n.id }
-                else next = { type: 'after', id: n.id }
-              }
-              dropTargetRef.current = next
-              setDropTarget(next)
-            }}
-            onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDrop(n.id) }}
-            onClick={() => n.type === 'doc'
-              ? (workspace === 'revision' ? selectRevisionDoc(n.id) : selectDoc(n.id))
-              : toggleFolder(n.id)}
-            onDoubleClick={() => {
-              if (n.id === 1 || n.id === 2) return
-              setRenamingId(n.id)
-            }}
-            onContextMenu={e => {
-              e.preventDefault()
-              e.stopPropagation()
-              setContextMenu({ x: e.clientX, y: e.clientY, node: n, depth })
-            }}
-          >
-            <span style={{ width: depth * 14 + 4, flexShrink: 0, display: 'inline-block' }} />
-            {n.type === 'folder'
-              ? <span className="toggle"><i className={`ti ti-chevron-${n.open ? 'down' : 'right'}`} aria-hidden="true" /></span>
-              : <span style={{ width: 16, flexShrink: 0 }} />
-            }
-            <span className="item-icon">
-              <i className={`ti ti-${n.id === 1 ? 'book-2' :
-                n.id === 2 ? 'notebook' :
-                  n.type === 'folder' ? 'folder' :
-                    'file-text'
-                }`} aria-hidden="true" />
-            </span>
-            {renamingId === n.id
-              ? <input
-                className="inline-rename"
-                defaultValue={n.label}
-                autoFocus
-                ref={el => { if (el) { el.focus(); el.select() } }}
-                onClick={e => e.stopPropagation()}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') renameNode(n.id, (e.target as HTMLInputElement).value || n.label)
-                  if (e.key === 'Escape') setRenamingId(null)
-                }}
-                onBlur={e => renameNode(n.id, e.target.value || n.label)}
-              />
-              : <span className="item-label">
-                {n.label}
-              </span>
-            }
-            {n.type === 'folder' && (
-              <span className="item-actions" onClick={e => e.stopPropagation()}>
-                <button title="New scene" onClick={e => { e.stopPropagation(); addDoc(n.id) }}>
-                  <i className="ti ti-file-plus" aria-hidden="true" />
-                </button>
-                {depth < 1 && (
-                  <button title="New folder" onClick={e => { e.stopPropagation(); addFolder(n.id) }}>
-                    <i className="ti ti-folder-plus" aria-hidden="true" />
-                  </button>
-                )}
-                {!isProtected && (
-                  <>
-                    <button title="Rename" onClick={e => { e.stopPropagation(); setRenamingId(n.id) }}>
-                      <i className="ti ti-pencil" aria-hidden="true" />
-                    </button>
-                    <button title="Delete" onClick={e => {
-                      e.stopPropagation()
-                      setConfirmBinDelete({ id: n.id, label: n.label })
-                    }}>
-                      <i className="ti ti-trash" aria-hidden="true" />
-                    </button>
-                  </>
-                )}
-              </span>
-            )}
-            {n.type === 'doc' && !isProtected && (
-              <span className="item-actions" onClick={e => e.stopPropagation()}>
-                <button title="Rename" onClick={e => { e.stopPropagation(); setRenamingId(n.id) }}>
-                  <i className="ti ti-pencil" aria-hidden="true" />
-                </button>
-                <button title="Delete" onClick={e => {
-                  e.stopPropagation()
-                  setConfirmBinDelete({ id: n.id, label: n.label })
-                }}>
-                  <i className="ti ti-trash" aria-hidden="true" />
-                </button>
-              </span>
-            )}
-          </div>
-          {n.type === 'folder' && n.open && renderNodes(n.children, depth + 1)}
-          {isDropAfter && !isProtected && <div className="drop-line" />}
-        </div>
-      )
-    })
-  }
-
-  // #endregion
-
-  // #region === RENDER HELPERS: INSPECTOR DRAWER ===
-
-  // Inspector Panel.
-  const InspectorDrawer = ({ id, label, children }: { id: string; label: string; children: React.ReactNode }) => (
-    <div className="inspector-drawer">
-      <div
-        className="inspector-drawer-header"
-        onClick={() => setDrawerOpen(prev => ({ ...prev, [id]: !prev[id] }))}
-      >
-        <i className={`ti ti-chevron-${drawerOpen[id] ? 'down' : 'right'}`} aria-hidden="true" />
-        <span>{label}</span>
-      </div>
-      {drawerOpen[id] && (
-        <div className="inspector-drawer-body">
-          {children}
-        </div>
-      )}
-    </div>
-  )
-
-
-
-  // #endregion
-
-  // #region === RENDER HELPERS: MODALS ===
-
-  // Modal for adjusting chapter/body typography settings.
-  const StylesModal = () => {
-    const [local, setLocal] = useState<ProjectStyles>(styles)
-
-    const applyStyles = () => {
-      setStyles(local)
-      setProject(prev => prev ? { ...prev, styles: local } : prev)
-      if (projectRef.current) {
-        projectRef.current = { ...projectRef.current, styles: local }
-        saveProjectToDisk({ ...projectRef.current, styles: local }, activeIdRef.current ?? undefined)
-      }
-      setShowStyles(false)
-    }
-
-    const saveAsDefault = async () => {
-      await saveDefaultStyles(local)
-      applyStyles()
-    }
-
-    const fonts = ['Georgia', 'Times New Roman', 'Garamond', 'Palatino', 'Arial', 'Helvetica', 'Courier New']
-
-    return (
-      <div className="modal-overlay">
-        <div className="modal-box">
-          <p className="modal-title">Styles</p>
-          <div className="modal-tabs">
-            {(['chapter', 'body'] as const).map(tab => (
-              <button
-                key={tab}
-                className={`modal-tab${stylesTab === tab ? ' active' : ''}`}
-                onClick={() => setStylesTab(tab)}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </button>
-            ))}
-          </div>
-
-          {stylesTab === 'chapter' && (
-            <div className="modal-fields">
-              <div className="modal-field">
-                <label className="modal-label">Font</label>
-                <select className="modal-select" value={local.chapter.font}
-                  onChange={e => setLocal(p => ({ ...p, chapter: { ...p.chapter, font: e.target.value } }))}>
-                  {fonts.map(f => <option key={f} value={f}>{f}</option>)}
-                </select>
-              </div>
-              <div className="modal-field">
-                <label className="modal-label">Size (pt)</label>
-                <input className="modal-input modal-input-sm" type="number" min={8} max={72}
-                  value={local.chapter.size}
-                  onChange={e => setLocal(p => ({ ...p, chapter: { ...p.chapter, size: Number(e.target.value) } }))} />
-              </div>
-              <div className="modal-checkboxes">
-                <label className="modal-checkbox-label">
-                  <input type="checkbox" checked={local.chapter.bold}
-                    onChange={e => setLocal(p => ({ ...p, chapter: { ...p.chapter, bold: e.target.checked } }))} />
-                  Bold
-                </label>
-                <label className="modal-checkbox-label">
-                  <input type="checkbox" checked={local.chapter.italic}
-                    onChange={e => setLocal(p => ({ ...p, chapter: { ...p.chapter, italic: e.target.checked } }))} />
-                  Italic
-                </label>
-              </div>
-              <div className="modal-preview" style={{
-                fontFamily: local.chapter.font,
-                fontSize: local.chapter.size * 0.75,
-                fontWeight: local.chapter.bold ? 700 : 400,
-                fontStyle: local.chapter.italic ? 'italic' : 'normal',
-              }}>
-                Chapter One
-              </div>
-            </div>
-          )}
-
-          {stylesTab === 'body' && (
-            <div className="modal-fields">
-              <div className="modal-field">
-                <label className="modal-label">Font</label>
-                <select className="modal-select" value={local.body.font}
-                  onChange={e => setLocal(p => ({ ...p, body: { ...p.body, font: e.target.value } }))}>
-                  {fonts.map(f => <option key={f} value={f}>{f}</option>)}
-                </select>
-              </div>
-              <div className="modal-field">
-                <label className="modal-label">Size (pt)</label>
-                <input className="modal-input modal-input-sm" type="number" min={8} max={72}
-                  value={local.body.size}
-                  onChange={e => setLocal(p => ({ ...p, body: { ...p.body, size: Number(e.target.value) } }))} />
-              </div>
-              <div className="modal-field">
-                <label className="modal-label">Justification</label>
-                <select className="modal-select" value={local.body.justification}
-                  onChange={e => setLocal(p => ({ ...p, body: { ...p.body, justification: e.target.value as BodyStyle['justification'] } }))}>
-                  <option value="left">Left</option>
-                  <option value="center">Center</option>
-                  <option value="right">Right</option>
-                  <option value="both">Justified</option>
-                </select>
-              </div>
-              <label className="modal-checkbox-label">
-                <input type="checkbox" checked={local.body.firstLineIndent}
-                  onChange={e => setLocal(p => ({ ...p, body: { ...p.body, firstLineIndent: e.target.checked } }))} />
-                First line indent
-              </label>
-              <div className="modal-field">
-                <label className="modal-label">Line spacing (pt)</label>
-                <input className="modal-input modal-input-sm" type="number" min={0} max={72} step={0.5}
-                  value={local.body.lineSpacing}
-                  onChange={e => setLocal(p => ({ ...p, body: { ...p.body, lineSpacing: Number(e.target.value) } }))} />
-              </div>
-              <div className="modal-preview" style={{
-                fontFamily: local.body.font,
-                fontSize: local.body.size * 0.75,
-                textAlign: local.body.justification === 'both' ? 'justify' : local.body.justification,
-              }}>
-                <span style={{ display: 'inline-block', textIndent: local.body.firstLineIndent ? '2em' : '0' }}>
-                  The road out of Calver runs north until it doesn't. Maren had driven it a hundred times in childhood, always in the passenger seat, watching the tree line blur.
-                </span>
-              </div>
-            </div>
-          )}
-
-          <div className="modal-footer-split">
-            <button className="welcome-btn" onClick={saveAsDefault}>Save as default</button>
-            <div className="modal-footer-actions">
-              <button className="welcome-btn" onClick={() => setShowStyles(false)}>Cancel</button>
-              <button className="welcome-btn" onClick={applyStyles}>Apply</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // #endregion
-
-  // #region === RENDER HELPERS: MENUS ===
-
-  // Top menu: project/file actions.
-  const FileMenu = () => (
-    <div className={`menu-item${fileMenuOpen ? ' open' : ''}`} ref={fileMenuRef}>
-      <button onClick={() => setFileMenuOpen(v => !v)}>File</button>
-      {fileMenuOpen && (
-        <div className="menu-dropdown">
-          <button onClick={() => { setFileMenuOpen(false); setShowNewProject(true) }}>New Project</button>
-          <button onClick={openProject}>Open Project…</button>
-          <div className="sep" />
-          <button onClick={closeProject} disabled={!project}>Close Project</button>
-          <div className="sep" />
-          <button onClick={() => openCompileModal()} disabled={!project}>Compile</button>
-          <div className="sep" />
-          <button onClick={() => exit(0)}>Exit</button>
-        </div>
-      )}
-    </div>
-  )
-
-  // Top menu: editing, styles, search, and find/replace actions.
-  const EditMenu = () => (
-    <div className={`menu-item${editMenuOpen ? ' open' : ''}`} ref={editMenuRef}>
-      <button onClick={() => setEditMenuOpen(v => !v)}>Edit</button>
-      {editMenuOpen && (
-        <div className="menu-dropdown">
-          <button
-            onClick={() => { setEditMenuOpen(false); editor?.chain().focus().undo().run() }}
-            disabled={!project || !editor?.can().undo()}
-          >
-            Undo
-          </button>
-          <button
-            onClick={() => { setEditMenuOpen(false); editor?.chain().focus().redo().run() }}
-            disabled={!project || !editor?.can().redo()}
-          >
-            Redo
-          </button>
-          <button
-            onClick={() => { setEditMenuOpen(false); editor?.chain().focus().selectAll().run() }}
-            disabled={!project}
-          >
-            Select All
-          </button>
-          <div className="sep" />
-          <button
-            onClick={() => { setEditMenuOpen(false); setShowStyles(true) }}
-            disabled={!project}
-          >
-            Styles…
-          </button>
-          <div className="sep" />
-          <button
-            onClick={() => { setEditMenuOpen(false); setShowSearch(true); setTimeout(() => searchInputRef.current?.focus(), 50) }}
-            disabled={!project}
-          >
-            Search Project…
-          </button>
-          <button
-            onClick={() => { setEditMenuOpen(false); setShowFnR(true); setTimeout(() => fnrInputRef.current?.focus(), 50) }}
-            disabled={!project}
-          >
-            Find & Replace…
-          </button>
-        </div>
-      )}
-    </div>
-  )
-
-  // #endregion
-
-  // #region === RENDER HELPERS: CONFIRM MODALS ===
-
-  // Modal for creating a new project folder.
-  const NewProjectModal = () => (
-    <div className="modal-overlay">
-      <div className="modal-box modal-box-sm">
-        <p className="modal-title">New Project</p>
-        <div className="modal-field">
-          <label className="modal-label">Project name</label>
-          <input
-            className="modal-input"
-            type="text"
-            autoFocus
-            value={newProjectName}
-            onChange={e => setNewProjectName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') createProject() }}
-            placeholder="My Novel"
-          />
-        </div>
-        <div className="modal-field">
-          <label className="modal-label">Location</label>
-          <div className="modal-inline-row">
-            <div className={`modal-input modal-path-display${!newProjectParent ? ' modal-path-empty' : ''}`}>
-              {newProjectParent || 'No folder selected'}
-            </div>
-            <button className="welcome-btn btn-nowrap" onClick={pickParentFolder}>Browse…</button>
-          </div>
-        </div>
-        <div className="modal-footer">
-          <button className="welcome-btn" onClick={() => { setShowNewProject(false); setNewProjectName(''); setNewProjectParent('') }}>Cancel</button>
-          <button
-            className={`welcome-btn modal-btn-create${newProjectName.trim() && newProjectParent ? '' : ' is-disabled-visual'
-              }`}
-            onClick={createProject}
-          >
-            Create
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-
-  // Confirmation modal for permanent trash deletion.
-  const ConfirmDeleteModal = () => {
-    if (!confirmDelete) return null
-    return (
-      <div className="modal-overlay">
-        <div className="modal-box modal-danger" style={{ width: 380 }}>
-          <p className="modal-title">Permanently delete?</p>
-          <p className="modal-danger-text">
-            <strong style={{ color: '#cc8888' }}>{confirmDelete.node.label}</strong> will be permanently deleted and cannot be recovered.
-          </p>
-          <div className="modal-footer">
-            <button className="welcome-btn" onClick={() => setConfirmDelete(null)}>Cancel</button>
-            <button className="welcome-btn modal-btn-danger" onClick={() => permanentlyDelete(confirmDelete.sidecarId, confirmDelete.node)}>
-              Delete permanently
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Confirmation modal for moving active binder items to trash.
-  const ConfirmBinDeleteModal = () => {
-    if (!confirmBinDelete) return null
-    return (
-      <div className="modal-overlay">
-        <div className="modal-box" style={{ width: 380 }}>
-          <p className="modal-title">Move to trash?</p>
-          <p className="modal-danger-text">
-            <strong style={{ color: '#d4d4d4' }}>{confirmBinDelete.label}</strong> will be moved to the trash.
-          </p>
-          <div className="modal-footer">
-            <button className="welcome-btn" onClick={() => setConfirmBinDelete(null)}>Cancel</button>
-            <button className="welcome-btn" onClick={() => { deleteNode(confirmBinDelete.id); setConfirmBinDelete(null) }}>
-              Move to trash
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Confirmation modal for permanently emptying trash.
-  const ConfirmEmptyTrashModal = () => {
-    if (!confirmEmptyTrash) return null
-    return (
-      <div className="modal-overlay">
-        <div className="modal-box modal-danger" style={{ width: 380 }}>
-          <p className="modal-title">Empty Trash?</p>
-          <p className="modal-danger-text">
-            {(() => {
-              const total = trashItems.reduce((acc, item) => {
-                if (item.node.type === 'folder') return acc + 1 + collectDocs(item.node).length
-                return acc + 1
-              }, 0)
-              return <>All <strong style={{ color: '#cc8888' }}>{total} {total === 1 ? 'item' : 'items'}</strong> in the trash will be permanently deleted and cannot be recovered.</>
-            })()}
-          </p>
-          <div className="modal-footer">
-            <button className="welcome-btn" onClick={() => setConfirmEmptyTrash(false)}>Cancel</button>
-            <button className="welcome-btn modal-btn-danger" onClick={() => { emptyTrash(); setConfirmEmptyTrash(false) }}>
-              Empty Trash
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // App message modal for showing custom alert prompts.
-  const AppMessageModal = () => {
-    if (!appMessage) return null
-    const colors = {
-      info: { border: '#1f6a9a', icon: 'ti-info-circle', iconColor: '#4fc3f7' },
-      warning: { border: '#9a7a1f', icon: 'ti-alert-triangle', iconColor: '#ffd54f' },
-      error: { border: '#9a1f1f', icon: 'ti-circle-x', iconColor: '#ef9a9a' },
-    }
-    const c = colors[appMessage.kind]
-    return (
-      <div className="modal-overlay" style={{ zIndex: 200 }}>
-        <div className="modal-box" style={{ width: 380, borderColor: c.border }}>
-          <div className="modal-message-header">
-            <i className={`ti ${c.icon}`} style={{ color: c.iconColor }} aria-hidden="true" />
-            <p className="modal-title">{appMessage.title}</p>
-          </div>
-          <p className="modal-danger-text">{appMessage.body}</p>
-          <div className="modal-footer">
-            {appMessage.action && (
-              <button className="welcome-btn" onClick={() => { appMessage.action!.onClick(); setAppMessage(null) }}>
-                {appMessage.action.label}
-              </button>
-            )}
-            <button className="welcome-btn" onClick={() => setAppMessage(null)}>OK</button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Confirmation modal for permanently soft-deleting a scene tab.
-  const ConfirmDeleteTabModal = () => {
-    if (confirmDeleteTab === null) return null
-    const tab = sceneTabs[confirmDeleteTab]
-    return (
-      <div className="modal-overlay">
-        <div className="modal-box modal-danger" style={{ width: 380 }}>
-          <p className="modal-title">Delete tab?</p>
-          <p className="modal-danger-text">
-            <strong style={{ color: '#cc8888' }}>{tab?.name}</strong> will be removed. Its content will be preserved in the scene file and can be manually recovered if needed.
-          </p>
-          <div className="modal-footer">
-            <button className="welcome-btn" onClick={() => setConfirmDeleteTab(null)}>Cancel</button>
-            <button className="welcome-btn modal-btn-danger" onClick={() => deleteTab(confirmDeleteTab)}>
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Confirmation modal for deleting a lore category.
-  const ConfirmDeleteLoreCategoryModal = () => {
-    if (!confirmDeleteLoreCategory) return null
-    return (
-      <div className="modal-overlay" style={{ zIndex: 200 }}>
-        <div className="modal-box modal-danger" style={{ width: 380 }}>
-          <p className="modal-title">Delete category?</p>
-          <p className="modal-danger-text">
-            <strong style={{ color: '#cc8888' }}>{confirmDeleteLoreCategory.name}</strong> and all its entries will be permanently deleted.
-          </p>
-          <div className="modal-footer">
-            <button className="welcome-btn" onClick={() => setConfirmDeleteLoreCategory(null)}>Cancel</button>
-            <button className="welcome-btn modal-btn-danger" onClick={() => deleteLoreCategory(confirmDeleteLoreCategory.id)}>
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Confirmation modal for deleting a lore entry.
-  const ConfirmDeleteLoreEntryModal = () => {
-    if (!confirmDeleteLoreEntry) return null
-    const cat = getActiveLoreCategory()
-    return (
-      <div className="modal-overlay" style={{ zIndex: 200 }}>
-        <div className="modal-box modal-danger" style={{ width: 380 }}>
-          <p className="modal-title">Delete entry?</p>
-          <p className="modal-danger-text">
-            <strong style={{ color: '#cc8888' }}>{confirmDeleteLoreEntry.name}</strong> will be permanently deleted.
-          </p>
-          <div className="modal-footer">
-            <button className="welcome-btn" onClick={() => setConfirmDeleteLoreEntry(null)}>Cancel</button>
-            <button className="welcome-btn modal-btn-danger" onClick={() => cat && deleteLoreEntry(cat.id, confirmDeleteLoreEntry.id)}>
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Confirmation modal for hard-deleting a template field.
-  const ConfirmHardDeleteFieldModal = () => {
-    if (!confirmHardDeleteField) return null
-    return (
-      <div className="modal-overlay" style={{ zIndex: 200 }}>
-        <div className="modal-box modal-danger" style={{ width: 400 }}>
-          <p className="modal-title">Permanently delete field?</p>
-          <p className="modal-danger-text">
-            <strong style={{ color: '#cc8888' }}>{confirmHardDeleteField.label}</strong> will be removed from the template and its data deleted from every entry in this category. This cannot be undone.
-          </p>
-          <div className="modal-footer">
-            <button className="welcome-btn" onClick={() => setConfirmHardDeleteField(null)}>Cancel</button>
-            <button className="welcome-btn modal-btn-danger" onClick={() => hardDeleteLoreField(confirmHardDeleteField.categoryId, confirmHardDeleteField.fieldId)}>
-              Delete permanently
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  function CompileModal() {
-    return (
-      <div
-        style={{
-          position: 'fixed', inset: 0,
-          background: 'rgba(0,0,0,0.7)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 2000,
-        }}
-        onClick={() => setShowCompile(false)}
-      >
-        <div
-          style={{
-            background: '#1e1e1e',
-            border: '1px solid #111',
-            borderRadius: 6,
-            width: 860,
-            userSelect: 'none',
-            maxWidth: '95vw',
-            maxHeight: '85vh',
-            display: 'flex',
-            flexDirection: 'column',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-            overflow: 'hidden',
-          }}
-          onClick={e => e.stopPropagation()}
-        >
-
-          {/* ── Header ── */}
-          <div style={{
-            padding: '12px 16px',
-            borderBottom: '1px solid #2a2a2a',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            flexShrink: 0,
-          }}>
-            <span style={{ color: '#c8c8c8', fontWeight: 600, fontSize: 13, letterSpacing: '0.04em' }}>
-              COMPILE MANUSCRIPT
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <select
-                value={compileStyle}
-                onChange={e => setCompileStyle(e.target.value)}
-                style={{
-                  background: '#2d2d2d', border: '1px solid #3a3a3a',
-                  borderRadius: 4, color: '#c8c8c8', fontSize: 12,
-                  padding: '4px 8px', cursor: 'pointer',
-                }}
-              >
-                {COMPILE_STYLE_PRESETS.map(p => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-              <button
-                onClick={() => setShowCompile(false)}
-                style={{
-                  background: 'none', border: 'none', color: '#666',
-                  cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 2,
-                }}
-              >
-                <i className="ti ti-x" />
-              </button>
-            </div>
-          </div>
-
-          {/* ── Body ── */}
-          {compileLoading
-            ? (
-              <div style={{
-                flex: 1, display: 'flex', alignItems: 'center',
-                justifyContent: 'center', color: '#555', fontSize: 13,
-              }}>
-                Reading scenes…
-              </div>
-            )
-            : (
-              <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-
-                {/* ── Left: Format ── */}
-                <div style={{
-                  width: 160, flexShrink: 0,
-                  borderRight: '1px solid #2a2a2a',
-                  padding: '16px 12px',
-                  display: 'flex', flexDirection: 'column', gap: 4,
-                }}>
-                  <div style={{ color: '#555', fontSize: 10, letterSpacing: '0.08em', marginBottom: 8 }}>
-                    FORMAT
-                  </div>
-                  {/* docx — active */}
-                  <label style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    color: '#c8c8c8', fontSize: 12, cursor: 'pointer',
-                  }}>
-                    <input
-                      type="radio"
-                      name="compile-format"
-                      checked={compileFormat === 'docx'}
-                      readOnly
-                      style={{ accentColor: '#888' }}
-                    />
-                    docx
-                  </label>
-                  {/* pdf — disabled stub */}
-                  <label style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    color: '#3a3a3a', fontSize: 12, cursor: 'not-allowed',
-                  }}>
-                    <input
-                      type="radio"
-                      name="compile-format"
-                      disabled
-                      style={{ accentColor: '#888' }}
-                    />
-                    pdf
-                  </label>
-
-                  {/* ── Front Matter ── */}
-                  <div style={{ color: '#555', fontSize: 10, letterSpacing: '0.08em', marginTop: 20, marginBottom: 8 }}>
-                    FRONT MATTER
-                  </div>
-                  <label style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    color: '#c8c8c8', fontSize: 12, cursor: 'pointer',
-                  }}>
-                    <input
-                      type="checkbox"
-                      checked={compileFrontMatter}
-                      onChange={e => setCompileFrontMatter(e.target.checked)}
-                      style={{ accentColor: '#888' }}
-                    />
-                    Title page
-                  </label>
-                </div>
-
-                {/* ── Middle: Preview ── */}
-                <div style={{
-                  flex: 1,
-                  borderRight: '1px solid #2a2a2a',
-                  padding: '16px',
-                  display: 'flex', flexDirection: 'column',
-                  overflow: 'hidden',
-                }}>
-                  <div style={{ color: '#555', fontSize: 10, letterSpacing: '0.08em', marginBottom: 12 }}>
-                    PREVIEW
-                  </div>
-                  <div style={{
-                    flex: 1,
-                    background: '#fff',
-                    borderRadius: 3,
-                    padding: '32px 40px',
-                    overflowY: 'auto',
-                  }}>
-                    {/* Simulated chapter heading */}
-                    <div style={{
-                      fontFamily: styles.chapter.font,
-                      fontSize: `${styles.chapter.size}pt`,
-                      fontWeight: styles.chapter.bold ? 700 : 400,
-                      fontStyle: styles.chapter.italic ? 'italic' : 'normal',
-                      color: '#111',
-                      marginBottom: 16,
-                    }}>
-                      Chapter One
-                    </div>
-                    {/* Lorem body paragraphs */}
-                    {LOREM_PREVIEW.split('\n\n').map((para, i) => (
-                      <p key={i} style={{
-                        fontFamily: styles.body.font,
-                        fontSize: `${styles.body.size}pt`,
-                        textAlign: styles.body.justification === 'both' ? 'justify'
-                          : styles.body.justification as 'left' | 'center' | 'right',
-                        textIndent: styles.body.firstLineIndent ? '2em' : '0',
-                        lineHeight: styles.body.lineSpacing > 0
-                          ? `${styles.body.lineSpacing * 1.2}em`
-                          : '1.85',
-                        margin: '0 0 8px 0',
-                        color: '#111',
-                      }}>
-                        {para.trim()}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-
-                {/* ── Right: Scene Selection ── */}
-                <div style={{
-                  width: 260, flexShrink: 0,
-                  display: 'flex', flexDirection: 'column',
-                  overflow: 'hidden',
-                }}>
-                  <div style={{
-                    color: '#555', fontSize: 10, letterSpacing: '0.08em',
-                    padding: '16px 12px 8px',
-                    flexShrink: 0,
-                  }}>
-                    SCENE SELECTION
-                  </div>
-                  <div className="compile-scene-list" style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px' }}>
-                    {compileChapters.map((chapter, ci) => (
-                      <div key={chapter.folderId} style={{ marginBottom: 8 }}>
-
-                        {/* Chapter row */}
-                        <label style={{
-                          display: 'flex', alignItems: 'center', gap: 6,
-                          color: '#c8c8c8', fontSize: 12, cursor: 'pointer',
-                          padding: '3px 0',
-                        }}>
-                          <input
-                            type="checkbox"
-                            className="compile-checkbox"
-                            checked={chapter.included}
-                            onChange={e => {
-                              const checked = e.target.checked
-                              setCompileChapters(prev => prev.map((ch, i) =>
-                                i !== ci ? ch : {
-                                  ...ch,
-                                  included: checked,
-                                  scenes: ch.scenes.map(s => ({ ...s, included: checked })),
-                                }
-                              ))
-                            }}
-                          />
-                          <span style={{ fontWeight: 600 }}>{chapter.label}</span>
-                        </label>
-
-                        {/* Scene rows */}
-                        {chapter.scenes.map((scene, si) => (
-                          <div key={scene.docId} style={{
-                            display: 'flex', alignItems: 'center', gap: 6,
-                            paddingLeft: 20, paddingTop: 2, paddingBottom: 2,
-                          }}>
-                            <input
-                              type="checkbox"
-                              checked={scene.included}
-                              style={{ accentColor: '#888', flexShrink: 0 }}
-                              onChange={e => {
-                                const checked = e.target.checked
-                                setCompileChapters(prev => prev.map((ch, ci2) => {
-                                  if (ci2 !== ci) return ch
-                                  const newScenes = ch.scenes.map((s, si2) =>
-                                    si2 !== si ? s : { ...s, included: checked }
-                                  )
-                                  const anyIncluded = newScenes.some(s => s.included)
-                                  return { ...ch, included: anyIncluded, scenes: newScenes }
-                                }))
-                              }}
-                            />
-                            <span style={{
-                              color: scene.included ? '#a0a0a0' : '#444',
-                              fontSize: 11, flex: 1,
-                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                            }}>
-                              {scene.label}
-                            </span>
-                            <select
-                              value={scene.selectedTab}
-                              disabled={!scene.included}
-                              onChange={e => {
-                                const val = e.target.value
-                                setCompileChapters(prev => prev.map((ch, ci2) =>
-                                  ci2 !== ci ? ch : {
-                                    ...ch,
-                                    scenes: ch.scenes.map((s, si2) =>
-                                      si2 !== si ? s : { ...s, selectedTab: val }
-                                    ),
-                                  }
-                                ))
-                                updateCompileSelection(scene.fileId, val)
-                              }}
-                              style={{
-                                background: '#2d2d2d',
-                                border: '1px solid #3a3a3a',
-                                borderRadius: 3,
-                                color: scene.included ? '#c8c8c8' : '#444',
-                                fontSize: 10,
-                                padding: '2px 4px',
-                                width: 110,
-                                minWidth: 110,
-                                maxWidth: 110,
-                                flexShrink: 0,
-                                overflow: 'hidden',
-                                cursor: scene.included ? 'pointer' : 'not-allowed',
-                              }}
-                            >
-                              <option value="__last__">Use Last Tab</option>
-                              {scene.tabs.map(t => (
-                                <option key={t} value={t}>{t}</option>
-                              ))}
-                            </select>
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-              </div>
-            )
-          }
-
-          {/* ── Footer ── */}
-          <div style={{
-            padding: '10px 16px',
-            borderTop: '1px solid #2a2a2a',
-            display: 'flex', justifyContent: 'flex-end', gap: 8,
-            flexShrink: 0,
-          }}>
-            <button
-              className="modal-btn"
-              onClick={() => setShowCompile(false)}
-            >
-              Cancel
-            </button>
-            <button
-              className="modal-btn modal-btn-primary"
-              onClick={compileProject}
-              disabled={compileLoading || compileChapters.every(ch => !ch.included)}
-            >
-              Export
-            </button>
-          </div>
-
-        </div>
-      </div>
-    )
-  }
+  const activeSceneMetadata =
+    activeNode?.type === 'doc' && !isTrashPreview
+      ? normalizeSceneMetadata(activeNode.metadata)
+      : null
 
   // #endregion
 
@@ -3980,696 +3244,411 @@ export default function App() {
 
   // #endregion
 
-  // #region === RENDER: REVISION WORKSPACE ===
+  // #region === HANDLERS: CONTEXT MENUS ===
 
-  const RevisionView = () => {
-    const activeComments = revisionComments
-      .filter(c => c.sceneId === revisionActiveId)
-      .sort((a, b) => {
-        if (a.resolved !== b.resolved) return a.resolved ? 1 : -1
-        return a.createdAt - b.createdAt
-      })
+  const handleTabContextRename = (index: number) => {
+    setRenamingTabIndex(index)
+    setTabContextMenu(null)
+  }
 
-    const renderAnnotatedHtml = (html: string): string => {
-      let result = html
+  const handleTabContextDelete = (index: number) => {
+    if (sceneTabs.length <= 1) return
+    setConfirmDeleteTab(index)
+    setTabContextMenu(null)
+  }
 
-      activeComments.forEach(c => {
-        const isResolved = c.resolved
-        const isActive = revisionActiveCommentId === c.id
+  const handleBinderContextRename = (nodeId: number) => {
+    setRenamingId(nodeId)
+    setContextMenu(null)
+  }
 
-        const cls = [
-          'revision-highlight',
-          isActive ? 'revision-highlight--active' : '',
-          isResolved ? 'revision-highlight--resolved' : '',
-        ].filter(Boolean).join(' ')
+  const handleBinderContextDuplicate = async (nodeId: number) => {
+    const actionIds = getSelectedBinderActionIds(nodeId)
+    await duplicateBinderNodes(actionIds)
+    setContextMenu(null)
+  }
 
-        const safeId = escapeAttr(c.id)
-        const startTag = `<x-comment-start data-id="${safeId}"></x-comment-start>`
-        const endTag = `<x-comment-end data-id="${safeId}"></x-comment-end>`
+  const handleBinderContextBulkRename = (nodeId: number) => {
+    const actionIds = getSelectedBinderActionIds(nodeId)
+    if (actionIds.length === 0) return
+    setBulkRenameTarget({ ids: actionIds, value: getBulkRenameSeed(actionIds) })
+    setContextMenu(null)
+  }
 
-        const startIndex = result.indexOf(startTag)
-        const endIndex = result.indexOf(endTag)
-
-        if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) return
-
-        const beforeStart = result.slice(0, startIndex)
-        const afterStart = result.slice(startIndex + startTag.length)
-        const middle = afterStart.slice(0, afterStart.indexOf(endTag))
-        const afterEnd = afterStart.slice(afterStart.indexOf(endTag) + endTag.length)
-
-        const wrap = (content: string) =>
-          `<mark class="${cls}" data-comment-id="${safeId}">${content}</mark>`
-
-        const segments = middle.split(/(?=<p[^>]*>)|(?<=<\/p>)/)
-
-        const wrappedMiddle = segments.map(segment => {
-          if (!segment) return segment
-
-          if (segment.match(/^<p[^>]*>/)) {
-            return segment
-              .replace(
-                /^(<p[^>]*>)([\s\S]*)(<\/p>)$/,
-                (_match, open, content, close) => `${open}${wrap(content)}${close}`
-              )
-              .replace(
-                /^(<p[^>]*>)([\s\S]*)$/,
-                (_match, open, content) => `${open}${wrap(content)}`
-              )
-          }
-
-          return segment.replace(
-            /^([\s\S]*?)(<\/p>)$/,
-            (_match, content, close) => `${wrap(content)}${close}`
-          )
-        }).join('')
-
-        const finalMiddle = wrappedMiddle === middle
-          ? wrap(middle)
-          : wrappedMiddle
-
-        result = beforeStart + finalMiddle + afterEnd
-      })
-
-      return result
+  const handleBinderContextAddScene = (node: TreeNode) => {
+    if (node.type === 'folder') {
+      addDoc(node.id)
+    } else {
+      const parent = findParentFolder(treeRef.current, node.id)
+      if (parent) {
+        const newId = allocateNextId()
+        const fileId = generateFileId()
+        const newDoc: DocNode = { id: newId, type: 'doc', label: 'New scene', title: 'New scene', file: fileId, metadata: DEFAULT_SCENE_METADATA }
+        const newTree = JSON.parse(JSON.stringify(treeRef.current)) as TreeNode[]
+        const parentNode = findNode(newTree, parent.id) as FolderNode
+        const idx = parentNode.children.findIndex(c => c.id === node.id)
+        parentNode.children.splice(idx + 1, 0, newDoc)
+        setTree(newTree)
+        treeRef.current = newTree
+        if (projectRef.current) {
+          writeSceneFile(projectRef.current.path, fileId, '')
+          saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+        }
+        setRenamingId(newId)
+        setActiveId(newId)
+        setTitleValue('New scene')
+        bodyHtmlRef.current = ''
+        editor?.commands.setContent('')
+      }
     }
+    setContextMenu(null)
+  }
 
-    if (!revisionActiveId) {
-      return (
-        <div id="revision-empty">
-          <i className="ti ti-message-circle" aria-hidden="true" />
-          <p>Select a scene from the binder to review</p>
-        </div>
-      )
+  const handleBinderContextAddFolder = (node: TreeNode) => {
+    if (node.type === 'folder') {
+      const newId = allocateNextId()
+      const newFolder: FolderNode = { id: newId, type: 'folder', label: 'New folder', open: true, children: [] }
+      const newTree = JSON.parse(JSON.stringify(treeRef.current)) as TreeNode[]
+      const manuscript = findNode(newTree, 1) as FolderNode
+      const idx = manuscript.children.findIndex(c => c.id === node.id)
+      manuscript.children.splice(idx + 1, 0, newFolder)
+      setTree(newTree)
+      treeRef.current = newTree
+      if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+      setRenamingId(newId)
+    } else {
+      const parent = findParentFolder(treeRef.current, node.id)
+      if (parent) addFolder(parent.id)
     }
+    setContextMenu(null)
+  }
 
-    return (
-      <div id="revision-layout">
-        {/* ── Read-only text pane ── */}
-        <div id="revision-scroll" ref={revisionScrollRef}>
-          <div id="revision-wrap">
-            <div id="revision-title">{revisionTitle}</div>
-            <div
-              id="revision-body"
-              dangerouslySetInnerHTML={{ __html: renderAnnotatedHtml(revisionContent) }}
-              onClick={e => {
-                const target = e.target as HTMLElement
-                const mark = target.closest('[data-comment-id]') as HTMLElement | null
-                if (mark) {
-                  const cid = mark.dataset.commentId ?? null
-                  setRevisionActiveCommentId(cid)
-                }
-              }}
-            />
-          </div>
-        </div>
-
-        {/* ── Comments pane ── */}
-        <div id="revision-comments-pane">
-          <div id="revision-comments-header">
-            <span>Comments</span>
-            {activeComments.filter(c => !c.resolved).length > 0 && (
-              <span className="revision-comments-count">
-                {activeComments.filter(c => !c.resolved).length}
-              </span>
-            )}
-          </div>
-
-          <div id="revision-comments-list">
-            {/* Pending new comment composer */}
-            {revisionPendingComment && (
-              <div className="revision-comment revision-comment--pending">
-                <div className="revision-comment-quote">
-                  <i className="ti ti-quote" aria-hidden="true" />
-                  {revisionPendingComment.quote.length > 120
-                    ? revisionPendingComment.quote.slice(0, 120) + '…'
-                    : revisionPendingComment.quote}
-                </div>
-                <textarea
-                  className="revision-comment-input"
-                  placeholder="Add a comment…"
-                  value={draftText}
-                  autoFocus
-                  onChange={e => setDraftText(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'z' || e.key === 'y') e.stopPropagation()
-                    if (e.key === 'Escape') setRevisionPendingComment(null)
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                      if (draftText.trim()) addRevisionComment(revisionPendingComment.quote, draftText.trim())
-                    }
-                  }}
-                />
-                <div className="revision-comment-actions">
-                  <button
-                    className="revision-btn revision-btn--ghost"
-                    onClick={() => {
-                      // Strip temporary pending delimiters from the revision view
-                      const stripped = revisionContent
-                        .replace(/<x-comment-start data-id="pending"><\/x-comment-start>/g, '')
-                        .replace(/<x-comment-end data-id="pending"><\/x-comment-end>/g, '')
-                      setRevisionContent(stripped)
-                      setRevisionPendingComment(null)
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    className="revision-btn"
-                    disabled={!draftText.trim()}
-                    onClick={() => {
-                      if (draftText.trim())
-                        addRevisionComment(revisionPendingComment.quote, draftText.trim())
-                    }}
-                  >
-                    Comment
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {activeComments.length === 0 && !revisionPendingComment && (
-              <div className="revision-comments-empty">
-                <i className="ti ti-message-circle-off" aria-hidden="true" />
-                <p>No comments yet</p>
-                <p className="revision-comments-empty-hint">Select text to add one</p>
-              </div>
-            )}
-
-            {activeComments.map(c => (
-              <div
-                key={c.id}
-                className={`revision-comment${revisionActiveCommentId === c.id ? ' revision-comment--active' : ''}${c.resolved ? ' revision-comment--resolved' : ''}`}
-                onClick={() => setRevisionActiveCommentId(c.id === revisionActiveCommentId ? null : c.id)}
-              >
-                <div className="revision-comment-meta">
-                  <span className="revision-comment-date">
-                    {new Date(c.createdAt).toLocaleDateString(undefined, {
-                      month: 'short', day: 'numeric',
-                    })}
-                  </span>
-                </div>
-                <div className="revision-comment-quote">
-                  <i className="ti ti-quote" aria-hidden="true" />
-                  {c.quote.length > 100 ? c.quote.slice(0, 100) + '…' : c.quote}
-                </div>
-                <div className="revision-comment-text">
-                  {c.text}
-                </div>
-                <div className="revision-comment-actions">
-                  {!c.resolved ? (
-                    <button
-                      className="revision-btn revision-btn--ghost revision-btn--sm"
-                      onClick={e => { e.stopPropagation(); resolveRevisionComment(c.id) }}
-                    >
-                      <i className="ti ti-check" /> Resolve
-                    </button>
-                  ) : (
-                    <button
-                      className="revision-btn revision-btn--ghost revision-btn--sm"
-                      onClick={e => { e.stopPropagation(); unresolveRevisionComment(c.id) }}
-                    >
-                      <i className="ti ti-arrow-back-up" /> Unresolve
-                    </button>
-                  )}
-                  <button
-                    className="revision-btn revision-btn--ghost revision-btn--sm revision-btn--danger"
-                    onClick={e => { e.stopPropagation(); setConfirmDeleteRevisionComment(c.id) }}
-                  >
-                    <i className="ti ti-trash" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
+  const handleBinderContextMoveToTrash = (node: TreeNode) => {
+    const actionIds = getSelectedBinderActionIds(node.id)
+    if (actionIds.length > 1) {
+      setConfirmBulkBinDelete({ ids: actionIds, label: `${actionIds.length} selected items` })
+    } else {
+      setConfirmBinDelete({ id: node.id, label: node.label })
+    }
+    setContextMenu(null)
   }
 
   // #endregion
 
-  // #region === RENDER HELPERS: LORE BOOK ===
+  const MenuBarMenus = () => (
+    <AppMenus
+      projectOpen={Boolean(project)}
+      fileMenuOpen={fileMenuOpen}
+      editMenuOpen={editMenuOpen}
+      helpMenuOpen={helpMenuOpen}
+      fileMenuRef={fileMenuRef}
+      editMenuRef={editMenuRef}
+      helpMenuRef={helpMenuRef}
+      canUndo={Boolean(editor?.can().undo())}
+      canRedo={Boolean(editor?.can().redo())}
+      onFileMenuToggle={() => setFileMenuOpen(v => !v)}
+      onEditMenuToggle={() => setEditMenuOpen(v => !v)}
+      onHelpMenuToggle={() => setHelpMenuOpen(v => !v)}
+      onNewProject={() => { setFileMenuOpen(false); setShowNewProject(true) }}
+      onOpenProject={openProject}
+      onCloseProject={closeProject}
+      onBackupNow={() => { setFileMenuOpen(false); runProjectBackup('manual', true) }}
+      onRestoreBackupPicker={openRestoreBackupPicker}
+      onRestoreBackup={() => {
+        setFileMenuOpen(false)
+        showMessage(
+          'This will copy the latest backup over the current project files. Scrivus will create a pre-restore backup first.',
+          'Restore Latest Backup?',
+          'warning',
+          { label: 'Restore', onClick: restoreLatestBackup },
+        )
+      }}
+      onCompile={() => openCompileModal()}
+      onExit={() => exit(0)}
+      onUndo={() => { setEditMenuOpen(false); editor?.chain().focus().undo().run() }}
+      onRedo={() => { setEditMenuOpen(false); editor?.chain().focus().redo().run() }}
+      onSelectAll={() => { setEditMenuOpen(false); editor?.chain().focus().selectAll().run() }}
+      onProjectSettings={() => { setEditMenuOpen(false); setShowProjectSettings(true) }}
+      onPreferences={() => { setEditMenuOpen(false); setShowPreferences(true) }}
+      onSearch={() => { setEditMenuOpen(false); setShowSearch(true); setTimeout(() => searchInputRef.current?.focus(), 50) }}
+      onFindReplace={() => { setEditMenuOpen(false); setShowFnR(true); setTimeout(() => fnrInputRef.current?.focus(), 50) }}
+      onAbout={() => { setHelpMenuOpen(false); setShowAbout(true) }}
+      onCheckForUpdates={() => { void checkForUpdates() }}
+    />
+  )
 
-  const LoreBookView = () => {
-    const sortedCategories = [...loreBook.categories].sort((a, b) => a.name.localeCompare(b.name))
-
-    if (loreView === 'category') {
-      const cat = getActiveLoreCategory()
-      if (!cat) return null
-      const sortedEntries = [...cat.entries].sort((a, b) => a.name.localeCompare(b.name))
-      const activeFields = cat.template.filter(f => !f.removed)
-
-      return (
-        <div id="lorebook-view">
-          <div id="lorebook-category-header">
-            <button className="lorebook-back-btn" onClick={() => setLoreView('home')}>
-              <i className="ti ti-arrow-left" aria-hidden="true" />
-            </button>
-            <span id="lorebook-category-title">{cat.name}</span>
-            <button className="lorebook-edit-btn" onClick={() => openEditCategoryEditor(cat)}>
-              <i className="ti ti-edit" aria-hidden="true" />
-            </button>
-            <button className="lorebook-delete-btn" onClick={() => setConfirmDeleteLoreCategory(cat)}>
-              <i className="ti ti-trash" aria-hidden="true" />
-            </button>
-          </div>
-          <div id="lorebook-entries">
-            {sortedEntries.map(entry => {
-              const isExpanded = expandedEntryId === entry.id
-              return (
-                <div
-                  key={entry.id}
-                  className={`lorebook-entry-card${isExpanded ? ' expanded' : ' collapsed'}`}
-                >
-                  <div
-                    className="lorebook-entry-card-header"
-                    onClick={() => setExpandedEntryId(isExpanded ? null : entry.id)}
-                  >
-                    <i className={`ti ti-chevron-${isExpanded ? 'down' : 'right'} lorebook-entry-chevron`} aria-hidden="true" />
-                    <span className="lorebook-entry-name">{entry.name}</span>
-                    <span className="lorebook-entry-actions" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => openEditEntryEditor(entry)}>
-                        <i className="ti ti-pencil" aria-hidden="true" />
-                      </button>
-                      <button onClick={() => setConfirmDeleteLoreEntry(entry)}>
-                        <i className="ti ti-trash" aria-hidden="true" />
-                      </button>
-                    </span>
-                  </div>
-                  {isExpanded && (
-                    <div className="lorebook-entry-body">
-                      {activeFields.map(field => {
-                        if (field.type === 'divider') {
-                          return <div key={field.id} className="lorebook-entry-divider" />
-                        }
-                        const value = entry.fields[field.id] ?? ''
-                        if (!value) return null
-                        if (field.type === 'image') {
-                          return (
-                            <div key={field.id} className="lorebook-entry-field">
-                              {field.label && <span className="lorebook-field-label">{field.label}</span>}
-                              <img
-                                src={projectRef.current ? convertFileSrc(`${projectRef.current.path}/${value}`.replace(/\\/g, '/')) : ''}
-                                className="lorebook-entry-image"
-                                alt={field.label ?? 'image'}
-                              />
-                            </div>
-                          )
-                        }
-                        return (
-                          <div key={field.id} className="lorebook-entry-field">
-                            <span className="lorebook-field-label">{field.label}</span>
-                            <span className="lorebook-field-value">{value}</span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-            <button className="lorebook-add-entry-btn" onClick={openNewEntryEditor}>
-              <i className="ti ti-plus" aria-hidden="true" /> Add entry
-            </button>
-          </div>
-        </div>
+  const handleWorkspaceChange = (nextWorkspace: Workspace) => {
+    if (workspace === 'editor' && nextWorkspace !== 'editor' && saveTimer.current) {
+      clearTimeout(saveTimer.current)
+      saveTimer.current = null
+      saveActive()
+      computeManuscriptWordCount()
+      computeChapterWordCount()
+      refreshOutlineRows()
+      if (saveLabelTimer.current) clearTimeout(saveLabelTimer.current)
+      setSaveLabel('saved')
+      saveLabelTimer.current = setTimeout(() => {
+        setSaveLabel('')
+        saveLabelTimer.current = null
+      }, 1200)
+    }
+    if (nextWorkspace === 'revision' && revisionActiveId !== null) {
+      const tabs = sceneTabsRef.current
+      const lastIndex = tabs.length - 1
+      const updatedTabs = tabs.map((t, i) =>
+        i === activeTabIndex ? { ...t, content: bodyHtmlRef.current } : t
       )
+      setRevisionContent(updatedTabs[lastIndex]?.content ?? '')
     }
+    setWorkspace(nextWorkspace)
+  }
 
-    // Home view
-    return (
-      <div id="lorebook-view">
-        <div id="lorebook-home">
-          <div id="lorebook-categories">
-            {sortedCategories.map(cat => (
-              <div
-                key={cat.id}
-                className="lorebook-category-btn"
-                onClick={() => { setActiveLoreCategoryId(cat.id); setLoreView('category') }}
+  const openOutlineScene = async (id: number) => {
+    setWorkspace('editor')
+    await selectDoc(id)
+  }
+
+
+  const SharedModals = () => (
+    <>
+      {showNewProject && (
+        <NewProjectModal
+          name={newProjectName}
+          parent={newProjectParent}
+          onNameChange={setNewProjectName}
+          onCancel={() => { setShowNewProject(false); setNewProjectName(''); setNewProjectParent('') }}
+          onBrowse={pickParentFolder}
+          onCreate={createProject}
+        />
+      )}
+      {showProjectSettings && project && (
+        <ProjectSettingsModal
+          settings={normalizeProjectSettings(project.settings)}
+          styles={styles}
+          dictionaryWords={projectDictionary}
+          activeTab={projectSettingsTab}
+          onTabChange={setProjectSettingsTab}
+          onCancel={() => setShowProjectSettings(false)}
+          onSave={saveProjectSettings}
+        />
+      )}
+      {showStyles && (
+        <StylesModal
+          styles={styles}
+          activeTab={stylesTab}
+          onTabChange={setStylesTab}
+          onCancel={() => setShowStyles(false)}
+          onApply={local => {
+            setStyles(local)
+            setProject(prev => prev ? { ...prev, styles: local } : prev)
+            if (projectRef.current) {
+              projectRef.current = { ...projectRef.current, styles: local }
+              saveProjectToDisk({ ...projectRef.current, styles: local }, activeIdRef.current ?? undefined)
+            }
+            setShowStyles(false)
+          }}
+          onSaveAsDefault={async local => {
+            await saveDefaultStyles(local)
+            setStyles(local)
+            setProject(prev => prev ? { ...prev, styles: local } : prev)
+            if (projectRef.current) {
+              projectRef.current = { ...projectRef.current, styles: local }
+              saveProjectToDisk({ ...projectRef.current, styles: local }, activeIdRef.current ?? undefined)
+            }
+            setShowStyles(false)
+          }}
+        />
+      )}
+      <ConfirmDeleteModal
+        target={confirmDelete}
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={permanentlyDelete}
+      />
+      <ConfirmBinDeleteModal
+        target={confirmBinDelete}
+        onCancel={() => setConfirmBinDelete(null)}
+        onConfirm={id => { deleteNode(id); setConfirmBinDelete(null) }}
+      />
+      {confirmBulkBinDelete && (
+        <div className="modal-overlay">
+          <div className="modal-box" style={{ width: 380 }}>
+            <p className="modal-title">Move to trash?</p>
+            <p className="modal-danger-text">
+              <strong style={{ color: '#d4d4d4' }}>{confirmBulkBinDelete.label}</strong> will be moved to the trash.
+            </p>
+            <div className="modal-footer">
+              <button className="welcome-btn" onClick={() => setConfirmBulkBinDelete(null)}>Cancel</button>
+              <button
+                className="welcome-btn"
+                onClick={async () => {
+                  await deleteNodes(confirmBulkBinDelete.ids)
+                  setConfirmBulkBinDelete(null)
+                }}
               >
-                <span>{cat.name.toUpperCase()}</span>
-                <button
-                  className="lorebook-category-edit-icon"
-                  title="Edit template"
-                  onClick={e => { e.stopPropagation(); openEditCategoryEditor(cat) }}
-                >
-                  <i className="ti ti-edit" aria-hidden="true" />
-                </button>
-              </div>
-            ))}
-            <button className="lorebook-add-category-btn" onClick={openNewCategoryEditor}>
-              <i className="ti ti-plus" aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Template editor modal.
-  const LoreTemplateEditorModal = () => {
-    const [local, setLocal] = useState<LoreCategory>(loreTemplateEditor!)
-    const [templateDragIndex, setTemplateDragIndex] = useState<number | null>(null)
-    const [templateDropIndex, setTemplateDropIndex] = useState<number | null>(null)
-    const templateDragIndexRef = useRef<number | null>(null)
-    const [addMenuOpen, setAddMenuOpen] = useState(false)
-    const addBtnRef = useRef<HTMLButtonElement>(null)
-
-    if (!loreTemplateEditor) return null
-
-    const activeElements = local.template.filter(f => !f.removed)
-    const removedElements = local.template.filter(f => f.removed)
-
-    const addElement = (type: LoreFieldType) => {
-      const newEl: LoreTemplateElement = {
-        id: generateLoreId(),
-        type,
-        label: type === 'divider' ? undefined : '',
-        removed: false,
-      }
-      setLocal(prev => ({ ...prev, template: [...prev.template, newEl] }))
-    }
-
-    const updateLabel = (id: string, label: string) => {
-      setLocal(prev => ({
-        ...prev,
-        template: prev.template.map(f => f.id === id ? { ...f, label } : f),
-      }))
-    }
-
-    const softRemove = (id: string) => {
-      setLocal(prev => ({
-        ...prev,
-        template: prev.template.map(f => f.id === id ? { ...f, removed: true } : f),
-      }))
-    }
-
-    const restore = (id: string) => {
-      setLocal(prev => ({
-        ...prev,
-        template: prev.template.map(f => f.id === id ? { ...f, removed: false } : f),
-      }))
-    }
-
-    const handleDrop = (targetIndex: number) => {
-      const dragIndex = templateDragIndexRef.current
-      if (dragIndex === null || dragIndex === targetIndex) {
-        setTemplateDragIndex(null)
-        setTemplateDropIndex(null)
-        templateDragIndexRef.current = null
-        return
-      }
-      const reordered = [...activeElements]
-      const [moved] = reordered.splice(dragIndex, 1)
-      reordered.splice(targetIndex, 0, moved)
-      setLocal(prev => ({
-        ...prev,
-        template: [...reordered, ...removedElements],
-      }))
-      setTemplateDragIndex(null)
-      setTemplateDropIndex(null)
-      templateDragIndexRef.current = null
-    }
-
-    return (
-      <div className="modal-overlay" style={{ zIndex: 150 }}>
-        <div className="modal-box lore-template-modal">
-          <div className="lore-template-header">
-            <input
-              className="lore-template-title-input"
-              value={local.name}
-              onChange={e => setLocal(prev => ({ ...prev, name: e.target.value }))}
-              onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-              placeholder="Category name"
-            />
-          </div>
-
-          <div className="lore-template-entry-name">
-            <span className="lore-template-locked-label">Entry Name</span>
-            <span className="lore-template-locked-hint">(set when creating an entry)</span>
-          </div>
-
-          <div className="lore-template-elements">
-            {activeElements.map((el, index) => {
-              const isDragging = templateDragIndex === index
-              const isDropTarget = templateDropIndex === index
-              return (
-                <div key={el.id}>
-                  {isDropTarget && templateDragIndex !== index && (
-                    <div className="drop-line" />
-                  )}
-                  <div
-                    className={`lore-template-element${isDragging ? ' dragging' : ''}`}
-                    draggable
-                    onDragStart={e => {
-                      e.stopPropagation()
-                      templateDragIndexRef.current = index
-                      setTemplateDragIndex(index)
-                      e.dataTransfer.effectAllowed = 'move'
-                    }}
-                    onDragEnd={() => {
-                      setTemplateDragIndex(null)
-                      setTemplateDropIndex(null)
-                      templateDragIndexRef.current = null
-                    }}
-                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); setTemplateDropIndex(index) }}
-                    onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDrop(index) }}
-                  >
-                    <span className="lore-template-drag-handle">
-                      <i className="ti ti-grip-vertical" aria-hidden="true" />
-                    </span>
-                    {el.type === 'divider'
-                      ? <div className="lore-template-divider-preview" />
-                      : <input
-                        className="lore-template-label-input"
-                        value={el.label ?? ''}
-                        onChange={e => updateLabel(el.id, e.target.value)}
-                        onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-                        placeholder={
-                          el.type === 'field' ? 'Field label…' :
-                            el.type === 'textarea' ? 'Description label…' :
-                              'Image label…'
-                        }
-                      />
-                    }
-                    <span className="lore-template-type-badge">{el.type}</span>
-                    <button
-                      className="lore-template-remove-btn"
-                      title="Remove"
-                      onClick={() => softRemove(el.id)}
-                    >
-                      <i className="ti ti-trash" aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-
-          <div className="lore-template-add-wrap">
-            <button
-              ref={addBtnRef}
-              className="lore-template-add-btn"
-              onClick={() => setAddMenuOpen(v => !v)}
-            >
-              <i className="ti ti-plus" aria-hidden="true" /> Add element
-            </button>
-            {addMenuOpen && (() => {
-              const rect = addBtnRef.current?.getBoundingClientRect()
-              return (
-                <div
-                  className="lore-template-add-menu"
-                  style={{
-                    position: 'fixed',
-                    top: rect ? rect.bottom + 4 : 0,
-                    left: rect ? rect.left : 0,
-                  }}
-                >
-                  {(['field', 'textarea', 'image', 'divider'] as LoreFieldType[]).map(type => (
-                    <button key={type} onClick={() => { addElement(type); setAddMenuOpen(false) }}>
-                      {type === 'field' ? 'Field Box' :
-                        type === 'textarea' ? 'Description Box' :
-                          type === 'image' ? 'Image' : 'Divider'}
-                    </button>
-                  ))}
-                </div>
-              )
-            })()}
-          </div>
-
-          {removedElements.length > 0 && (
-            <div className="lore-template-removed-section">
-              <p className="lore-template-removed-heading">Removed elements</p>
-              {removedElements.map(el => (
-                <div key={el.id} className="lore-template-element removed">
-                  <span className="lore-template-type-badge">{el.type}</span>
-                  {el.label && <span className="lore-template-removed-label">{el.label}</span>}
-                  <button
-                    className="lore-template-restore-btn"
-                    title="Restore"
-                    onClick={() => restore(el.id)}
-                  >
-                    <i className="ti ti-restore" aria-hidden="true" />
-                  </button>
-                  <button
-                    className="lore-template-hard-delete-btn"
-                    title="Permanently delete"
-                    onClick={() => setConfirmHardDeleteField({
-                      categoryId: local.id,
-                      fieldId: el.id,
-                      label: el.label ?? el.type,
-                    })}
-                  >
-                    <i className="ti ti-x" aria-hidden="true" />
-                  </button>
-                </div>
-              ))}
+                Move to trash
+              </button>
             </div>
-          )}
-
-          <div className="modal-footer">
-            <button className="welcome-btn" onClick={() => setLoreTemplateEditor(null)}>Cancel</button>
-            <button className="welcome-btn" onClick={() => saveLoreTemplate(local)}>Save</button>
           </div>
         </div>
-      </div>
-    )
-  }
-
-  // Entry editor modal.
-  const LoreEntryEditorModal = () => {
-    const cat = getActiveLoreCategory()
-    if (!cat || !loreEntryEditor) return null
-    const [local, setLocal] = useState<LoreEntry>(loreEntryEditor)
-    const activeFields = cat.template.filter(f => !f.removed)
-
-    const handleImagePick = async (fieldId: string) => {
-      if (!projectRef.current) return
-      const selected = await open({
-        title: 'Select image',
-        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
-      })
-      if (!selected || Array.isArray(selected)) return
-      const rel = await copyLoreImage(projectRef.current.path, selected as string, local.id, fieldId)
-      setLocal(prev => ({ ...prev, fields: { ...prev.fields, [fieldId]: rel } }))
-    }
-
-    return (
-      <div className="modal-overlay" style={{ zIndex: 150 }}>
-        <div className="modal-box lore-entry-modal">
-          <p className="modal-title">{local.id ? 'Edit Entry' : 'New Entry'}</p>
-
-          <div className="lore-entry-field-wrap">
-            <label className="lore-entry-label">Entry Name</label>
+      )}
+      {bulkRenameTarget && (
+        <div className="modal-overlay">
+          <div className="modal-box" style={{ width: 420 }}>
+            <p className="modal-title">Bulk rename selected scenes</p>
+            <p className="modal-danger-text">
+              Enter the first name in the sequence. The name must end with a number.
+            </p>
             <input
               className="modal-input"
-              value={local.name}
-              onChange={e => setLocal(prev => ({ ...prev, name: e.target.value }))}
-              onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-              placeholder="Enter name…"
+              value={bulkRenameTarget.value}
               autoFocus
+              onChange={e => setBulkRenameTarget(prev => prev ? { ...prev, value: e.target.value } : prev)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && parseBulkRenameStart(bulkRenameTarget.value)) applyBulkRename()
+                if (e.key === 'Escape') setBulkRenameTarget(null)
+              }}
             />
-          </div>
-
-          {activeFields.map(field => {
-            if (field.type === 'divider') {
-              return <div key={field.id} className="lore-entry-divider" />
-            }
-            if (field.type === 'image') {
-              const val = local.fields[field.id] ?? ''
-              return (
-                <div key={field.id} className="lore-entry-field-wrap">
-                  {field.label && <label className="lore-entry-label">{field.label}</label>}
-                  <div className="lore-entry-image-wrap">
-                    {val && (
-                      <img
-                        src={projectRef.current ? convertFileSrc(`${projectRef.current.path}/${val}`.replace(/\\/g, '/')) : ''}
-                        className="lore-entry-image-preview"
-                        alt={field.label ?? 'image'}
-                      />
-                    )}
-                    <button className="welcome-btn" onClick={() => handleImagePick(field.id)}>
-                      {val ? 'Change image' : 'Select image'}
-                    </button>
-                  </div>
-                </div>
-              )
-            }
-            if (field.type === 'textarea') {
-              return (
-                <div key={field.id} className="lore-entry-field-wrap">
-                  {field.label && <label className="lore-entry-label">{field.label}</label>}
-                  <textarea
-                    className="modal-input lore-entry-textarea"
-                    value={local.fields[field.id] ?? ''}
-                    onChange={e => setLocal(prev => ({
-                      ...prev,
-                      fields: { ...prev.fields, [field.id]: e.target.value },
-                    }))}
-                    onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-                    placeholder={`${field.label ?? 'Description'}…`}
-                  />
-                </div>
-              )
-            }
-            return (
-              <div key={field.id} className="lore-entry-field-wrap">
-                {field.label && <label className="lore-entry-label">{field.label}</label>}
-                <input
-                  className="modal-input"
-                  value={local.fields[field.id] ?? ''}
-                  onChange={e => setLocal(prev => ({
-                    ...prev,
-                    fields: { ...prev.fields, [field.id]: e.target.value },
-                  }))}
-                  onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-                  placeholder={`${field.label ?? 'Field'}…`}
-                />
-              </div>
-            )
-          })}
-
-          <div className="modal-footer">
-            <button className="welcome-btn" onClick={() => setLoreEntryEditor(null)}>Cancel</button>
-            <button
-              className="welcome-btn"
-              onClick={() => saveLoreEntry(cat.id, local)}
-              style={{ opacity: local.name.trim() ? 1 : 0.4 }}
-            >
-              Save
-            </button>
+            {!parseBulkRenameStart(bulkRenameTarget.value) && (
+              <p className="modal-danger-text">Example: Scene 5</p>
+            )}
+            <div className="modal-footer">
+              <button className="welcome-btn" onClick={() => setBulkRenameTarget(null)}>Cancel</button>
+              <button
+                className="welcome-btn"
+                disabled={!parseBulkRenameStart(bulkRenameTarget.value)}
+                onClick={applyBulkRename}
+              >
+                Rename {bulkRenameTarget.ids.length} items
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    )
-  }
-
-  // #endregion
+      )}
+      <AppMessageModal
+        message={appMessage}
+        onClose={() => setAppMessage(null)}
+      />
+      <ProjectRecoveryModal
+        target={projectRecovery}
+        onRestoreLatest={restoreRecoveryBackup}
+        onOpenBackupFolder={openRecoveryBackupFolder}
+        onDismiss={() => setProjectRecovery(null)}
+      />
+      <AboutModal
+        open={showAbout}
+        version={SCRIVUS_VERSION}
+        changelog={changelog}
+        projectFormatCompatibility={projectFormatCompatibility}
+        privacyNote={privacyNote}
+        thirdPartyLicenses={thirdPartyLicenses}
+        onClose={() => setShowAbout(false)}
+        onOpenGithub={() => openUrl(SCRIVUS_GITHUB_URL)}
+      />
+      {showPreferences && (
+        <PreferencesModal
+          theme={appTheme}
+          onCancel={() => setShowPreferences(false)}
+          onSave={savePreferences}
+        />
+      )}
+      <RestoreBackupModal
+        open={restoreBackupOpen}
+        backups={availableBackups}
+        selectedBackupName={selectedBackupName}
+        onSelectBackup={setSelectedBackupName}
+        onCancel={() => setRestoreBackupOpen(false)}
+        onRestore={restoreSelectedBackup}
+      />
+      <ConfirmEmptyTrashModal
+        open={confirmEmptyTrash}
+        trashItems={trashItems}
+        onCancel={() => setConfirmEmptyTrash(false)}
+        onConfirm={() => { emptyTrash(); setConfirmEmptyTrash(false) }}
+      />
+      {confirmDeleteTab !== null && (
+        <ConfirmDeleteTabModal
+          tabName={sceneTabs[confirmDeleteTab]?.name}
+          onCancel={() => setConfirmDeleteTab(null)}
+          onConfirm={() => deleteTab(confirmDeleteTab)}
+        />
+      )}
+      <LoreTemplateEditorModal
+        category={loreTemplateEditor}
+        generateId={generateLoreId}
+        onCancel={() => setLoreTemplateEditor(null)}
+        onSave={saveLoreTemplate}
+      />
+      <LoreEntryEditorModal
+        category={getActiveLoreCategory()}
+        entry={loreEntryEditor}
+        projectPath={projectRef.current?.path ?? null}
+        onCancel={() => setLoreEntryEditor(null)}
+        onSave={saveLoreEntry}
+        onPickImage={async (entryId, fieldId, previousImagePath) => {
+          if (!projectRef.current) return null
+          const selected = await open({
+            title: 'Select image',
+            filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
+          })
+          if (!selected || Array.isArray(selected)) return null
+          const imagePath = await copyLoreImage(projectRef.current.path, selected as string, entryId, fieldId)
+          if (previousImagePath && previousImagePath !== imagePath) {
+            await deleteLoreImage(projectRef.current.path, previousImagePath)
+          }
+          return imagePath
+        }}
+      />
+      <ConfirmDeleteLoreCategoryModal
+        category={confirmDeleteLoreCategory}
+        onCancel={() => setConfirmDeleteLoreCategory(null)}
+        onConfirm={deleteLoreCategory}
+      />
+      <ConfirmDeleteLoreEntryModal
+        entry={confirmDeleteLoreEntry}
+        categoryId={getActiveLoreCategory()?.id ?? null}
+        onCancel={() => setConfirmDeleteLoreEntry(null)}
+        onConfirm={deleteLoreEntry}
+      />
+      {showCompile && (
+        <CompileModal
+          loading={compileLoading}
+          chapters={compileChapters}
+          format={compileFormat}
+          frontMatter={compileFrontMatter}
+          style={compileStyle}
+          projectStyles={styles}
+          onClose={() => setShowCompile(false)}
+          onFrontMatterChange={setCompileFrontMatter}
+          onStyleChange={setCompileStyle}
+          onChaptersChange={setCompileChapters}
+          onSelectionChange={updateCompileSelection}
+          onExport={compileProject}
+        />
+      )}
+    </>
+  )
 
   // #region === RENDER: WELCOME SCREEN ===
   // ───────────────────────────────────────────────────────────────────────────
   // Render: welcome screen shown when no project is open
   // ───────────────────────────────────────────────────────────────────────────
+  if (!startupLoaded) {
+    return (
+      <div id="app" className="app-startup" aria-label="Loading Scrivus">
+        <i className="ti ti-feather welcome-icon" aria-hidden="true" />
+      </div>
+    )
+  }
+
   if (!project) {
     return (
       <div id="app" className="app-welcome">
         <div id="menubar">
-          <FileMenu />
-          <EditMenu />
+          <MenuBarMenus />
           <span className="project-title">Scrivus</span>
         </div>
-        {showNewProject && <NewProjectModal />}
-        {showStyles && <StylesModal />}
-        {confirmDelete && <ConfirmDeleteModal />}
-        {confirmBinDelete && <ConfirmBinDeleteModal />}
-        {appMessage && <AppMessageModal />}
-        {confirmEmptyTrash && <ConfirmEmptyTrashModal />}
-        {confirmDeleteTab !== null && <ConfirmDeleteTabModal />}
-        {loreTemplateEditor && <LoreTemplateEditorModal />}
-        {loreEntryEditor && <LoreEntryEditorModal />}
-        {confirmDeleteLoreCategory && <ConfirmDeleteLoreCategoryModal />}
-        {confirmDeleteLoreEntry && <ConfirmDeleteLoreEntryModal />}
-        {confirmHardDeleteField && <ConfirmHardDeleteFieldModal />}
-        {showCompile && <CompileModal />}
+        <SharedModals />
+
         <i className="ti ti-feather welcome-icon" aria-hidden="true" />
         <p className="welcome-label">No project open</p>
         <div className={`welcome-actions${recentProjects.length ? ' welcome-actions-spaced' : ''}`}>
@@ -4709,823 +3688,279 @@ export default function App() {
   return (
     <div id="app" style={{ position: 'relative' }}>
       <div id="menubar">
-        <FileMenu />
-        <EditMenu />
+        <MenuBarMenus />
         <span className="project-title">{project.name}</span>
         <span style={{ marginLeft: 'auto', fontSize: 11, color: '#858585', paddingRight: 12 }}>{saveLabel}</span>
       </div>
 
-      <div id="sidebar" className={`${binderOpen ? '' : 'collapsed'} ${workspace !== 'editor' && workspace !== 'revision' ? 'hidden' : ''}`}>
-        <div id="sidebar-header">
-          {binderOpen && <span>Binder</span>}
-          <div style={{ display: 'flex', flexDirection: binderOpen ? 'row' : 'column', gap: 2, alignItems: 'center' }}>
-            {!binderOpen && (
-              <button
-                title="Expand binder"
-                onClick={() => setBinderOpen(true)}
-              >
-                <i className="ti ti-chevrons-right" aria-hidden="true" />
-              </button>
-            )}
-            <button
-              title="Find and replace"
-              className={showFnR ? 'active' : ''}
-              onClick={() => {
-                if (showFnR) {
-                  setShowFnR(false)
-                  setFnrFind('')
-                  setFnrReplace('')
-                  setFnrStatus('')
-                  setFnrUndoSnapshot([])
-                } else {
-                  setShowFnR(true)
-                  setShowSearch(false)
-                  setSearchQuery('')
-                  setSearchResults([])
-                  setTimeout(() => fnrInputRef.current?.focus(), 50)
-                }
-              }}
-              disabled={!project}
-            >
-              <i className="ti ti-replace" aria-hidden="true" />
-            </button>
-            <button
-              title="Search project"
-              className={showSearch ? 'active' : ''}
-              onClick={() => {
-                if (showSearch) {
-                  setShowSearch(false)
-                  setSearchQuery('')
-                  setSearchResults([])
-                } else {
-                  setShowSearch(true)
-                  setShowFnR(false)
-                  setFnrFind('')
-                  setFnrReplace('')
-                  setFnrStatus('')
-                  setFnrUndoSnapshot([])
-                  setTimeout(() => searchInputRef.current?.focus(), 50)
-                }
-              }}
-              disabled={!project}
-            >
-              <i className="ti ti-search" aria-hidden="true" />
-            </button>
-            {binderOpen && (
-              <>
-                <div className="sidebar-sep" />
-                <button
-                  title="Collapse binder"
-                  onClick={() => setBinderOpen(false)}
-                >
-                  <i className="ti ti-chevrons-left" aria-hidden="true" />
-                </button>
-              </>
-            )}
-          </div>
-        </div>
+      <BinderSidebar
+        binderOpen={binderOpen}
+        workspace={workspace}
+        projectOpen={!!project}
+        showFnR={showFnR}
+        showSearch={showSearch}
+        tree={tree}
+        activeId={activeId}
+        selectedIds={selectedBinderIds}
+        renamingId={renamingId}
+        dragId={dragId}
+        dropTarget={dropTarget}
+        trashOpen={trashOpen}
+        trashItems={trashItems}
+        trashExpanded={trashExpanded}
+        dragIdRef={dragIdRef}
+        dropTargetRef={dropTargetRef}
+        onBinderOpenChange={setBinderOpen}
+        onExpandAllFolders={() => setAllBinderFoldersOpen(true)}
+        onCollapseAllFolders={() => setAllBinderFoldersOpen(false)}
+        onToggleFindReplace={() => {
+          if (showFnR) {
+            setShowFnR(false)
+            setFnrFind('')
+            setFnrReplace('')
+            setFnrStatus('')
+            setFnrUndoSnapshot([])
+          } else {
+            setShowFnR(true)
+            setShowSearch(false)
+            setSearchQuery('')
+            setSearchResults([])
+            setTimeout(() => fnrInputRef.current?.focus(), 50)
+          }
+        }}
+        onToggleSearch={() => {
+          if (showSearch) {
+            setShowSearch(false)
+            setSearchQuery('')
+            setSearchResults([])
+          } else {
+            setShowSearch(true)
+            setShowFnR(false)
+            setFnrFind('')
+            setFnrReplace('')
+            setFnrStatus('')
+            setFnrUndoSnapshot([])
+            setTimeout(() => searchInputRef.current?.focus(), 50)
+          }
+        }}
+        onDragIdChange={setDragId}
+        onDropTargetChange={setDropTarget}
+        onSelectNode={updateBinderSelection}
+        onClearSelection={(anchorId?: number) => {
+          setSelectedBinderIds(new Set())
+          setBinderSelectionAnchorId(anchorId ?? null)
+        }}
+        onRenamingIdChange={setRenamingId}
+        onContextMenuChange={setContextMenu}
+        onTrashOpenChange={setTrashOpen}
+        onTrashExpandedChange={setTrashExpanded}
+        onConfirmBinDeleteChange={setConfirmBinDelete}
+        onConfirmDeleteChange={setConfirmDelete}
+        onConfirmEmptyTrashChange={setConfirmEmptyTrash}
+        onLoadTrash={loadTrash}
+        onSelectDoc={selectDoc}
+        onSelectRevisionDoc={selectRevisionDoc}
+        onToggleFolder={toggleFolder}
+        onRenameNode={renameNode}
+        onAddDoc={addDoc}
+        onAddFolder={addFolder}
+        onDrop={handleDrop}
+        onPreviewTrashScene={previewTrashScene}
+        onRestoreFromTrash={restoreFromTrash}
+      />
+      <SearchPanel
+        open={showSearch && workspace === 'editor'}
+        query={searchQuery}
+        results={searchResults}
+        loading={searchLoading}
+        inputRef={searchInputRef}
+        onQueryChange={value => {
+          setSearchQuery(value)
+          runSearch(value)
+        }}
+        onClose={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]) }}
+        onOpenResult={openSearchResult}
+      />
 
-        {binderOpen && <div id="tree">
-          {renderNodes(tree, 0)}
-          <div
-            style={{ flex: 1, minHeight: 40 }}
-            onDragOver={e => {
-              e.preventDefault()
-              const lastNode = tree[tree.length - 1]
-              if (lastNode) {
-                dropTargetRef.current = { type: 'after', id: lastNode.id }
-                setDropTarget({ type: 'after', id: lastNode.id })
-              }
-            }}
-            onDrop={e => { e.preventDefault(); handleDrop(-1) }}
-          />
-          <div
-            className="tree-item"
-            onClick={() => { setTrashOpen(v => !v); if (!trashOpen) loadTrash() }}
-            style={{ marginTop: 4, borderTop: '1px solid #2a2d2e', paddingTop: 6 }}
-          >
-            <span style={{ width: 4, flexShrink: 0, display: 'inline-block' }} />
-            <span className="toggle">
-              <i className={`ti ti-chevron-${trashOpen ? 'down' : 'right'}`} aria-hidden="true" />
-            </span>
-            <span className="item-icon">
-              <i className="ti ti-trash" aria-hidden="true" />
-            </span>
-            <span className="item-label">Trash</span>
-            {trashItems.length > 0 && (
-              <span className="item-actions" onClick={e => e.stopPropagation()}>
-                <button
-                  title="Empty Trash"
-                  onClick={e => { e.stopPropagation(); setConfirmEmptyTrash(true) }}
-                >
-                  <i className="ti ti-trash-x" aria-hidden="true" />
-                </button>
-              </span>
-            )}
-          </div>
-          {trashOpen && (
-            <div>
-              {trashItems.length === 0
-                ? <div style={{ padding: '4px 8px 4px 32px', fontSize: 12, color: '#4a4a4a', fontStyle: 'italic' }}>Empty</div>
-                : trashItems.map(item => renderTrashItem(item.sidecarId, item.node, item.originalFolderId, 1))
-              }
-            </div>
-          )}
-        </div>}
-      </div>
-
-      {showSearch && workspace === 'editor' && (
-        <div id="search-panel">
-          <div id="search-panel-header">
-            Search
-            <button onClick={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]) }}>
-              <i className="ti ti-x" aria-hidden="true" />
-            </button>
-          </div>
-          <div id="search-input-wrap">
-            <input
-              id="search-input"
-              ref={searchInputRef}
-              type="text"
-              placeholder="Search all scenes…"
-              value={searchQuery}
-              onChange={e => {
-                setSearchQuery(e.target.value)
-                runSearch(e.target.value)
-              }}
-              onKeyDown={e => {
-                if (e.key === 'z' || e.key === 'y') e.stopPropagation()
-                if (e.key === 'Escape') { setShowSearch(false); setSearchQuery(''); setSearchResults([]) }
-              }}
-            />
-          </div>
-          <div id="search-results">
-            {searchLoading && <div id="search-empty">Searching…</div>}
-            {!searchLoading && searchQuery.trim() && searchResults.length === 0 && (
-              <div id="search-empty">No results found</div>
-            )}
-            {!searchLoading && !searchQuery.trim() && (
-              <div id="search-empty">Type to search</div>
-            )}
-            {!searchLoading && searchResults.map((result, i) => (
-              <div key={i} className="search-result" onClick={() => openSearchResult(result)}>
-                <div className="search-result-title">{result.title}</div>
-                <div className="search-result-excerpt">
-                  {(() => {
-                    const q = searchQuery.toLowerCase()
-                    const idx = result.excerpt.toLowerCase().indexOf(q)
-                    if (idx === -1) return result.excerpt
-                    return (
-                      <>
-                        {result.excerpt.slice(0, idx)}
-                        <mark>{result.excerpt.slice(idx, idx + searchQuery.length)}</mark>
-                        {result.excerpt.slice(idx + searchQuery.length)}
-                      </>
-                    )
-                  })()}
-                </div>
-                <div className="search-result-source">{result.source}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {showSearch && workspace === 'editor' && (
-        <div id="fnr-panel">
-          <div id="fnr-panel-header">
-            Find & Replace
-            <button onClick={() => { setShowFnR(false); setFnrFind(''); setFnrReplace(''); setFnrStatus(''); setFnrUndoSnapshot([]) }}>
-              <i className="ti ti-x" aria-hidden="true" />
-            </button>
-          </div>
-          <div id="fnr-body">
-            <input
-              ref={fnrInputRef}
-              type="text"
-              placeholder="Find…"
-              value={fnrFind}
-              onChange={e => { setFnrFind(e.target.value); setFnrStatus('') }}
-              onKeyDown={e => {
-                if (e.key === 'z' || e.key === 'y') e.stopPropagation()
-                if (e.key === 'Escape') { setShowFnR(false); setFnrFind(''); setFnrReplace(''); setFnrStatus(''); setFnrUndoSnapshot([]) }
-              }}
-            />
-            <input
-              type="text"
-              placeholder="Replace with…"
-              value={fnrReplace}
-              onChange={e => { setFnrReplace(e.target.value); setFnrStatus('') }}
-              onKeyDown={e => {
-                if (e.key === 'z' || e.key === 'y') e.stopPropagation()
-                if (e.key === 'Escape') { setShowSearch(false); setSearchQuery(''); setSearchResults([]) }
-              }}
-            />
-            <div id="fnr-scope">
-              <button
-                className={fnrScope === 'scene' ? 'active' : ''}
-                onClick={() => setFnrScope('scene')}
-              >
-                Current scene
-              </button>
-              <button
-                className={fnrScope === 'manuscript' ? 'active' : ''}
-                onClick={() => setFnrScope('manuscript')}
-              >
-                Manuscript
-              </button>
-            </div>
-            <div id="fnr-actions">
-              <button disabled={!fnrFind.trim()} onClick={fnrReplaceOne}>
-                Replace
-              </button>
-              <button disabled={!fnrFind.trim()} onClick={fnrReplaceAll}>
-                Replace All
-              </button>
-            </div>
-            {fnrUndoSnapshot.length > 0 && fnrScope === 'manuscript' && (
-              <button onClick={fnrUndoReplaceAll} style={{
-                width: '100%', border: '1px solid #3c3c3c', background: '#2d2d2d',
-                cursor: 'pointer', padding: '6px 8px', borderRadius: 4,
-                fontSize: 11, color: '#cccccc', fontFamily: 'inherit',
-              }}>
-                Undo last Replace All
-              </button>
-            )}
-          </div>
-          <div id="fnr-status">{fnrStatus}</div>
-        </div>
-      )}
-
-      <div id="editor-area">
-        <div id="workspace-bar">
-          <button
-            className={workspace === 'editor' ? 'active' : ''}
-            onClick={() => setWorkspace('editor')}
-            title="Editor"
-          >
-            <i className="ti ti-edit" aria-hidden="true" />
-            <span>Editor</span>
-          </button>
-          <button
-            className={workspace === 'revision' ? 'active' : ''}
-            onClick={() => {
-              if (revisionActiveId !== null) {
-                const tabs = sceneTabsRef.current
-                const lastIndex = tabs.length - 1
-                // Use bodyHtmlRef for the current live content
-                const updatedTabs = tabs.map((t, i) =>
-                  i === activeTabIndex ? { ...t, content: bodyHtmlRef.current } : t
-                )
-                setRevisionContent(updatedTabs[lastIndex]?.content ?? '')
-              }
-              setWorkspace('revision')
-            }}
-            title="Revision"
-          >
-            <i className="ti ti-message-circle" aria-hidden="true" />
-            <span>Revision</span>
-          </button>
-          <button
-            className={workspace === 'lorebook' ? 'active' : ''}
-            onClick={() => setWorkspace('lorebook')}
-            title="Lore Book"
-          >
-            <i className="ti ti-book-2" aria-hidden="true" />
-            <span>Lore Book</span>
-          </button>
-          <button
-            className={workspace === 'mindmap' ? 'active' : ''}
-            onClick={() => setWorkspace('mindmap')}
-            title="Mind Map"
-          >
-            <i className="ti ti-git-fork" aria-hidden="true" />
-            <span>Mind Map</span>
-          </button>
-        </div>
-
-        {workspace === 'editor' && showEditor && (
-          <div id="scene-tab-bar">
-            {sceneTabs.map((tab, index) => {
-              const isActive = index === activeTabIndex
-              const isDragging = tabDragIndex === index
-              const isDropTarget = tabDropIndex === index
-              return (
-                <div key={index} style={{ display: 'flex', alignItems: 'stretch' }}>
-                  {isDropTarget && tabDragIndex !== index && (
-                    <div className="tab-drop-line" />
-                  )}
-                  <div
-                    className={`scene-tab${isActive ? ' active' : ''}${isDragging ? ' dragging' : ''}`}
-                    draggable={renamingTabIndex !== index}
-                    onDragStart={renamingTabIndex !== index ? e => {
-                      e.stopPropagation()
-                      tabDragIndexRef.current = index
-                      setTabDragIndex(index)
-                      e.dataTransfer.effectAllowed = 'move'
-                    } : undefined}
-                    onDragEnd={() => {
-                      setTabDragIndex(null)
-                      setTabDropIndex(null)
-                      tabDragIndexRef.current = null
-                    }}
-                    onDragOver={e => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      setTabDropIndex(index)
-                    }}
-                    onDrop={e => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      handleTabDrop(index)
-                    }}
-                    onClick={() => {
-                      if (renamingTabIndex === index) return
-                      switchTab(index)
-                    }}
-                    onDoubleClick={() => setRenamingTabIndex(index)}
-                    onContextMenu={e => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      setTabContextMenu({ x: e.clientX, y: e.clientY, index })
-                    }}
-                  >
-                    {renamingTabIndex === index
-                      ? <input
-                        className="tab-rename-input"
-                        defaultValue={tab.name}
-                        autoFocus
-                        ref={el => { if (el) { el.focus(); el.select() } }}
-                        onClick={e => e.stopPropagation()}
-                        onKeyDown={e => {
-                          if (e.key === 'z' || e.key === 'y') e.stopPropagation()
-                          if (e.key === 'Enter') renameTab(index, (e.target as HTMLInputElement).value)
-                          if (e.key === 'Escape') setRenamingTabIndex(null)
-                        }}
-                        onBlur={e => renameTab(index, e.target.value)}
-                      />
-                      : <span className="tab-label">{tab.name}</span>
-                    }
-                  </div>
-                </div>
-              )
-            })}
-            <button
-              className="tab-add-btn"
-              title="Add tab"
-              onClick={addTab}
-            >
-              <i className="ti ti-plus" aria-hidden="true" />
-            </button>
-          </div>
-        )}
-
-        {workspace === 'editor' && (
-          <div id="editor-toolbar">
-            <button
-              className={editor?.isActive('bold') ? 'active' : ''}
-              onClick={() => editor?.chain().focus().toggleBold().run()}
-              title="Bold"
-            >
-              <i className="ti ti-bold" aria-hidden="true" />
-            </button>
-            <button
-              className={editor?.isActive('italic') ? 'active' : ''}
-              onClick={() => editor?.chain().focus().toggleItalic().run()}
-              title="Italic"
-            >
-              <i className="ti ti-italic" aria-hidden="true" />
-            </button>
-          </div>
-        )}
-
-        {workspace === 'lorebook' && <LoreBookView />}
-        {workspace === 'revision' && RevisionView()}
-
-        {confirmDeleteRevisionComment && (
-          <div className="modal-overlay">
-            <div className="modal-box">
-              <div className="modal-title">Delete Comment</div>
-              <div className="modal-body">This comment will be permanently deleted and cannot be recovered.</div>
-              <div className="modal-footer">
-                <button className="welcome-btn" onClick={() => setConfirmDeleteRevisionComment(null)}>Cancel</button>
-                <button className="welcome-btn" style={{ color: '#cc8888' }} onClick={async () => {
-                  await deleteRevisionComment(confirmDeleteRevisionComment)
-                  setConfirmDeleteRevisionComment(null)
-                }}>Delete</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {workspace === 'mindmap' && (
-          <div id="workspace-placeholder">
-            <i className="ti ti-git-fork" aria-hidden="true" />
-            <p>Mind Map</p>
-            <p className="empty-state-hint">Coming soon</p>
-          </div>
-        )}
-
-        {workspace === 'editor' && (showEditor
-          ? <>
-            <div id="editor-scroll">
-              <div id="editor-wrap">
-                {isTrashPreview && (
-                  <div className="trash-preview-banner">
-                    <i className="ti ti-trash" aria-hidden="true" />
-                    This scene is in the trash — read only. Restore it to edit.
-                  </div>
-                )}
-                <div id="editor-title">{titleValue}</div>
-                <div className="tiptap-wrap">
-                  <EditorContent editor={editor} />
-                </div>
-              </div>
-            </div>
-            {!isNarrow && (
-              <div id="statusbar">
-                <span title="Words in current scene">
-                  Scene: {wordCount.toLocaleString()} {wordCount === 1 ? 'word' : 'words'}
-                </span>
-                <span className="statusbar-sep">·</span>
-                <span title="Words in current chapter">
-                  Chapter: {chapterWordCount > 0 ? `${chapterWordCount.toLocaleString()} ${chapterWordCount === 1 ? 'word' : 'words'}` : '—'}
-                </span>
-                <span className="statusbar-sep">·</span>
-                <span title="Estimated reading time for current chapter at 238 wpm">
-                  {chapterWordCount > 0 ? (() => {
-                    const minutes = Math.ceil(chapterWordCount / 238)
-                    if (minutes < 60) return `~${minutes} min chapter`
-                    const hours = Math.floor(minutes / 60)
-                    const mins = minutes % 60
-                    return mins > 0 ? `~${hours}h ${mins}m chapter` : `~${hours}h chapter`
-                  })() : '— chapter'}
-                </span>
-                <span className="statusbar-sep">·</span>
-                <span title="Total words in Manuscript">
-                  Manuscript: {manuscriptWordCount.toLocaleString()} {manuscriptWordCount === 1 ? 'word' : 'words'}
-                </span>
-                <span className="statusbar-sep">·</span>
-                <span title="Estimated reading time for full manuscript at 238 wpm">
-                  {(() => {
-                    const minutes = Math.ceil(manuscriptWordCount / 238)
-                    if (minutes < 60) return `~${minutes} min manuscript`
-                    const hours = Math.floor(minutes / 60)
-                    const mins = minutes % 60
-                    return mins > 0 ? `~${hours}h ${mins}m manuscript` : `~${hours}h manuscript`
-                  })()}
-                </span>
-                <div className="zoom-control">
-                  <button className="zoom-btn" onClick={() => setZoomOpen(o => !o)}>
-                    {zoom}% <i className="ti ti-chevron-up" />
-                  </button>
-                  {zoomOpen && (
-                    <div className="zoom-dropdown">
-                      {ZOOM_PRESETS.map(p => (
-                        <button
-                          key={p}
-                          className={zoom === p ? 'active' : ''}
-                          onClick={() => { setZoom(p); setZoomOpen(false) }}
-                        >
-                          {p === zoom ? <i className="ti ti-circle-filled zoom-active-dot" /> : <span className="zoom-inactive-dot" />}
-                          {p}%
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </>
-          : <div id="empty-state">
-            <i className="ti ti-file-text" aria-hidden="true" />
-            <p>Select a scene to start writing</p>
-            <p className="empty-state-hint">or add one using the + buttons</p>
-          </div>
-        )}
-      </div>
-      <div id="inspector" className={`${inspectorOpen ? '' : 'collapsed'} ${workspace !== 'editor' ? 'hidden' : ''}`}>
-        <div id="inspector-header">
-          <div style={{ display: 'flex', flexDirection: inspectorOpen ? 'row' : 'column', gap: 2, alignItems: 'center' }}>
-            {!inspectorOpen && (
-              <button title="Expand inspector" onClick={() => setInspectorOpen(true)}>
-                <i className="ti ti-chevrons-left" aria-hidden="true" />
-              </button>
-            )}
-            {inspectorOpen && (
-              <>
-                <button title="Collapse inspector" onClick={() => setInspectorOpen(false)}>
-                  <i className="ti ti-chevrons-right" aria-hidden="true" />
-                </button>
-                <div className="sidebar-sep" />
-              </>
-            )}
-          </div>
-          {inspectorOpen && <span>Quick Tools</span>}
-        </div>
-        {inspectorOpen && (
-          <div id="inspector-body">
-            <InspectorDrawer id="quickNote" label="Quick Note">
-              <textarea
-                key={project?.path ?? 'none'}
-                defaultValue={quickNote}
-                onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-                onChange={e => {
-                  const val = e.target.value
-                  quickNoteRef.current = val
-                  if (quickNoteTimerRef.current) clearTimeout(quickNoteTimerRef.current)
-                  quickNoteTimerRef.current = setTimeout(async () => {
-                    if (!projectRef.current) return
-                    await writeNotesFile(projectRef.current.path, {
-                      quickNote: quickNoteRef.current,
-                      checklist: checklistRef.current,
-                    })
-                  }, 600)
-                }}
-                placeholder="Project scratch pad…"
-                className="inspector-textarea inspector-textarea-tall"
-
-              />
-            </InspectorDrawer>
-            <InspectorDrawer id="checklist" label="Checklist">
-              {(() => {
-                const unchecked = checklist
-                  .filter(i => !i.checked)
-                  .sort((a, b) => a.order - b.order)
-                const checked = checklist.filter(i => i.checked)
-
-                const renderItem = (item: ChecklistItem, index: number) => {
-                  const isDragging = checklistDragId === item.id
-                  const isDropTarget = checklistDropIndex === index
-
-                  return (
-                    <div key={item.id}>
-                      {isDropTarget && <div className="checklist-drop-line" />}
-                      <div
-                        className="checklist-item"
-                        style={{ opacity: isDragging ? 0.4 : 1 }}
-                        onDragOver={!item.checked ? e => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          setChecklistDropIndex(index)
-                        } : undefined}
-                        onDrop={!item.checked ? e => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          handleChecklistDrop(index)
-                        } : undefined}
-                      >
-                        {!item.checked
-                          ? <span
-                            className="card-drag-handle"
-                            draggable={renamingChecklistId !== item.id}
-                            onDragStart={renamingChecklistId !== item.id ? e => {
-                              e.stopPropagation()
-                              checklistDragIdRef.current = item.id
-                              e.dataTransfer.effectAllowed = 'move'
-                              requestAnimationFrame(() => setChecklistDragId(item.id))
-                            } : undefined}
-                            onDragEnd={() => {
-                              setChecklistDragId(null)
-                              setChecklistDropIndex(null)
-                              checklistDragIdRef.current = null
-                            }}
-                            onClick={e => e.stopPropagation()}
-                          >
-                            <i className="ti ti-grip-vertical" aria-hidden="true" />
-                          </span>
-                          : <span style={{ width: 20, flexShrink: 0 }} />
-                        }
-                        <input
-                          type="checkbox"
-                          checked={item.checked}
-                          onChange={() => toggleChecklistItem(item.id)}
-                          className="checklist-checkbox"
-                        />
-                        {renamingChecklistId === item.id
-                          ? <input
-                            className="checklist-rename"
-                            defaultValue={item.label}
-                            autoFocus
-                            ref={el => { if (el) { el.focus(); el.select() } }}
-                            onClick={e => e.stopPropagation()}
-                            onKeyDown={e => {
-                              if (e.key === 'z' || e.key === 'y') e.stopPropagation()
-                              if (e.key === 'Enter') renameChecklistItem(item.id, (e.target as HTMLInputElement).value)
-                              if (e.key === 'Escape') setRenamingChecklistId(null)
-                            }}
-                            onBlur={e => renameChecklistItem(item.id, e.target.value)}
-                          />
-                          : <>
-                            <span
-                              className="checklist-label"
-                              style={{ textDecoration: item.checked ? 'line-through' : 'none', color: item.checked ? '#4a4a4a' : '#c8c8c8' }}
-                              onDoubleClick={() => { if (!item.checked) setRenamingChecklistId(item.id) }}
-                            >
-                              {item.label}
-                            </span>
-                            {!item.checked && (
-                              <button
-                                className="checklist-delete"
-                                title="Rename"
-                                onClick={e => { e.stopPropagation(); setRenamingChecklistId(item.id) }}
-                              >
-                                <i className="ti ti-pencil" aria-hidden="true" />
-                              </button>
-                            )}
-                          </>
-                        }
-                        {item.checked && (
-                          <button
-                            className="checklist-delete"
-                            title="Delete"
-                            onClick={() => deleteChecklistItem(item.id)}
-                          >
-                            <i className="ti ti-x" aria-hidden="true" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )
-                }
-
-                return (
-                  <div className="checklist-wrap">
-                    {unchecked.map((item, index) => renderItem(item, index))}
-                    {checked.map(item => renderItem(item, unchecked.length))}
-                    <button className="checklist-add" onClick={addChecklistItem}>
-                      <i className="ti ti-plus" aria-hidden="true" /> Add item
-                    </button>
-                  </div>
-                )
-              })()}
-            </InspectorDrawer>
-          </div>
-        )}
-      </div>
+      <FindReplacePanel
+        open={showFnR && workspace === 'editor'}
+        find={fnrFind}
+        replace={fnrReplace}
+        scope={fnrScope}
+        status={fnrStatus}
+        undoAvailable={fnrUndoSnapshot.length > 0}
+        inputRef={fnrInputRef}
+        onFindChange={value => { setFnrFind(value); setFnrStatus('') }}
+        onReplaceChange={value => { setFnrReplace(value); setFnrStatus('') }}
+        onScopeChange={setFnrScope}
+        onClose={() => { setShowFnR(false); setFnrFind(''); setFnrReplace(''); setFnrStatus(''); setFnrUndoSnapshot([]) }}
+        onReplaceOne={fnrReplaceOne}
+        onReplaceAll={fnrReplaceAll}
+        onUndoReplaceAll={fnrUndoReplaceAll}
+      />
+      <WorkspaceShell
+        workspace={workspace}
+        onWorkspaceChange={handleWorkspaceChange}
+        editorState={{
+          showEditor,
+          editor,
+          isNarrow,
+          isTrashPreview,
+          titleValue,
+          loreLinksEnabled,
+          onLoreLinksEnabledChange: setLoreLinksEnabled,
+        }}
+        tabState={{
+          sceneTabs,
+          activeTabIndex,
+          renamingTabIndex,
+          tabDragIndex,
+          tabDropIndex,
+          tabDragIndexRef,
+          onTabDragIndexChange: setTabDragIndex,
+          onTabDropIndexChange: setTabDropIndex,
+          onRenamingTabIndexChange: setRenamingTabIndex,
+          onTabContextMenuChange: setTabContextMenu,
+          onSwitchTab: switchTab,
+          onAddTab: addTab,
+          onRenameTab: renameTab,
+          onTabDrop: handleTabDrop,
+        }}
+        statusState={{
+          wordCount,
+          chapterWordCount,
+          manuscriptWordCount,
+          zoom,
+          zoomOpen,
+          zoomPresets: ZOOM_PRESETS,
+          onZoomOpenChange: setZoomOpen,
+          onZoomChange: setZoom,
+        }}
+        outlineState={{
+          rows: outlineRows,
+          manuscriptWordCount,
+          onOpenScene: openOutlineScene,
+          onSceneStatusChange: updateOutlineSceneStatus,
+        }}
+        mindMapState={{
+          map: mindMap,
+          scenes: mindMapSceneOptions,
+          onChange: updateMindMap,
+          onOpenScene: openOutlineScene,
+          onCreateSceneFromNode: createSceneFromMindMapNode,
+        }}
+        atlasState={{
+          atlas,
+          projectPath: projectRef.current?.path ?? null,
+          onChange: updateAtlas,
+          onChooseImage: chooseAtlasImage,
+          onImportMap: importAtlasMap,
+          onDeleteMap: deleteAtlasMap,
+          onReplaceMapImage: replaceAtlasMapImage,
+        }}
+        loreState={{
+          loreBook,
+          loreView,
+          activeLoreCategoryId,
+          expandedEntryId,
+          projectPath: projectRef.current?.path ?? null,
+          onLoreViewChange: setLoreView,
+          onActiveLoreCategoryChange: setActiveLoreCategoryId,
+          onExpandedEntryChange: setExpandedEntryId,
+          onNewCategory: openNewCategoryEditor,
+          onEditCategory: openEditCategoryEditor,
+          onDeleteCategoryRequest: setConfirmDeleteLoreCategory,
+          onNewEntry: openNewEntryEditor,
+          onEditEntry: openEditEntryEditor,
+          onDeleteEntryRequest: setConfirmDeleteLoreEntry,
+        }}
+        revisionState={{
+          revisionActiveId,
+          revisionComments,
+          revisionActiveCommentId,
+          revisionContent,
+          revisionTitle,
+          revisionPendingComment,
+          draftText,
+          revisionScrollRef,
+          confirmDeleteRevisionComment,
+          onRevisionActiveCommentChange: setRevisionActiveCommentId,
+          onDraftTextChange: setDraftText,
+          onDismissPendingComment: () => setRevisionPendingComment(null),
+          onCancelPendingComment: stripped => {
+            setRevisionContent(stripped)
+            setRevisionPendingComment(null)
+          },
+          onAddRevisionComment: addRevisionComment,
+          onResolveRevisionComment: resolveRevisionComment,
+          onUnresolveRevisionComment: unresolveRevisionComment,
+          onDeleteRevisionCommentRequest: setConfirmDeleteRevisionComment,
+          onClearDeleteRevisionComment: () => setConfirmDeleteRevisionComment(null),
+          onConfirmDeleteRevisionComment: async () => {
+            if (!confirmDeleteRevisionComment) return
+            await deleteRevisionComment(confirmDeleteRevisionComment)
+            setConfirmDeleteRevisionComment(null)
+          },
+        }}
+      />      <InspectorPanel
+        open={inspectorOpen}
+        workspace={workspace}
+        project={project}
+        activeSceneId={activeNode?.type === 'doc' && !isTrashPreview ? activeNode.id : null}
+        activeSceneMetadata={activeSceneMetadata}
+        quickNote={quickNote}
+        checklist={checklist}
+        renamingChecklistId={renamingChecklistId}
+        checklistDragId={checklistDragId}
+        checklistDropIndex={checklistDropIndex}
+        checklistDragIdRef={checklistDragIdRef}
+        onOpenChange={setInspectorOpen}
+        onSceneMetadataChange={updateActiveSceneMetadata}
+        onQuickNoteChange={val => {
+          quickNoteRef.current = val
+          if (quickNoteTimerRef.current) clearTimeout(quickNoteTimerRef.current)
+          quickNoteTimerRef.current = setTimeout(async () => {
+            if (!projectRef.current) return
+            await writeNotesFile(projectRef.current.path, {
+              quickNote: quickNoteRef.current,
+              checklist: checklistRef.current,
+            })
+          }, 600)
+        }}
+        onToggleChecklistItem={toggleChecklistItem}
+        onRenameChecklistItem={renameChecklistItem}
+        onDeleteChecklistItem={deleteChecklistItem}
+        onChecklistDrop={handleChecklistDrop}
+        onRenamingChecklistIdChange={setRenamingChecklistId}
+        onChecklistDragIdChange={setChecklistDragId}
+        onChecklistDropIndexChange={setChecklistDropIndex}
+        onAddChecklistItem={addChecklistItem}
+      />
+      <TabContextMenu
+        menu={tabContextMenu}
+        canDelete={sceneTabs.length > 1}
+        onRename={handleTabContextRename}
+        onDelete={handleTabContextDelete}
+      />
       
-      {tabContextMenu && (
-        <div
-          style={{
-            position: 'fixed',
-            top: tabContextMenu.y,
-            left: tabContextMenu.x,
-            background: '#2d2d2d',
-            border: '1px solid #111',
-            borderRadius: 4,
-            padding: '4px 0',
-            minWidth: 140,
-            zIndex: 1000,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-          }}
-          onClick={e => e.stopPropagation()}
-        >
-          <button className="ctx-menu-item" onClick={() => {
-            setRenamingTabIndex(tabContextMenu.index)
-            setTabContextMenu(null)
-          }}>
-            <i className="ti ti-pencil" /> Rename
-          </button>
-          <div style={{ height: 1, background: '#3c3c3c', margin: '4px 0' }} />
-          <button
-            className="ctx-menu-item"
-            style={{ color: sceneTabs.length <= 1 ? '#4a4a4a' : '#cc8888' }}
-            disabled={sceneTabs.length <= 1}
-            onClick={() => {
-              if (sceneTabs.length <= 1) return
-              setConfirmDeleteTab(tabContextMenu.index)
-              setTabContextMenu(null)
-            }}
-          >
-            <i className="ti ti-trash" /> Delete
-          </button>
-        </div>
-      )}
-      
-      {contextMenu && (
-        <div
-          style={{
-            position: 'fixed',
-            top: contextMenu.y,
-            left: contextMenu.x,
-            background: '#2d2d2d',
-            border: '1px solid #111',
-            borderRadius: 4,
-            padding: '4px 0',
-            minWidth: 160,
-            zIndex: 1000,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-          }}
-          onClick={e => e.stopPropagation()}
-        >
-          {/* Rename — not for protected nodes */}
-          {contextMenu.node.id !== 1 && contextMenu.node.id !== 2 && (
-            <button className="ctx-menu-item" onClick={() => {
-              setRenamingId(contextMenu.node.id)
-              setContextMenu(null)
-            }}>
-              <i className="ti ti-pencil" /> Rename
-            </button>
-          )}
+      <BinderContextMenu
+        menu={contextMenu}
+        workspace={workspace}
+        selectedCount={contextMenu ? getSelectedBinderActionIds(contextMenu.node.id).length : 0}
+        onRename={handleBinderContextRename}
+        onDuplicate={handleBinderContextDuplicate}
+        onBulkRename={handleBinderContextBulkRename}
+        onAddScene={handleBinderContextAddScene}
+        onAddFolder={handleBinderContextAddFolder}
+        onMoveToTrash={handleBinderContextMoveToTrash}
+      />
+      <SpellcheckContextMenu
+        menu={spellcheckMenu}
+        onReplace={replaceMisspelledWord}
+        onAddToDictionary={addWordToProjectDictionary}
+      />
+      <SharedModals />
 
-          {/* Duplicate — not for protected nodes */}
-          {contextMenu.node.id !== 1 && contextMenu.node.id !== 2 && (
-            <button className="ctx-menu-item" onClick={async () => {
-              await duplicateNode(contextMenu.node.id)
-              setContextMenu(null)
-            }}>
-              <i className="ti ti-copy" /> Duplicate
-            </button>
-          )}
-
-          {/* Add Scene */}
-          <button className="ctx-menu-item" onClick={() => {
-            if (contextMenu.node.type === 'folder') {
-              // Add scene as child of this folder
-              addDoc(contextMenu.node.id)
-            } else {
-              // Add scene after this scene in its parent folder
-              const parent = findParentFolder(treeRef.current, contextMenu.node.id)
-              if (parent) {
-                const newId = nextId++
-                const fileId = generateFileId()
-                const newDoc: DocNode = { id: newId, type: 'doc', label: 'New scene', title: 'New scene', file: fileId }
-                const newTree = JSON.parse(JSON.stringify(treeRef.current)) as TreeNode[]
-                const parentNode = findNode(newTree, parent.id) as FolderNode
-                const idx = parentNode.children.findIndex(c => c.id === contextMenu.node.id)
-                parentNode.children.splice(idx + 1, 0, newDoc)
-                setTree(newTree)
-                treeRef.current = newTree
-                if (projectRef.current) {
-                  writeSceneFile(projectRef.current.path, fileId, '')
-                  saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
-                }
-                setRenamingId(newId)
-                setActiveId(newId)
-                setTitleValue('New scene')
-                bodyHtmlRef.current = ''
-                editor?.commands.setContent('')
-              }
-            }
-            setContextMenu(null)
-          }}>
-            <i className="ti ti-file-plus" /> Add Scene
-          </button>
-
-          {/* Add Folder — only at depth 0 (top-level folders) or on a folder */}
-          {(contextMenu.node.type === 'folder' || contextMenu.depth === 0) && (
-            <button className="ctx-menu-item" onClick={() => {
-              if (contextMenu.node.type === 'folder') {
-                // Add folder after this folder
-                const newId = nextId++
-                const newFolder: FolderNode = { id: newId, type: 'folder', label: 'New folder', open: true, children: [] }
-                const newTree = JSON.parse(JSON.stringify(treeRef.current)) as TreeNode[]
-                const manuscript = findNode(newTree, 1) as FolderNode
-                const idx = manuscript.children.findIndex(c => c.id === contextMenu.node.id)
-                manuscript.children.splice(idx + 1, 0, newFolder)
-                setTree(newTree)
-                treeRef.current = newTree
-                if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
-                setRenamingId(newId)
-              } else {
-                // Scene — add folder after its parent folder
-                const parent = findParentFolder(treeRef.current, contextMenu.node.id)
-                if (parent) addFolder(parent.id)
-              }
-              setContextMenu(null)
-            }}>
-              <i className="ti ti-folder-plus" /> Add Folder
-            </button>
-          )}
-
-          {/* Separator + Trash — not for protected nodes */}
-          {contextMenu.node.id !== 1 && contextMenu.node.id !== 2 && (
-            <>
-              <div style={{ height: 1, background: '#3c3c3c', margin: '4px 0' }} />
-              <button className="ctx-menu-item" style={{ color: '#cc8888' }} onClick={() => {
-                setConfirmBinDelete({ id: contextMenu.node.id, label: contextMenu.node.label })
-                setContextMenu(null)
-              }}>
-                <i className="ti ti-trash" /> Move to Trash
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
-      {showNewProject && <NewProjectModal />}
-      {showStyles && <StylesModal />}
-      {confirmDelete && <ConfirmDeleteModal />}
-      {confirmBinDelete && <ConfirmBinDeleteModal />}
-      {appMessage && <AppMessageModal />}
-      {confirmEmptyTrash && <ConfirmEmptyTrashModal />}
-      {confirmDeleteTab !== null && <ConfirmDeleteTabModal />}
-      {loreTemplateEditor && <LoreTemplateEditorModal />}
-      {loreEntryEditor && <LoreEntryEditorModal />}
-      {confirmDeleteLoreCategory && <ConfirmDeleteLoreCategoryModal />}
-      {confirmDeleteLoreEntry && <ConfirmDeleteLoreEntryModal />}
-      {confirmHardDeleteField && <ConfirmHardDeleteFieldModal />}
-      {showCompile && <CompileModal />}
       
     </div>
   )

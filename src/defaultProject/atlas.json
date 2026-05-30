@@ -1,0 +1,60 @@
+{
+  "activeMapId": "map_mpsg45yr4t6em",
+  "maps": [
+    {
+      "id": "map_mpsg45yr4t6em",
+      "name": "Sample Map",
+      "imagePath": "atlas/images/map_mpsg45yr4t6em.png",
+      "imageWidth": 4096,
+      "imageHeight": 2048,
+      "imageSampling": "linear",
+      "viewport": {
+        "x": 2114.5967308221752,
+        "y": 1031.7415098153388,
+        "zoom": 0.4
+      },
+      "markers": [
+        {
+          "id": "marker_mpsg4h33_3t2x6w",
+          "x": 1842.131561484843,
+          "y": 1510.3342259711994,
+          "label": "City",
+          "kind": "town",
+          "visibility": "always"
+        },
+        {
+          "id": "marker_mpsg4or1_si1jly",
+          "x": 2045.6578772743164,
+          "y": 903.6982303878355,
+          "label": "City",
+          "kind": "town",
+          "visibility": "always"
+        },
+        {
+          "id": "marker_mpsg4xuq_si60km",
+          "x": 966.1949586140292,
+          "y": 945.2956724194879,
+          "label": "Lake",
+          "kind": "landmark",
+          "visibility": "always"
+        },
+        {
+          "id": "marker_mpsg542a_ngvto5",
+          "x": 2113.408073368127,
+          "y": 982.1645248785042,
+          "label": "Coast",
+          "kind": "region",
+          "visibility": "medium"
+        },
+        {
+          "id": "marker_mpsg5fgo_g8id8m",
+          "x": 1850.4878991531066,
+          "y": 1437.5413143690816,
+          "label": "Docks",
+          "kind": "route",
+          "visibility": "close"
+        }
+      ]
+    }
+  ]
+}

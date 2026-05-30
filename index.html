@@ -5,7 +5,35 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri + React + Typescript</title>
+    <title>Scrivus</title>
+    <script>
+      (() => {
+        try {
+          const settings = JSON.parse(localStorage.getItem('scrivus-settings') || '{}')
+          const themes = new Set([
+            'dark',
+            'light',
+            'contrastLight',
+            'contrastDark',
+            'lavenderLight',
+            'lavenderDark',
+            'mintLight',
+            'mintDark',
+            'roseLight',
+            'roseDark',
+            'skyLight',
+            'skyDark',
+            'neonCyber',
+            'neonViolet',
+            'neonEmber',
+            'neonLagoon',
+          ])
+          document.documentElement.dataset.theme = themes.has(settings.theme) ? settings.theme : 'dark'
+        } catch {
+          document.documentElement.dataset.theme = 'dark'
+        }
+      })()
+    </script>
   </head>
 
   <body>

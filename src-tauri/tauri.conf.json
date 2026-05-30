@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Scrivus",
-  "version": "0.1.3",
-  "identifier": "com.scrivus.app",
+  "version": "0.1.9",
+  "identifier": "com.obsydianx.scrivus",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -33,6 +33,14 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "ObsydianX",
+    "homepage": "https://github.com/ObsydianX/Scrivus",
+    "copyright": "Copyright (c) 2026 ObsydianX",
+    "license": "MIT",
+    "licenseFile": "../LICENSE.txt",
+    "category": "Productivity",
+    "shortDescription": "A local-first novel writing app.",
+    "longDescription": "Scrivus is a local-first writing app for drafting, organizing, planning, and compiling long-form fiction projects.",
     "resources": {
       "../dist/THIRD_PARTY_LICENSES.txt": "."
     },
@@ -48,7 +56,11 @@
         "displayLanguageSelector": false,
         "installMode": "both",
         "headerImage": "icons/installer-header.bmp",
-        "sidebarImage": "icons/installer-sidebar.bmp"
+        "sidebarImage": "icons/installer-sidebar.bmp",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "uninstallerHeaderImage": "icons/installer-header.bmp",
+        "startMenuFolder": "Scrivus"
       }
     }
   }

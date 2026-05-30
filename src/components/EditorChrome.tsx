@@ -1,0 +1,279 @@
+import type { Editor } from '@tiptap/react'
+import type { SceneTab } from '../types'
+
+type MutableRef<T> = {
+  current: T
+}
+
+export function SceneTabBar({
+  tabs,
+  activeIndex,
+  renamingIndex,
+  dragIndex,
+  dropIndex,
+  dragIndexRef,
+  onDragIndexChange,
+  onDropIndexChange,
+  onRenamingIndexChange,
+  onContextMenuChange,
+  onSwitchTab,
+  onAddTab,
+  onRenameTab,
+  onTabDrop,
+}: {
+  tabs: SceneTab[]
+  activeIndex: number
+  renamingIndex: number | null
+  dragIndex: number | null
+  dropIndex: number | null
+  dragIndexRef: MutableRef<number | null>
+  onDragIndexChange: (index: number | null) => void
+  onDropIndexChange: (index: number | null) => void
+  onRenamingIndexChange: (index: number | null) => void
+  onContextMenuChange: (menu: { x: number; y: number; index: number } | null) => void
+  onSwitchTab: (index: number) => void
+  onAddTab: () => void
+  onRenameTab: (index: number, name: string) => void
+  onTabDrop: (targetIndex: number) => void
+}) {
+  return (
+    <div id="scene-tab-bar">
+      {tabs.map((tab, index) => {
+        const isActive = index === activeIndex
+        const isDragging = dragIndex === index
+        const isDropTarget = dropIndex === index
+        return (
+          <div key={index} style={{ display: 'flex', alignItems: 'stretch' }}>
+            {isDropTarget && dragIndex !== index && (
+              <div className="tab-drop-line" />
+            )}
+            <div
+              className={`scene-tab${isActive ? ' active' : ''}${isDragging ? ' dragging' : ''}`}
+              draggable={renamingIndex !== index}
+              onDragStart={renamingIndex !== index ? e => {
+                e.stopPropagation()
+                dragIndexRef.current = index
+                onDragIndexChange(index)
+                e.dataTransfer.effectAllowed = 'move'
+              } : undefined}
+              onDragEnd={() => {
+                onDragIndexChange(null)
+                onDropIndexChange(null)
+                dragIndexRef.current = null
+              }}
+              onDragOver={e => {
+                e.preventDefault()
+                e.stopPropagation()
+                onDropIndexChange(index)
+              }}
+              onDrop={e => {
+                e.preventDefault()
+                e.stopPropagation()
+                onTabDrop(index)
+              }}
+              onClick={() => {
+                if (renamingIndex === index) return
+                onSwitchTab(index)
+              }}
+              onDoubleClick={() => onRenamingIndexChange(index)}
+              onContextMenu={e => {
+                e.preventDefault()
+                e.stopPropagation()
+                onContextMenuChange({ x: e.clientX, y: e.clientY, index })
+              }}
+            >
+              {renamingIndex === index
+                ? <input
+                  className="tab-rename-input"
+                  defaultValue={tab.name}
+                  autoFocus
+                  ref={el => { if (el) { el.focus(); el.select() } }}
+                  onClick={e => e.stopPropagation()}
+                  onKeyDown={e => {
+                    if (e.key === 'z' || e.key === 'y') e.stopPropagation()
+                    if (e.key === 'Enter') onRenameTab(index, (e.target as HTMLInputElement).value)
+                    if (e.key === 'Escape') onRenamingIndexChange(null)
+                  }}
+                  onBlur={e => onRenameTab(index, e.target.value)}
+                />
+                : <span className="tab-label">{tab.name}</span>
+              }
+            </div>
+          </div>
+        )
+      })}
+      <button
+        className="tab-add-btn"
+        title="Add tab"
+        onClick={onAddTab}
+      >
+        <i className="ti ti-plus" aria-hidden="true" />
+      </button>
+    </div>
+  )
+}
+
+export function EditorToolbar({
+  editor,
+  loreLinksEnabled,
+  onLoreLinksEnabledChange,
+}: {
+  editor: Editor | null
+  loreLinksEnabled: boolean
+  onLoreLinksEnabledChange: (enabled: boolean) => void
+}) {
+  const insertSceneBreak = () => {
+    editor?.chain().focus().setHorizontalRule().run()
+  }
+
+  return (
+    <div id="editor-toolbar">
+      <div className="editor-toolbar-group">
+        <button
+          className={editor?.isActive('bold') ? 'active' : ''}
+          onClick={() => editor?.chain().focus().toggleBold().run()}
+          title="Bold"
+        >
+          <i className="ti ti-bold" aria-hidden="true" />
+        </button>
+        <button
+          className={editor?.isActive('italic') ? 'active' : ''}
+          onClick={() => editor?.chain().focus().toggleItalic().run()}
+          title="Italic"
+        >
+          <i className="ti ti-italic" aria-hidden="true" />
+        </button>
+        <button
+          className={editor?.isActive('underline') ? 'active' : ''}
+          onClick={() => editor?.chain().focus().toggleMark('underline').run()}
+          title="Underline"
+        >
+          <i className="ti ti-underline" aria-hidden="true" />
+        </button>
+        <div className="toolbar-sep" />
+        <button
+          className={editor?.isActive('bulletList') ? 'active' : ''}
+          onClick={() => editor?.chain().focus().toggleBulletList().run()}
+          title="Bulleted list"
+        >
+          <i className="ti ti-list" aria-hidden="true" />
+        </button>
+        <button
+          className={editor?.isActive('orderedList') ? 'active' : ''}
+          onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+          title="Numbered list"
+        >
+          <i className="ti ti-list-numbers" aria-hidden="true" />
+        </button>
+        <button
+          className={editor?.isActive('blockquote') ? 'active' : ''}
+          onClick={() => editor?.chain().focus().toggleBlockquote().run()}
+          title="Block quote"
+        >
+          <i className="ti ti-blockquote" aria-hidden="true" />
+        </button>
+        <div className="toolbar-sep" />
+        <button
+          onClick={insertSceneBreak}
+          title="Scene break"
+        >
+          <i className="ti ti-separator-horizontal" aria-hidden="true" />
+        </button>
+        <button
+          onClick={() => editor?.chain().focus().unsetAllMarks().clearNodes().run()}
+          title="Clear formatting"
+        >
+          <i className="ti ti-eraser" aria-hidden="true" />
+        </button>
+      </div>
+      <label className="toolbar-check">
+        <input
+          type="checkbox"
+          checked={loreLinksEnabled}
+          onChange={e => onLoreLinksEnabledChange(e.target.checked)}
+        />
+        Lore links
+      </label>
+    </div>
+  )
+}
+
+export function StatusBar({
+  wordCount,
+  chapterWordCount,
+  manuscriptWordCount,
+  zoom,
+  zoomOpen,
+  zoomPresets,
+  onZoomOpenChange,
+  onZoomChange,
+}: {
+  wordCount: number
+  chapterWordCount: number
+  manuscriptWordCount: number
+  zoom: number
+  zoomOpen: boolean
+  zoomPresets: number[]
+  onZoomOpenChange: (open: boolean | ((open: boolean) => boolean)) => void
+  onZoomChange: (zoom: number) => void
+}) {
+  const chapterReadTime = (() => {
+    if (chapterWordCount <= 0) return '--- chapter'
+    const minutes = Math.ceil(chapterWordCount / 238)
+    if (minutes < 60) return `~${minutes} min chapter`
+    const hours = Math.floor(minutes / 60)
+    const mins = minutes % 60
+    return mins > 0 ? `~${hours}h ${mins}m chapter` : `~${hours}h chapter`
+  })()
+
+  const manuscriptReadTime = (() => {
+    const minutes = Math.ceil(manuscriptWordCount / 238)
+    if (minutes < 60) return `~${minutes} min manuscript`
+    const hours = Math.floor(minutes / 60)
+    const mins = minutes % 60
+    return mins > 0 ? `~${hours}h ${mins}m manuscript` : `~${hours}h manuscript`
+  })()
+
+  return (
+    <div id="statusbar">
+      <span title="Words in current scene">
+        Scene: {wordCount.toLocaleString()} {wordCount === 1 ? 'word' : 'words'}
+      </span>
+      <span className="statusbar-sep">·</span>
+      <span title="Words in current chapter">
+        Chapter: {chapterWordCount > 0 ? `${chapterWordCount.toLocaleString()} ${chapterWordCount === 1 ? 'word' : 'words'}` : '---'}
+      </span>
+      <span className="statusbar-sep">·</span>
+      <span title="Estimated reading time for current chapter at 238 wpm">
+        {chapterReadTime}
+      </span>
+      <span className="statusbar-sep">·</span>
+      <span title="Total words in Manuscript">
+        Manuscript: {manuscriptWordCount.toLocaleString()} {manuscriptWordCount === 1 ? 'word' : 'words'}
+      </span>
+      <span className="statusbar-sep">·</span>
+      <span title="Estimated reading time for full manuscript at 238 wpm">
+        {manuscriptReadTime}
+      </span>
+      <div className="zoom-control">
+        <button className="zoom-btn" onClick={() => onZoomOpenChange(o => !o)}>
+          {zoom}% <i className="ti ti-chevron-up" />
+        </button>
+        {zoomOpen && (
+          <div className="zoom-dropdown">
+            {zoomPresets.map(p => (
+              <button
+                key={p}
+                className={zoom === p ? 'active' : ''}
+                onClick={() => { onZoomChange(p); onZoomOpenChange(false) }}
+              >
+                {p === zoom ? <i className="ti ti-circle-filled zoom-active-dot" /> : <span className="zoom-inactive-dot" />}
+                {p}%
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

@@ -1,0 +1,51 @@
+{
+  "nodes": [
+    {
+      "id": "node_mpsfjx9s_2s39ce",
+      "x": -124,
+      "y": -56,
+      "text": "Beginning Node",
+      "kind": "idea",
+      "color": "default"
+    },
+    {
+      "id": "node_mpsfk3au_jpmyjd",
+      "x": 515,
+      "y": -55,
+      "text": "Next Idea",
+      "kind": "idea",
+      "color": "default"
+    },
+    {
+      "id": "node_mpsfk95t_mnzxro",
+      "x": 195,
+      "y": 136,
+      "text": "Secondary Idea",
+      "kind": "idea",
+      "color": "default"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_mpsfk3au_6rhu8c",
+      "fromNodeId": "node_mpsfjx9s_2s39ce",
+      "toNodeId": "node_mpsfk3au_jpmyjd",
+      "label": "Connection"
+    },
+    {
+      "id": "edge_mpsfk95t_jabany",
+      "fromNodeId": "node_mpsfjx9s_2s39ce",
+      "toNodeId": "node_mpsfk95t_mnzxro"
+    },
+    {
+      "id": "edge_mpsfkipg_6fba6m",
+      "fromNodeId": "node_mpsfk95t_mnzxro",
+      "toNodeId": "node_mpsfk3au_jpmyjd"
+    }
+  ],
+  "viewport": {
+    "x": 2,
+    "y": 0,
+    "zoom": 1
+  }
+}
