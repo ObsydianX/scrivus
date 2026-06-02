@@ -2,9 +2,28 @@
 
 All notable Scrivus changes are tracked here.
 
+## 0.2.1
+
+- Themed previously missed UI elements including Quick Tools headers, revision tabs, default empty-state text, and revision comment empty states.
+- Added revision workspace draft tabs so every draft version can be selected and viewed independently.
+- Scoped revision comments to their draft tab so comments on one draft no longer appear on another draft version.
+- Added a collapsible comments panel in the revision workspace and aligned it with the Quick Tools panel layout.
+- Added status bar support in the revision workspace while keeping it out of the comments panel.
+- Fixed scene creation and canvas scene opening selection behavior so the newly opened scene becomes the active highlighted scene.
+- Changed canvas-created scenes to be added under Manuscript instead of the current chapter.
+- Clarified restore-backup dialogs with a real cancel path.
+- Added collapsible folders in the binder and Outline.
+- Added nested manuscript folders with explicit folder roles for Act and Chapter, including context-menu role switching.
+- Updated the Outline to support nested act/chapter rows, recursive word counts, role badges, folder expand/collapse controls, and act/chapter/scene/word summary stats.
+- Updated compile to walk nested folders, respect Act and Chapter roles, and optionally omit act headings from exported manuscripts.
+- Persisted compile options for cover page and act-heading inclusion.
+- Added a compact menu-bar theme picker with live hover preview, click-to-commit behavior, Escape/outside-click cancellation, and separate dark/light theme columns.
+- Added four soft light themes to balance the neon theme set: Soft Paper, Soft Sage, Soft Peach, and Soft Lilac.
+- Persisted the window maximized state between app launches while preserving normal close-window behavior.
+
 ## 0.2.0
 
-- Removed inactive Compile Manuscript style options so only the functional Standard Manuscript style is shown.
+- Initial release
 
 ## 0.1.9
 
