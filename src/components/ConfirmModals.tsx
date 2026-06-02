@@ -144,7 +144,7 @@ export function AppMessageModal({
               {message.action.label}
             </button>
           )}
-          <button className="welcome-btn" onClick={onClose}>OK</button>
+          <button className="welcome-btn" onClick={onClose}>{message.action ? 'Cancel' : 'OK'}</button>
         </div>
       </div>
     </div>

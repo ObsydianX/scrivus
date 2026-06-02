@@ -1,6 +1,6 @@
-import type { RefObject } from 'react'
+import { useState, type ReactNode, type RefObject } from 'react'
 import { escapeAttr } from '../text'
-import type { RevisionComment } from '../types'
+import type { RevisionComment, SceneTab } from '../types'
 
 type RevisionPendingComment = {
   quote: string
@@ -15,9 +15,23 @@ type RevisionViewProps = {
   activeCommentId: string | null
   content: string
   title: string
-  pendingComment: RevisionPendingComment | null
-  draftText: string
+  tabs: SceneTab[]
+  activeTabIndex: number
+  footer?: ReactNode
   scrollRef: RefObject<HTMLDivElement | null>
+  onActiveCommentChange: (id: string | null) => void
+  onSwitchTab: (index: number) => void
+}
+
+type RevisionCommentsPaneProps = {
+  activeId: number | null
+  comments: RevisionComment[]
+  activeCommentId: string | null
+  activeTabIndex: number
+  tabs: SceneTab[]
+  pendingComment: RevisionPendingComment | null
+  content: string
+  draftText: string
   onActiveCommentChange: (id: string | null) => void
   onDraftTextChange: (text: string) => void
   onDismissPendingComment: () => void
@@ -28,30 +42,35 @@ type RevisionViewProps = {
   onDeleteCommentRequest: (id: string) => void
 }
 
+function getActiveComments(
+  comments: RevisionComment[],
+  activeId: number | null,
+  activeTabIndex: number,
+  tabs: SceneTab[],
+) {
+  const legacyCommentTabIndex = Math.max(tabs.length - 1, 0)
+  return comments
+    .filter(c => c.sceneId === activeId && (c.tabIndex ?? legacyCommentTabIndex) === activeTabIndex)
+    .sort((a, b) => {
+      if (a.resolved !== b.resolved) return a.resolved ? 1 : -1
+      return a.createdAt - b.createdAt
+    })
+}
+
 export function RevisionView({
   activeId,
   comments,
   activeCommentId,
   content,
   title,
-  pendingComment,
-  draftText,
+  tabs,
+  activeTabIndex,
+  footer,
   scrollRef,
   onActiveCommentChange,
-  onDraftTextChange,
-  onDismissPendingComment,
-  onCancelPendingComment,
-  onAddComment,
-  onResolveComment,
-  onUnresolveComment,
-  onDeleteCommentRequest,
+  onSwitchTab,
 }: RevisionViewProps) {
-  const activeComments = comments
-    .filter(c => c.sceneId === activeId)
-    .sort((a, b) => {
-      if (a.resolved !== b.resolved) return a.resolved ? 1 : -1
-      return a.createdAt - b.createdAt
-    })
+  const activeComments = getActiveComments(comments, activeId, activeTabIndex, tabs)
 
   const renderAnnotatedHtml = (html: string): string => {
     let result = html
@@ -127,137 +146,194 @@ export function RevisionView({
 
   return (
     <div id="revision-layout">
-      <div id="revision-scroll" ref={scrollRef}>
-        <div id="revision-wrap">
-          <div id="revision-title">{title}</div>
-          <div
-            id="revision-body"
-            dangerouslySetInnerHTML={{ __html: renderAnnotatedHtml(content) }}
-            onClick={e => {
-              const target = e.target as HTMLElement
-              const mark = target.closest('[data-comment-id]') as HTMLElement | null
-              if (mark) {
-                const cid = mark.dataset.commentId ?? null
-                onActiveCommentChange(cid)
-              }
-            }}
-          />
-        </div>
-      </div>
-
-      <div id="revision-comments-pane">
-        <div id="revision-comments-header">
-          <span>Comments</span>
-          {activeComments.filter(c => !c.resolved).length > 0 && (
-            <span className="revision-comments-count">
-              {activeComments.filter(c => !c.resolved).length}
-            </span>
-          )}
-        </div>
-
-        <div id="revision-comments-list">
-          {pendingComment && (
-            <div className="revision-comment revision-comment--pending">
-              <div className="revision-comment-quote">
-                <i className="ti ti-quote" aria-hidden="true" />
-                {pendingComment.quote.length > 120
-                  ? pendingComment.quote.slice(0, 120) + '...'
-                  : pendingComment.quote}
-              </div>
-              <textarea
-                className="revision-comment-input"
-                placeholder="Add a comment..."
-                value={draftText}
-                autoFocus
-                onChange={e => onDraftTextChange(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'z' || e.key === 'y') e.stopPropagation()
-                  if (e.key === 'Escape') onDismissPendingComment()
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                    if (draftText.trim()) onAddComment(pendingComment.quote, draftText.trim())
-                  }
-                }}
-              />
-              <div className="revision-comment-actions">
-                <button
-                  className="revision-btn revision-btn--ghost"
-                  onClick={() => {
-                    const stripped = content
-                      .replace(/<x-comment-start data-id="pending"><\/x-comment-start>/g, '')
-                      .replace(/<x-comment-end data-id="pending"><\/x-comment-end>/g, '')
-                    onCancelPendingComment(stripped)
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="revision-btn"
-                  disabled={!draftText.trim()}
-                  onClick={() => {
-                    if (draftText.trim()) onAddComment(pendingComment.quote, draftText.trim())
-                  }}
-                >
-                  Comment
-                </button>
-              </div>
-            </div>
-          )}
-
-          {activeComments.length === 0 && !pendingComment && (
-            <div className="revision-comments-empty">
-              <i className="ti ti-message-circle-off" aria-hidden="true" />
-              <p>No comments yet</p>
-              <p className="revision-comments-empty-hint">Select text to add one</p>
-            </div>
-          )}
-
-          {activeComments.map(c => (
+      <div id="revision-main">
+        {tabs.length > 1 && (
+          <div id="revision-tab-bar">
+            {tabs.map((tab, index) => (
+              <button
+                key={`${tab.name}-${index}`}
+                className={`revision-tab${index === activeTabIndex ? ' active' : ''}`}
+                onClick={() => onSwitchTab(index)}
+                title={tab.name}
+              >
+                <span>{tab.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <div id="revision-scroll" ref={scrollRef}>
+          <div id="revision-wrap">
+            <div id="revision-title">{title}</div>
             <div
-              key={c.id}
-              className={`revision-comment${activeCommentId === c.id ? ' revision-comment--active' : ''}${c.resolved ? ' revision-comment--resolved' : ''}`}
-              onClick={() => onActiveCommentChange(c.id === activeCommentId ? null : c.id)}
-            >
-              <div className="revision-comment-meta">
-                <span className="revision-comment-date">
-                  {new Date(c.createdAt).toLocaleDateString(undefined, {
-                    month: 'short', day: 'numeric',
-                  })}
-                </span>
-              </div>
-              <div className="revision-comment-quote">
-                <i className="ti ti-quote" aria-hidden="true" />
-                {c.quote.length > 100 ? c.quote.slice(0, 100) + '...' : c.quote}
-              </div>
-              <div className="revision-comment-text">
-                {c.text}
-              </div>
-              <div className="revision-comment-actions">
-                {!c.resolved ? (
-                  <button
-                    className="revision-btn revision-btn--ghost revision-btn--sm"
-                    onClick={e => { e.stopPropagation(); onResolveComment(c.id) }}
-                  >
-                    <i className="ti ti-check" /> Resolve
-                  </button>
-                ) : (
-                  <button
-                    className="revision-btn revision-btn--ghost revision-btn--sm"
-                    onClick={e => { e.stopPropagation(); onUnresolveComment(c.id) }}
-                  >
-                    <i className="ti ti-arrow-back-up" /> Unresolve
-                  </button>
-                )}
-                <button
-                  className="revision-btn revision-btn--ghost revision-btn--sm revision-btn--danger"
-                  onClick={e => { e.stopPropagation(); onDeleteCommentRequest(c.id) }}
-                >
-                  <i className="ti ti-trash" />
-                </button>
-              </div>
-            </div>
-          ))}
+              id="revision-body"
+              dangerouslySetInnerHTML={{ __html: renderAnnotatedHtml(content) }}
+              onClick={e => {
+                const target = e.target as HTMLElement
+                const mark = target.closest('[data-comment-id]') as HTMLElement | null
+                if (mark) {
+                  const cid = mark.dataset.commentId ?? null
+                  onActiveCommentChange(cid)
+                }
+              }}
+            />
+          </div>
         </div>
+        {footer}
       </div>
+
+    </div>
+  )
+}
+
+export function RevisionCommentsPane({
+  activeId,
+  comments,
+  activeCommentId,
+  activeTabIndex,
+  tabs,
+  pendingComment,
+  content,
+  draftText,
+  onActiveCommentChange,
+  onDraftTextChange,
+  onDismissPendingComment,
+  onCancelPendingComment,
+  onAddComment,
+  onResolveComment,
+  onUnresolveComment,
+  onDeleteCommentRequest,
+}: RevisionCommentsPaneProps) {
+  const [commentsOpen, setCommentsOpen] = useState(true)
+  const activeComments = getActiveComments(comments, activeId, activeTabIndex, tabs)
+
+  return (
+    <div id="revision-comments-pane" className={commentsOpen ? '' : 'collapsed'}>
+      <div id="revision-comments-header">
+        <div style={{ display: 'flex', flexDirection: commentsOpen ? 'row' : 'column', gap: 2, alignItems: 'center' }}>
+          {!commentsOpen && (
+            <button title="Expand comments" onClick={() => setCommentsOpen(true)}>
+              <i className="ti ti-chevrons-left" aria-hidden="true" />
+            </button>
+          )}
+          {commentsOpen && (
+            <>
+              <button title="Collapse comments" onClick={() => setCommentsOpen(false)}>
+                <i className="ti ti-chevrons-right" aria-hidden="true" />
+              </button>
+              <div className="sidebar-sep" />
+            </>
+          )}
+        </div>
+        {commentsOpen && <span>Comments</span>}
+        {commentsOpen && activeComments.filter(c => !c.resolved).length > 0 && (
+          <span className="revision-comments-count">
+            {activeComments.filter(c => !c.resolved).length}
+          </span>
+        )}
+      </div>
+
+      {commentsOpen && <div id="revision-comments-list">
+        {pendingComment && (
+          <div className="revision-comment revision-comment--pending">
+            <div className="revision-comment-quote">
+              <i className="ti ti-quote" aria-hidden="true" />
+              {pendingComment.quote.length > 120
+                ? pendingComment.quote.slice(0, 120) + '...'
+                : pendingComment.quote}
+            </div>
+            <textarea
+              className="revision-comment-input"
+              placeholder="Add a comment..."
+              value={draftText}
+              autoFocus
+              onChange={e => onDraftTextChange(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'z' || e.key === 'y') e.stopPropagation()
+                if (e.key === 'Escape') onDismissPendingComment()
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  if (draftText.trim()) onAddComment(pendingComment.quote, draftText.trim())
+                }
+              }}
+            />
+            <div className="revision-comment-actions">
+              <button
+                className="revision-btn revision-btn--ghost"
+                onClick={() => {
+                  const stripped = content
+                    .replace(/<x-comment-start data-id="pending"><\/x-comment-start>/g, '')
+                    .replace(/<x-comment-end data-id="pending"><\/x-comment-end>/g, '')
+                  onCancelPendingComment(stripped)
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="revision-btn"
+                disabled={!draftText.trim()}
+                onClick={() => {
+                  if (draftText.trim()) onAddComment(pendingComment.quote, draftText.trim())
+                }}
+              >
+                Comment
+              </button>
+            </div>
+          </div>
+        )}
+
+        {activeComments.length === 0 && !pendingComment && (
+          <div className="revision-comments-empty">
+            <i className="ti ti-message-circle-off" aria-hidden="true" />
+            <p>No comments yet</p>
+            <p className="revision-comments-empty-hint">Select text to add one</p>
+          </div>
+        )}
+
+        {activeComments.map(c => (
+          <div
+            key={c.id}
+            className={`revision-comment${activeCommentId === c.id ? ' revision-comment--active' : ''}${c.resolved ? ' revision-comment--resolved' : ''}`}
+            onClick={() => onActiveCommentChange(c.id === activeCommentId ? null : c.id)}
+          >
+            <div className="revision-comment-meta">
+              <span className="revision-comment-date">
+                {new Date(c.createdAt).toLocaleDateString(undefined, {
+                  month: 'short', day: 'numeric',
+                })}
+              </span>
+            </div>
+            <div className="revision-comment-quote">
+              <i className="ti ti-quote" aria-hidden="true" />
+              {c.quote.length > 100 ? c.quote.slice(0, 100) + '...' : c.quote}
+            </div>
+            <div className="revision-comment-text">
+              {c.text}
+            </div>
+            <div className="revision-comment-actions">
+              {!c.resolved ? (
+                <button
+                  className="revision-btn revision-btn--ghost revision-btn--sm"
+                  onClick={e => { e.stopPropagation(); onResolveComment(c.id) }}
+                >
+                  <i className="ti ti-check" /> Resolve
+                </button>
+              ) : (
+                <button
+                  className="revision-btn revision-btn--ghost revision-btn--sm"
+                  onClick={e => { e.stopPropagation(); onUnresolveComment(c.id) }}
+                >
+                  <i className="ti ti-arrow-back-up" /> Unresolve
+                </button>
+              )}
+              <button
+                className="revision-btn revision-btn--ghost revision-btn--sm revision-btn--danger"
+                onClick={e => { e.stopPropagation(); onDeleteCommentRequest(c.id) }}
+              >
+                <i className="ti ti-trash" />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>}
     </div>
   )
 }

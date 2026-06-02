@@ -27,6 +27,11 @@ import { RevisionView } from './RevisionView'
 
 export type Workspace = 'editor' | 'revision' | 'outline' | 'lorebook' | 'mindmap' | 'atlas'
 
+function countHtmlWords(html: string) {
+  const text = html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim()
+  return text ? text.split(/\s+/).length : 0
+}
+
 type RevisionPendingComment = {
   quote: string
   wrappedHtml: string
@@ -120,11 +125,14 @@ type RevisionWorkspaceState = {
   revisionActiveCommentId: string | null
   revisionContent: string
   revisionTitle: string
+  revisionTabs: SceneTab[]
+  revisionActiveTabIndex: number
   revisionPendingComment: RevisionPendingComment | null
   draftText: string
   revisionScrollRef: RefObject<HTMLDivElement | null>
   confirmDeleteRevisionComment: string | null
   onRevisionActiveCommentChange: (id: string | null) => void
+  onSwitchRevisionTab: (index: number) => void
   onDraftTextChange: (text: string) => void
   onDismissPendingComment: () => void
   onCancelPendingComment: (strippedContent: string) => void
@@ -240,18 +248,12 @@ export function WorkspaceShell({
   revisionActiveCommentId,
   revisionContent,
   revisionTitle,
-  revisionPendingComment,
-  draftText,
+  revisionTabs,
+  revisionActiveTabIndex,
   revisionScrollRef,
   confirmDeleteRevisionComment,
   onRevisionActiveCommentChange,
-  onDraftTextChange,
-  onDismissPendingComment,
-  onCancelPendingComment,
-  onAddRevisionComment,
-  onResolveRevisionComment,
-  onUnresolveRevisionComment,
-  onDeleteRevisionCommentRequest,
+  onSwitchRevisionTab,
   onClearDeleteRevisionComment,
   onConfirmDeleteRevisionComment,
   } = revisionState
@@ -361,24 +363,32 @@ export function WorkspaceShell({
         />
       )}
       {workspace === 'revision' && (
-        <RevisionView
-          activeId={revisionActiveId}
-          comments={revisionComments}
-          activeCommentId={revisionActiveCommentId}
-          content={revisionContent}
-          title={revisionTitle}
-          pendingComment={revisionPendingComment}
-          draftText={draftText}
-          scrollRef={revisionScrollRef}
-          onActiveCommentChange={onRevisionActiveCommentChange}
-          onDraftTextChange={onDraftTextChange}
-          onDismissPendingComment={onDismissPendingComment}
-          onCancelPendingComment={onCancelPendingComment}
-          onAddComment={onAddRevisionComment}
-          onResolveComment={onResolveRevisionComment}
-          onUnresolveComment={onUnresolveRevisionComment}
-          onDeleteCommentRequest={onDeleteRevisionCommentRequest}
-        />
+        <>
+          <RevisionView
+            activeId={revisionActiveId}
+            comments={revisionComments}
+            activeCommentId={revisionActiveCommentId}
+            content={revisionContent}
+            title={revisionTitle}
+            tabs={revisionTabs}
+            activeTabIndex={revisionActiveTabIndex}
+            footer={!isNarrow && revisionActiveId !== null ? (
+              <StatusBar
+                wordCount={countHtmlWords(revisionContent)}
+                chapterWordCount={chapterWordCount}
+                manuscriptWordCount={manuscriptWordCount}
+                zoom={zoom}
+                zoomOpen={zoomOpen}
+                zoomPresets={zoomPresets}
+                onZoomOpenChange={onZoomOpenChange}
+                onZoomChange={onZoomChange}
+              />
+            ) : undefined}
+            scrollRef={revisionScrollRef}
+            onActiveCommentChange={onRevisionActiveCommentChange}
+            onSwitchTab={onSwitchRevisionTab}
+          />
+        </>
       )}
 
       {confirmDeleteRevisionComment && (

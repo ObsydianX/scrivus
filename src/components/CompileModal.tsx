@@ -2,15 +2,21 @@ import type { Dispatch, SetStateAction } from 'react'
 import { LOREM_PREVIEW } from '../constants'
 import type { CompileChapterEntry, ProjectStyles } from '../types'
 
+function folderLabel(chapter: CompileChapterEntry) {
+  return chapter.role === 'act' ? 'Act' : 'Chapter'
+}
+
 type CompileModalProps = {
   loading: boolean
   chapters: CompileChapterEntry[]
   format: 'docx'
   frontMatter: boolean
+  includeActHeadings: boolean
   style: string
   projectStyles: ProjectStyles
   onClose: () => void
   onFrontMatterChange: (value: boolean) => void
+  onIncludeActHeadingsChange: (value: boolean) => void
   onChaptersChange: Dispatch<SetStateAction<CompileChapterEntry[]>>
   onSelectionChange: (fileId: string, value: string) => void
   onExport: () => void
@@ -21,10 +27,12 @@ export function CompileModal({
   chapters,
   format,
   frontMatter,
+  includeActHeadings,
   style,
   projectStyles,
   onClose,
   onFrontMatterChange,
+  onIncludeActHeadingsChange,
   onChaptersChange,
   onSelectionChange,
   onExport,
@@ -149,6 +157,22 @@ export function CompileModal({
                   />
                   Cover page
                 </label>
+
+                <div style={{ color: 'var(--text-muted)', fontSize: 10, letterSpacing: '0.08em', marginTop: 20, marginBottom: 8 }}>
+                  STRUCTURE
+                </div>
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  color: 'var(--text-soft)', fontSize: 12, cursor: 'pointer',
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={includeActHeadings}
+                    onChange={e => onIncludeActHeadingsChange(e.target.checked)}
+                    style={{ accentColor: 'var(--accent)' }}
+                  />
+                  Include act headings
+                </label>
               </div>
 
               <div style={{
@@ -214,6 +238,7 @@ export function CompileModal({
                         display: 'flex', alignItems: 'center', gap: 6,
                         color: 'var(--text-soft)', fontSize: 12, cursor: 'pointer',
                         padding: '3px 0',
+                        paddingLeft: (chapter.depth ?? 0) * 12,
                       }}>
                         <input
                           type="checkbox"
@@ -230,13 +255,18 @@ export function CompileModal({
                             ))
                           }}
                         />
-                        <span style={{ fontWeight: 600 }}>{chapter.label}</span>
+                        <span style={{ fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {chapter.label}
+                        </span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                          {folderLabel(chapter)}
+                        </span>
                       </label>
 
                       {chapter.scenes.map((scene, si) => (
                         <div key={scene.docId} style={{
                           display: 'flex', alignItems: 'center', gap: 6,
-                          paddingLeft: 20, paddingTop: 2, paddingBottom: 2,
+                          paddingLeft: 20 + (chapter.depth ?? 0) * 12, paddingTop: 2, paddingBottom: 2,
                         }}>
                           <input
                             type="checkbox"

@@ -1,5 +1,9 @@
 import type { TreeNode } from '../types'
 
+function getFolderRole(node: TreeNode) {
+  return node.type === 'folder' ? node.role ?? 'chapter' : null
+}
+
 export function TabContextMenu({
   menu,
   canDelete,
@@ -54,6 +58,7 @@ export function BinderContextMenu({
   onBulkRename,
   onAddScene,
   onAddFolder,
+  onSetFolderRole,
   onMoveToTrash,
 }: {
   menu: { x: number; y: number; node: TreeNode; depth: number } | null
@@ -64,13 +69,15 @@ export function BinderContextMenu({
   onBulkRename: (nodeId: number) => void
   onAddScene: (node: TreeNode) => void
   onAddFolder: (node: TreeNode, depth: number) => void
+  onSetFolderRole: (nodeId: number, role: 'act' | 'chapter') => void
   onMoveToTrash: (node: TreeNode) => void
 }) {
   if (!menu) return null
 
   const isProtected = menu.node.id === 1 || menu.node.id === 2
-  const canAddFolder = menu.node.type === 'folder' || menu.depth === 0
+  const canAddFolder = menu.node.type === 'folder' || menu.depth >= 0
   const actionCount = Math.max(1, selectedCount)
+  const folderRole = getFolderRole(menu.node)
 
   return (
     <div
@@ -117,6 +124,26 @@ export function BinderContextMenu({
               <i className="ti ti-folder-plus" /> Add Folder
             </button>
           )}
+        </>
+      )}
+
+      {!isProtected && folderRole && (
+        <>
+          <div style={{ height: 1, background: '#3c3c3c', margin: '4px 0' }} />
+          <button
+            className="ctx-menu-item"
+            disabled={folderRole === 'chapter'}
+            onClick={() => onSetFolderRole(menu.node.id, 'chapter')}
+          >
+            <i className="ti ti-book-2" /> Set as Chapter
+          </button>
+          <button
+            className="ctx-menu-item"
+            disabled={folderRole === 'act'}
+            onClick={() => onSetFolderRole(menu.node.id, 'act')}
+          >
+            <i className="ti ti-books" /> Set as Act
+          </button>
         </>
       )}
 

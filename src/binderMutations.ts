@@ -59,6 +59,13 @@ export function renameNodeInTree(tree: TreeNode[], id: number, label: string): T
   return newTree
 }
 
+export function setFolderRoleInTree(tree: TreeNode[], id: number, role: NonNullable<FolderNode['role']>): TreeNode[] {
+  const newTree = cloneTree(tree)
+  const node = findNode(newTree, id)
+  if (node && node.type === 'folder') node.role = role
+  return newTree
+}
+
 export function moveNodeInTree(tree: TreeNode[], draggedId: number, dropTarget: NonNullable<DropTarget>): TreeNode[] | null {
   const newTree = cloneTree(tree)
   const dragged = findNode(newTree, draggedId)

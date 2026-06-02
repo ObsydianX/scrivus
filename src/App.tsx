@@ -9,6 +9,8 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { exists, readFile, readTextFile, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { join } from '@tauri-apps/api/path'
+import { isTauri } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { exit } from '@tauri-apps/plugin-process'
 import { Packer, Document, Paragraph, HeadingLevel, AlignmentType, PageBreak, TextRun } from 'docx'
 import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener'
@@ -52,6 +54,7 @@ import {
   PreferencesModal,
   ProjectSettingsModal,
   StylesModal,
+  THEME_OPTIONS,
 } from './components/ProjectModals'
 import {
   addDocToTree,
@@ -63,12 +66,14 @@ import {
   removeNodesFromTree,
   removeNodeFromTree,
   renameNodeInTree,
+  setFolderRoleInTree,
   toggleFolderInTree,
 } from './binderMutations'
 import {
   FindReplacePanel,
   SearchPanel,
 } from './components/SearchReplacePanels'
+import { RevisionCommentsPane } from './components/RevisionView'
 import { WorkspaceShell, type Workspace } from './components/WorkspaceShell'
 import { buildCompileChapters, collectCompileNodesFromSelection } from './compile'
 import {
@@ -262,6 +267,7 @@ export default function App() {
   const fileMenuRef = useRef<HTMLDivElement>(null)
   const editMenuRef = useRef<HTMLDivElement>(null)
   const helpMenuRef = useRef<HTMLDivElement>(null)
+  const themeMenuRef = useRef<HTMLDivElement>(null)
   const dragIdRef = useRef<number | null>(null)
   const dropTargetRef = useRef<DropTarget>(null)
   const selectedBinderIdsRef = useRef<Set<number>>(new Set())
@@ -362,7 +368,6 @@ export default function App() {
   const [showCompile, setShowCompile] = useState(false)
   const [compileChapters, setCompileChapters] = useState<CompileChapterEntry[]>([])
   const [compileLoading, setCompileLoading] = useState(false)
-  const [compileFrontMatter, setCompileFrontMatter] = useState(false)
   const [compileFormat] = useState<'docx'>('docx')
   const compileStyle = COMPILE_STYLE_PRESETS[0]
 
@@ -370,6 +375,8 @@ export default function App() {
   const [revisionComments, setRevisionComments] = useState<RevisionComment[]>([])
   const revisionCommentsRef = useRef<RevisionComment[]>([])
   const [revisionActiveId, setRevisionActiveId] = useState<number | null>(null)
+  const [revisionTabs, setRevisionTabs] = useState<SceneTab[]>([])
+  const [revisionActiveTabIndex, setRevisionActiveTabIndex] = useState(0)
   const [revisionContent, setRevisionContent] = useState<string>('')    // read-only HTML
   const [revisionTitle, setRevisionTitle] = useState<string>('')
   const [revisionPendingComment, setRevisionPendingComment] = useState<{
@@ -399,6 +406,10 @@ export default function App() {
     'roseDark',
     'skyLight',
     'skyDark',
+    'softPaperLight',
+    'softSageLight',
+    'softPeachLight',
+    'softLilacLight',
     'neonCyber',
     'neonViolet',
     'neonEmber',
@@ -412,6 +423,14 @@ export default function App() {
   const DEFAULT_SETTINGS = {
     zoom: 100,
     theme: 'dark' as ThemeId,
+    compile: {
+      frontMatter: false,
+      includeActHeadings: true,
+    },
+    window: {
+      fullscreen: false,
+      maximized: false,
+    },
   };
 
   type AppSettings = typeof DEFAULT_SETTINGS;
@@ -421,7 +440,18 @@ export default function App() {
       const raw = localStorage.getItem('scrivus-settings');
       if (!raw) return { ...DEFAULT_SETTINGS };
       const parsed = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-      return { ...parsed, theme: normalizeTheme(parsed.theme) };
+      return {
+        ...parsed,
+        theme: normalizeTheme(parsed.theme),
+        compile: {
+          ...DEFAULT_SETTINGS.compile,
+          ...(typeof parsed.compile === 'object' && parsed.compile ? parsed.compile : {}),
+        },
+        window: {
+          ...DEFAULT_SETTINGS.window,
+          ...(typeof parsed.window === 'object' && parsed.window ? parsed.window : {}),
+        },
+      };
     } catch {
       return { ...DEFAULT_SETTINGS };
     }
@@ -434,8 +464,12 @@ export default function App() {
   // --- ZOOM STATE ---
   const ZOOM_PRESETS = [50, 75, 90, 100, 110, 125, 150, 175, 200, 300];
   const initialSettings = loadSettings()
+  const [compileFrontMatter, setCompileFrontMatter] = useState(() => initialSettings.compile.frontMatter)
+  const [compileIncludeActHeadings, setCompileIncludeActHeadings] = useState(() => initialSettings.compile.includeActHeadings)
   const [zoom, setZoom] = useState(() => initialSettings.zoom);
   const [appTheme, setAppTheme] = useState<ThemeId>(() => initialSettings.theme);
+  const [previewTheme, setPreviewTheme] = useState<ThemeId | null>(null)
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false)
   const [zoomOpen, setZoomOpen] = useState(false);
 
   // ── TipTap editor configuration ──
@@ -617,11 +651,14 @@ export default function App() {
       const collected: OutlineRow[] = []
       for (const node of nodes) {
         if (node.type === 'folder') {
-          const childRows = await visit(node.children, node.label, depth + 1)
+          const role = node.role ?? 'chapter'
+          const nextChapterLabel = role === 'chapter' ? node.label : chapterLabel
+          const childRows = await visit(node.children, nextChapterLabel, depth + 1)
           const childScenes = childRows.filter(row => row.type === 'scene')
           collected.push({
             id: node.id,
             type: 'chapter',
+            role,
             chapter: chapterLabel,
             title: node.label,
             wordCount: childScenes.reduce((total, row) => total + row.wordCount, 0),
@@ -760,10 +797,25 @@ export default function App() {
       if (helpMenuRef.current && !helpMenuRef.current.contains(e.target as Node)) {
         setHelpMenuOpen(false)
       }
+      if (themeMenuRef.current && !themeMenuRef.current.contains(e.target as Node)) {
+        setThemeMenuOpen(false)
+        setPreviewTheme(null)
+      }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
+
+  useEffect(() => {
+    if (!themeMenuOpen) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setThemeMenuOpen(false)
+      setPreviewTheme(null)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [themeMenuOpen])
 
   useEffect(() => {
     if (editor) editor.setEditable(!isTrashPreview)
@@ -856,9 +908,107 @@ export default function App() {
   }, [zoom]);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = appTheme
+    document.documentElement.dataset.theme = previewTheme ?? appTheme
+  }, [appTheme, previewTheme])
+
+  useEffect(() => {
     saveSettings({ ...loadSettings(), theme: appTheme })
   }, [appTheme])
+
+  useEffect(() => {
+    saveSettings({
+      ...loadSettings(),
+      compile: {
+        frontMatter: compileFrontMatter,
+        includeActHeadings: compileIncludeActHeadings,
+      },
+    })
+  }, [compileFrontMatter, compileIncludeActHeadings])
+
+  useEffect(() => {
+    if (!isTauri()) return
+
+    const appWindow = getCurrentWindow()
+    let cancelled = false
+    let applyingSavedWindowState = false
+    let lastSavedWindowState = loadSettings().window
+
+    const saveWindowState = async () => {
+      if (applyingSavedWindowState) return
+      try {
+        const fullscreen = await appWindow.isFullscreen()
+        const maximized = await appWindow.isMaximized()
+        if (cancelled) return
+        if (
+          fullscreen === lastSavedWindowState.fullscreen &&
+          maximized === lastSavedWindowState.maximized
+        ) return
+        lastSavedWindowState = { fullscreen, maximized }
+        const currentSettings = loadSettings()
+        saveSettings({
+          ...currentSettings,
+          window: {
+            ...currentSettings.window,
+            fullscreen,
+            maximized,
+          },
+        })
+      } catch {
+        // Window APIs are only available in the Tauri runtime.
+      }
+    }
+
+    const applySavedWindowState = async () => {
+      try {
+        const { fullscreen: savedFullscreen, maximized: savedMaximized } = lastSavedWindowState
+        const currentFullscreen = await appWindow.isFullscreen()
+        const currentMaximized = await appWindow.isMaximized()
+        if (cancelled) return
+
+        applyingSavedWindowState = true
+        if (savedFullscreen !== currentFullscreen) {
+          await appWindow.setFullscreen(savedFullscreen)
+        }
+        if (!savedFullscreen && savedMaximized !== currentMaximized) {
+          if (savedMaximized) await appWindow.maximize()
+          else await appWindow.unmaximize()
+        }
+      } catch {
+        // Window APIs are only available in the Tauri runtime.
+      } finally {
+        applyingSavedWindowState = false
+      }
+    }
+
+    const setupListeners = async () => {
+      try {
+        const unlistenResize = await appWindow.onResized(() => { void saveWindowState() })
+        const unlistenFocus = await appWindow.onFocusChanged(() => { void saveWindowState() })
+        if (cancelled) {
+          unlistenResize()
+          unlistenFocus()
+        }
+        return () => {
+          unlistenResize()
+          unlistenFocus()
+        }
+      } catch {
+        return undefined
+      }
+    }
+
+    void applySavedWindowState()
+    let cleanup: (() => void) | undefined
+    void setupListeners().then(unlisten => {
+      cleanup = unlisten
+      if (cancelled) cleanup?.()
+    })
+
+    return () => {
+      cancelled = true
+      cleanup?.()
+    }
+  }, [])
 
   // --- Collapse panels on small window EFFECT --- 
   useEffect(() => {
@@ -980,6 +1130,9 @@ export default function App() {
     saveActive()
     setIsTrashPreview(false)
     setActiveId(id)
+    setSelectedBinderIds(new Set())
+    selectedBinderIdsRef.current = new Set()
+    setBinderSelectionAnchorId(id)
     const node = findNode(treeRef.current, id)
     if (node && node.type === 'doc' && projectRef.current) {
       const raw = await readSceneFile(projectRef.current.path, node.file)
@@ -1004,7 +1157,9 @@ export default function App() {
       setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0)
       setCharCount(text.length)
       setTitleValue(tabs.length > 1 ? `${node.title} — ${tabs[safeIndex].name}` : node.title)
-      const revisionContent = tabs[tabs.length - 1]?.content ?? ''
+      const revisionContent = tabs[safeIndex]?.content ?? ''
+      setRevisionTabs(tabs)
+      setRevisionActiveTabIndex(safeIndex)
       setRevisionContent(revisionContent)
       setRevisionTitle(node.title)
       setRevisionActiveId(id)
@@ -1495,7 +1650,26 @@ export default function App() {
     if (node && node.type === 'doc' && projectRef.current) {
       const raw = await readSceneFile(projectRef.current.path, node.file)
       const tabs = parseSceneTabs(raw)
-      setRevisionContent(tabs[tabs.length - 1]?.content ?? '')
+      const rememberedIndex = sceneActiveTabRef.current[id]
+      const safeIndex =
+        rememberedIndex !== undefined && rememberedIndex >= 0 && rememberedIndex < tabs.length
+          ? rememberedIndex
+          : tabs.length - 1
+      setRevisionTabs(tabs)
+      setRevisionActiveTabIndex(safeIndex)
+      setRevisionContent(tabs[safeIndex]?.content ?? '')
+    }
+  }
+
+  const switchRevisionTab = (index: number) => {
+    if (index < 0 || index >= revisionTabs.length) return
+    setRevisionPendingComment(null)
+    setDraftText('')
+    setRevisionActiveCommentId(null)
+    setRevisionActiveTabIndex(index)
+    setRevisionContent(revisionTabs[index]?.content ?? '')
+    if (revisionActiveId !== null) {
+      sceneActiveTabRef.current[revisionActiveId] = index
     }
   }
 
@@ -1504,7 +1678,7 @@ export default function App() {
     if (!projectRef.current || !revisionActiveId || !revisionPendingComment) return
     const id = generateRevisionId()
     const newComment: RevisionComment = {
-      id, sceneId: revisionActiveId, quote, text,
+      id, sceneId: revisionActiveId, tabIndex: revisionActiveTabIndex, quote, text,
       createdAt: Date.now(), resolved: false,
       startOffset: revisionPendingComment.startOffset,
       endOffset: revisionPendingComment.endOffset,
@@ -1518,20 +1692,23 @@ export default function App() {
     if (node && node.type === 'doc') {
       const raw = await readSceneFile(projectRef.current.path, node.file)
       const tabs = parseSceneTabs(raw)
-      const lastIndex = tabs.length - 1
-      const updatedTabs = tabs.map((t, i) => i === lastIndex ? { ...t, content: wrapped } : t)
+      const safeIndex = Math.min(Math.max(revisionActiveTabIndex, 0), tabs.length - 1)
+      const updatedTabs = tabs.map((t, i) => i === safeIndex ? { ...t, content: wrapped } : t)
       const serialized = serializeSceneTabs(updatedTabs, raw)
       await writeSceneFile(projectRef.current.path, node.file, serialized)
       rawFileRef.current = serialized
+      setRevisionTabs(updatedTabs)
       setRevisionContent(wrapped)
       if (revisionActiveId === activeIdRef.current) {
         const editorTabs = sceneTabsRef.current.map((t, i) =>
-          i === sceneTabsRef.current.length - 1 ? { ...t, content: wrapped } : t
+          i === safeIndex ? { ...t, content: wrapped } : t
         )
         sceneTabsRef.current = editorTabs
         setSceneTabs(editorTabs)
-        bodyHtmlRef.current = wrapped
-        editor?.commands.setContent(wrapped, { emitUpdate: false })
+        if (activeTabIndexRef.current === safeIndex) {
+          bodyHtmlRef.current = wrapped
+          editor?.commands.setContent(wrapped, { emitUpdate: false })
+        }
       }
     }
 
@@ -1571,7 +1748,10 @@ export default function App() {
         await writeSceneFile(projectRef.current.path, node.file, stripped)
         if (comment.sceneId === revisionActiveId) {
           const tabs = parseSceneTabs(stripped)
-          setRevisionContent(tabs[tabs.length - 1]?.content ?? '')
+          const safeIndex = Math.min(revisionActiveTabIndex, Math.max(tabs.length - 1, 0))
+          setRevisionTabs(tabs)
+          setRevisionActiveTabIndex(safeIndex)
+          setRevisionContent(tabs[safeIndex]?.content ?? '')
         }
       }
     }
@@ -2185,7 +2365,9 @@ export default function App() {
   const compileProject = async () => {
     if (!project) return
 
-    const nodes = await collectCompileNodesFromSelection(compileChapters, project.path)
+    const nodes = await collectCompileNodesFromSelection(compileChapters, project.path, {
+      includeActHeadings: compileIncludeActHeadings,
+    })
     if (nodes.length === 0) {
       showMessage('Nothing to export — no scenes are selected.', 'Nothing to Export', 'warning')
       return
@@ -2820,13 +3002,15 @@ export default function App() {
     const id = allocateNextId()
     const fileId = generateFileId()
     const node: DocNode = { id, type: 'doc', label: title, title, file: fileId, metadata: DEFAULT_SCENE_METADATA }
-    const activeParent = activeIdRef.current !== null ? findParentFolder(treeRef.current, activeIdRef.current) : null
-    const newTree = addDocToTree(treeRef.current, activeParent?.id ?? 1, node)
+    const newTree = addDocToTree(treeRef.current, 1, node)
     const defaultTabs: SceneTab[] = [{ name: 'First Draft', content: '' }]
     const defaultRaw = serializeSceneTabs(defaultTabs, '')
 
     setTree(newTree)
     treeRef.current = newTree
+    setSelectedBinderIds(new Set())
+    selectedBinderIdsRef.current = new Set()
+    setBinderSelectionAnchorId(id)
     await writeSceneFile(projectRef.current.path, fileId, defaultRaw)
     await saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
     await selectDoc(id)
@@ -2959,7 +3143,7 @@ export default function App() {
   // Adds a new binder folder, then starts rename mode.
   const addFolder = (targetFolderId?: number) => {
     const id = allocateNextId()
-    const newFolder: FolderNode = { id, type: 'folder', label: 'New folder', open: true, children: [] }
+    const newFolder: FolderNode = { id, type: 'folder', label: 'New folder', open: true, role: 'chapter', children: [] }
     const newTree = addFolderToTree(treeRef.current, targetFolderId, newFolder)
     setTree(newTree)
     treeRef.current = newTree
@@ -2967,6 +3151,14 @@ export default function App() {
     setBinderSelectionAnchorId(null)
     if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
     setRenamingId(id)
+  }
+
+  const setFolderRole = (id: number, role: 'act' | 'chapter') => {
+    const newTree = setFolderRoleInTree(treeRef.current, id, role)
+    setTree(newTree)
+    treeRef.current = newTree
+    if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+    setContextMenu(null)
   }
 
   // Moves a binder node to trash instead of deleting it permanently.
@@ -3306,16 +3498,7 @@ export default function App() {
 
   const handleBinderContextAddFolder = (node: TreeNode) => {
     if (node.type === 'folder') {
-      const newId = allocateNextId()
-      const newFolder: FolderNode = { id: newId, type: 'folder', label: 'New folder', open: true, children: [] }
-      const newTree = JSON.parse(JSON.stringify(treeRef.current)) as TreeNode[]
-      const manuscript = findNode(newTree, 1) as FolderNode
-      const idx = manuscript.children.findIndex(c => c.id === node.id)
-      manuscript.children.splice(idx + 1, 0, newFolder)
-      setTree(newTree)
-      treeRef.current = newTree
-      if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
-      setRenamingId(newId)
+      addFolder(node.id)
     } else {
       const parent = findParentFolder(treeRef.current, node.id)
       if (parent) addFolder(parent.id)
@@ -3335,6 +3518,28 @@ export default function App() {
 
   // #endregion
 
+  const exitApp = async () => {
+    if (isTauri()) {
+      try {
+        const appWindow = getCurrentWindow()
+        const fullscreen = await appWindow.isFullscreen()
+        const maximized = await appWindow.isMaximized()
+        const currentSettings = loadSettings()
+        saveSettings({
+          ...currentSettings,
+          window: {
+            ...currentSettings.window,
+            fullscreen,
+            maximized,
+          },
+        })
+      } catch {
+        // Fall through to exit even if the window state cannot be read.
+      }
+    }
+    await exit(0)
+  }
+
   const MenuBarMenus = () => (
     <AppMenus
       projectOpen={Boolean(project)}
@@ -3346,9 +3551,21 @@ export default function App() {
       helpMenuRef={helpMenuRef}
       canUndo={Boolean(editor?.can().undo())}
       canRedo={Boolean(editor?.can().redo())}
-      onFileMenuToggle={() => setFileMenuOpen(v => !v)}
-      onEditMenuToggle={() => setEditMenuOpen(v => !v)}
-      onHelpMenuToggle={() => setHelpMenuOpen(v => !v)}
+      onFileMenuToggle={() => {
+        setThemeMenuOpen(false)
+        setPreviewTheme(null)
+        setFileMenuOpen(v => !v)
+      }}
+      onEditMenuToggle={() => {
+        setThemeMenuOpen(false)
+        setPreviewTheme(null)
+        setEditMenuOpen(v => !v)
+      }}
+      onHelpMenuToggle={() => {
+        setThemeMenuOpen(false)
+        setPreviewTheme(null)
+        setHelpMenuOpen(v => !v)
+      }}
       onNewProject={() => { setFileMenuOpen(false); setShowNewProject(true) }}
       onOpenProject={openProject}
       onCloseProject={closeProject}
@@ -3364,7 +3581,7 @@ export default function App() {
         )
       }}
       onCompile={() => openCompileModal()}
-      onExit={() => exit(0)}
+      onExit={() => { void exitApp() }}
       onUndo={() => { setEditMenuOpen(false); editor?.chain().focus().undo().run() }}
       onRedo={() => { setEditMenuOpen(false); editor?.chain().focus().redo().run() }}
       onSelectAll={() => { setEditMenuOpen(false); editor?.chain().focus().selectAll().run() }}
@@ -3376,6 +3593,73 @@ export default function App() {
       onCheckForUpdates={() => { void checkForUpdates() }}
     />
   )
+
+  const ThemeMenu = () => {
+    const activeTheme = THEME_OPTIONS.find(theme => theme.id === (previewTheme ?? appTheme)) ?? THEME_OPTIONS[0]
+    const lightThemes = THEME_OPTIONS.filter(theme => theme.id === 'light' || theme.id.endsWith('Light'))
+    const darkThemes = THEME_OPTIONS.filter(theme => !lightThemes.some(lightTheme => lightTheme.id === theme.id))
+
+    const openThemeMenu = () => {
+      setFileMenuOpen(false)
+      setEditMenuOpen(false)
+      setHelpMenuOpen(false)
+      if (themeMenuOpen) setPreviewTheme(null)
+      setThemeMenuOpen(!themeMenuOpen)
+    }
+
+    const commitTheme = (theme: ThemeId) => {
+      setAppTheme(theme)
+      setPreviewTheme(null)
+      setThemeMenuOpen(false)
+    }
+
+    return (
+      <div className={`theme-menu${themeMenuOpen ? ' open' : ''}`} ref={themeMenuRef}>
+        <button
+          className="theme-menu-trigger"
+          onClick={openThemeMenu}
+          title="Theme"
+          aria-label="Theme"
+          aria-expanded={themeMenuOpen}
+        >
+          <span className="theme-menu-trigger-swatches" aria-hidden="true">
+            {activeTheme.swatches.map(color => (
+              <span key={color} style={{ background: color }} />
+            ))}
+          </span>
+        </button>
+        {themeMenuOpen && (
+          <div className="theme-menu-dropdown" onMouseLeave={() => setPreviewTheme(null)}>
+            {[darkThemes, lightThemes].map((themes, columnIndex) => (
+              <div
+                key={columnIndex === 0 ? 'dark' : 'light'}
+                className="theme-menu-column"
+                aria-label={columnIndex === 0 ? 'Dark themes' : 'Light themes'}
+              >
+                {themes.map(theme => (
+                  <button
+                    key={theme.id}
+                    className={`theme-menu-option${appTheme === theme.id ? ' active' : ''}`}
+                    onMouseEnter={() => setPreviewTheme(theme.id)}
+                    onFocus={() => setPreviewTheme(theme.id)}
+                    onClick={() => commitTheme(theme.id)}
+                    title={theme.name}
+                    aria-label={theme.name}
+                  >
+                    <span className="theme-menu-option-swatches" aria-hidden="true">
+                      {theme.swatches.map(color => (
+                        <span key={color} style={{ background: color }} />
+                      ))}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   const handleWorkspaceChange = (nextWorkspace: Workspace) => {
     if (workspace === 'editor' && nextWorkspace !== 'editor' && saveTimer.current) {
@@ -3394,11 +3678,13 @@ export default function App() {
     }
     if (nextWorkspace === 'revision' && revisionActiveId !== null) {
       const tabs = sceneTabsRef.current
-      const lastIndex = tabs.length - 1
       const updatedTabs = tabs.map((t, i) =>
         i === activeTabIndex ? { ...t, content: bodyHtmlRef.current } : t
       )
-      setRevisionContent(updatedTabs[lastIndex]?.content ?? '')
+      const safeIndex = Math.min(activeTabIndex, Math.max(updatedTabs.length - 1, 0))
+      setRevisionTabs(updatedTabs)
+      setRevisionActiveTabIndex(safeIndex)
+      setRevisionContent(updatedTabs[safeIndex]?.content ?? '')
     }
     setWorkspace(nextWorkspace)
   }
@@ -3615,10 +3901,12 @@ export default function App() {
           chapters={compileChapters}
           format={compileFormat}
           frontMatter={compileFrontMatter}
+          includeActHeadings={compileIncludeActHeadings}
           style={compileStyle}
           projectStyles={styles}
           onClose={() => setShowCompile(false)}
           onFrontMatterChange={setCompileFrontMatter}
+          onIncludeActHeadingsChange={setCompileIncludeActHeadings}
           onChaptersChange={setCompileChapters}
           onSelectionChange={updateCompileSelection}
           onExport={compileProject}
@@ -3645,6 +3933,7 @@ export default function App() {
         <div id="menubar">
           <MenuBarMenus />
           <span className="project-title">Scrivus</span>
+          <ThemeMenu />
         </div>
         <SharedModals />
 
@@ -3689,7 +3978,8 @@ export default function App() {
       <div id="menubar">
         <MenuBarMenus />
         <span className="project-title">{project.name}</span>
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#858585', paddingRight: 12 }}>{saveLabel}</span>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)', paddingRight: 8 }}>{saveLabel}</span>
+        <ThemeMenu />
       </div>
 
       <BinderSidebar
@@ -3879,11 +4169,14 @@ export default function App() {
           revisionActiveCommentId,
           revisionContent,
           revisionTitle,
+          revisionTabs,
+          revisionActiveTabIndex,
           revisionPendingComment,
           draftText,
           revisionScrollRef,
           confirmDeleteRevisionComment,
           onRevisionActiveCommentChange: setRevisionActiveCommentId,
+          onSwitchRevisionTab: switchRevisionTab,
           onDraftTextChange: setDraftText,
           onDismissPendingComment: () => setRevisionPendingComment(null),
           onCancelPendingComment: stripped => {
@@ -3901,7 +4194,31 @@ export default function App() {
             setConfirmDeleteRevisionComment(null)
           },
         }}
-      />      <InspectorPanel
+      />
+      {workspace === 'revision' && revisionActiveId !== null && (
+        <RevisionCommentsPane
+          activeId={revisionActiveId}
+          comments={revisionComments}
+          activeCommentId={revisionActiveCommentId}
+          activeTabIndex={revisionActiveTabIndex}
+          tabs={revisionTabs}
+          pendingComment={revisionPendingComment}
+          content={revisionContent}
+          draftText={draftText}
+          onActiveCommentChange={setRevisionActiveCommentId}
+          onDraftTextChange={setDraftText}
+          onDismissPendingComment={() => setRevisionPendingComment(null)}
+          onCancelPendingComment={stripped => {
+            setRevisionContent(stripped)
+            setRevisionPendingComment(null)
+          }}
+          onAddComment={addRevisionComment}
+          onResolveComment={resolveRevisionComment}
+          onUnresolveComment={unresolveRevisionComment}
+          onDeleteCommentRequest={setConfirmDeleteRevisionComment}
+        />
+      )}
+      <InspectorPanel
         open={inspectorOpen}
         workspace={workspace}
         project={project}
@@ -3951,6 +4268,7 @@ export default function App() {
         onBulkRename={handleBinderContextBulkRename}
         onAddScene={handleBinderContextAddScene}
         onAddFolder={handleBinderContextAddFolder}
+        onSetFolderRole={setFolderRole}
         onMoveToTrash={handleBinderContextMoveToTrash}
       />
       <SpellcheckContextMenu

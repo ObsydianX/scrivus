@@ -12,6 +12,7 @@ export type FolderNode = {
   type: 'folder'
   label: string
   open: boolean
+  role?: 'act' | 'chapter'
   children: TreeNode[]
 }
 
@@ -140,6 +141,10 @@ export type ThemeId =
   | 'roseDark'
   | 'skyLight'
   | 'skyDark'
+  | 'softPaperLight'
+  | 'softSageLight'
+  | 'softPeachLight'
+  | 'softLilacLight'
   | 'neonCyber'
   | 'neonViolet'
   | 'neonEmber'
@@ -157,6 +162,8 @@ export type CompileSceneEntry = {
 export type CompileChapterEntry = {
   folderId: number
   label: string
+  role?: 'act' | 'chapter'
+  depth?: number
   included: boolean
   scenes: CompileSceneEntry[]
 }
@@ -164,6 +171,7 @@ export type CompileChapterEntry = {
 export type RevisionComment = {
   id: string
   sceneId: number
+  tabIndex?: number
   quote: string
   text: string
   createdAt: number
@@ -175,6 +183,7 @@ export type RevisionComment = {
 export type OutlineRow = {
   id: number
   type: 'chapter' | 'scene'
+  role?: 'act' | 'chapter'
   chapter: string
   title: string
   wordCount: number

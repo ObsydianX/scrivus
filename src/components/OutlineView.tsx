@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { OutlineRow, SceneStatus } from '../types'
 
 const STATUS_LABELS: Record<SceneStatus | 'inProgress', string> = {
@@ -6,6 +7,10 @@ const STATUS_LABELS: Record<SceneStatus | 'inProgress', string> = {
   needsWork: 'Needs work',
   complete: 'Complete',
   inProgress: 'In Progress',
+}
+
+function getFolderLabel(row: OutlineRow) {
+  return row.role === 'act' ? 'Act' : 'Chapter'
 }
 
 export function OutlineView({
@@ -19,23 +24,69 @@ export function OutlineView({
   onOpenScene: (id: number) => void
   onSceneStatusChange: (id: number, status: SceneStatus) => void
 }) {
+  const [collapsedChapterIds, setCollapsedChapterIds] = useState<Set<number>>(new Set())
   const sceneRows = rows.filter(row => row.type === 'scene')
-  const chapterCount = rows.filter(row => row.type === 'chapter').length
+  const folderRows = rows.filter(row => row.type === 'chapter')
+  const folderIds = folderRows.map(row => row.id)
+  const actCount = folderRows.filter(row => row.role === 'act').length
+  const chapterCount = folderRows.filter(row => row.role !== 'act').length
+  const collapsedFolderCount = folderIds.filter(id => collapsedChapterIds.has(id)).length
   const sceneCount = sceneRows.length
-  const povCount = new Set(sceneRows.map(row => row.metadata?.pov.trim()).filter(Boolean)).size
-  const locationCount = new Set(sceneRows.map(row => row.metadata?.location.trim()).filter(Boolean)).size
+  const visibleRows: OutlineRow[] = []
+  let hiddenDepth: number | null = null
+  rows.forEach(row => {
+    if (hiddenDepth !== null) {
+      if (row.depth > hiddenDepth) return
+      hiddenDepth = null
+    }
+    visibleRows.push(row)
+    if (row.type === 'chapter' && collapsedChapterIds.has(row.id)) {
+      hiddenDepth = row.depth
+    }
+  })
+
+  const toggleChapter = (id: number) => {
+    setCollapsedChapterIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const expandAllFolders = () => setCollapsedChapterIds(new Set())
+  const collapseAllFolders = () => setCollapsedChapterIds(new Set(folderIds))
 
   return (
     <div id="outline-view">
       <div id="outline-header">
-        <div>
-          <h2>Outline</h2>
-          <p>{sceneCount.toLocaleString()} {sceneCount === 1 ? 'scene' : 'scenes'} · {manuscriptWordCount.toLocaleString()} words</p>
+        <div className="outline-title-group">
+          <div className="outline-folder-actions" aria-label="Folder display controls">
+            <button
+              className="outline-tool-btn"
+              onClick={expandAllFolders}
+              disabled={folderIds.length === 0 || collapsedFolderCount === 0}
+              title="Expand all folders"
+              aria-label="Expand all folders"
+            >
+              <i className="ti ti-chevrons-down" aria-hidden="true" />
+            </button>
+            <button
+              className="outline-tool-btn"
+              onClick={collapseAllFolders}
+              disabled={folderIds.length === 0 || collapsedFolderCount === folderIds.length}
+              title="Collapse all folders"
+              aria-label="Collapse all folders"
+            >
+              <i className="ti ti-chevrons-up" aria-hidden="true" />
+            </button>
+          </div>
         </div>
-        <div className="outline-summary">
-          <span title="Chapter rows">{chapterCount.toLocaleString()} chapters</span>
-          <span title="Unique POV entries">{povCount.toLocaleString()} POV</span>
-          <span title="Unique location entries">{locationCount.toLocaleString()} locations</span>
+        <div className="outline-summary" aria-label="Outline stats">
+          <span title="Act folders">{actCount.toLocaleString()} {actCount === 1 ? 'act' : 'acts'}</span>
+          <span title="Chapter folders">{chapterCount.toLocaleString()} {chapterCount === 1 ? 'chapter' : 'chapters'}</span>
+          <span title="Scenes">{sceneCount.toLocaleString()} {sceneCount === 1 ? 'scene' : 'scenes'}</span>
+          <span title="Manuscript words">{manuscriptWordCount.toLocaleString()} words</span>
         </div>
       </div>
 
@@ -61,7 +112,7 @@ export function OutlineView({
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => (
+              {visibleRows.map(row => (
                 <tr
                   key={`${row.type}-${row.id}`}
                   className={`outline-row-${row.type}`}
@@ -71,8 +122,16 @@ export function OutlineView({
                     <div className="outline-title-cell" style={{ paddingLeft: row.depth * 18 }}>
                       {row.type === 'chapter'
                         ? <>
-                          <i className="ti ti-folder" aria-hidden="true" />
+                          <button
+                            className="outline-collapse-btn"
+                            onClick={() => toggleChapter(row.id)}
+                            title={collapsedChapterIds.has(row.id) ? 'Expand folder' : 'Collapse folder'}
+                          >
+                            <i className={`ti ti-chevron-${collapsedChapterIds.has(row.id) ? 'right' : 'down'}`} aria-hidden="true" />
+                          </button>
+                          <i className={`ti ti-${row.role === 'act' ? 'books' : collapsedChapterIds.has(row.id) ? 'folder' : 'folder-open'}`} aria-hidden="true" />
                           <span>{row.title}</span>
+                          <span className={`outline-folder-role outline-folder-role-${row.role ?? 'chapter'}`}>{getFolderLabel(row)}</span>
                         </>
                         : <button className="outline-scene-link" onClick={() => onOpenScene(row.id)}>
                           <i className="ti ti-file-text" aria-hidden="true" />
@@ -81,7 +140,7 @@ export function OutlineView({
                       }
                     </div>
                   </td>
-                  <td>{row.type === 'chapter' ? '—' : row.chapter}</td>
+                  <td>{row.type === 'chapter' ? getFolderLabel(row) : row.chapter}</td>
                   <td>
                     {row.type === 'scene'
                       ? <label className={`outline-status-select-wrap outline-status-${row.status}`}>

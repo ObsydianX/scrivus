@@ -30,6 +30,10 @@ const STATUS_LABELS: Record<SceneStatus, string> = {
   complete: 'Complete',
 }
 
+function getFolderRole(node: TreeNode) {
+  return node.type === 'folder' ? node.role ?? 'chapter' : null
+}
+
 type BinderSidebarProps = {
   binderOpen: boolean
   workspace: 'editor' | 'revision' | 'outline' | 'lorebook' | 'mindmap' | 'atlas'
@@ -218,6 +222,7 @@ export function BinderSidebar({
       const isDropFolder = dropTarget?.type === 'inside' && dropTarget.id === n.id
       const isDropBefore = dropTarget?.type === 'before' && dropTarget.id === n.id
       const isDropAfter = dropTarget?.type === 'after' && dropTarget.id === n.id
+      const folderRole = getFolderRole(n)
 
       return (
         <div key={n.id} style={{ opacity: isDragging || (dragId !== null && isSelected) ? 0.4 : 1 }}>
@@ -301,7 +306,7 @@ export function BinderSidebar({
             <span className="item-icon">
               <i className={`ti ti-${n.id === 1 ? 'book-2' :
                 n.id === 2 ? 'notebook' :
-                  n.type === 'folder' ? 'folder' :
+                  n.type === 'folder' ? (folderRole === 'act' ? 'books' : 'folder') :
                     'file-text'
                 }`} aria-hidden="true" />
             </span>
@@ -329,11 +334,9 @@ export function BinderSidebar({
                     <button title="New scene" onClick={e => { e.stopPropagation(); onAddDoc(n.id) }}>
                       <i className="ti ti-file-plus" aria-hidden="true" />
                     </button>
-                    {depth < 1 && (
-                      <button title="New folder" onClick={e => { e.stopPropagation(); onAddFolder(n.id) }}>
-                        <i className="ti ti-folder-plus" aria-hidden="true" />
-                      </button>
-                    )}
+                    <button title="New folder" onClick={e => { e.stopPropagation(); onAddFolder(n.id) }}>
+                      <i className="ti ti-folder-plus" aria-hidden="true" />
+                    </button>
                   </>
                 )}
                 {!isProtected && (
