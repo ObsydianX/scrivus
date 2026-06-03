@@ -83,6 +83,12 @@ Scrivus is local-first. Project content is stored on your machine, and the app d
 
 See [PRIVACY.md](PRIVACY.md) for the full privacy note.
 
+## Themes
+
+Scrivus includes 20 built-in themes, with light and dark options for different writing environments. The set also includes high-contrast light and dark themes for visually impaired users who need stronger separation between text, panels, and controls.
+
+![Theme picker](docs/screenshots/themes.png)
+
 ## Installing
 
 Scrivus releases are distributed through GitHub Releases.
