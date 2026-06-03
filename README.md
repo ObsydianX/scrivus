@@ -88,6 +88,7 @@ See [PRIVACY.md](PRIVACY.md) for the full privacy note.
 Scrivus includes 20 built-in themes, with light and dark options for different writing environments. The set also includes high-contrast light and dark themes for visually impaired users who need stronger separation between text, panels, and controls.
 
 ![Theme picker](docs/screenshots/themes.png)
+![Theme picker](docs/screenshots/themes-high-contrast.png)
 
 ## Installing
 
