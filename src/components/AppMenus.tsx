@@ -15,6 +15,7 @@ export function AppMenus({
   onHelpMenuToggle,
   onNewProject,
   onOpenProject,
+  onNewProjectFromWordDoc,
   onCloseProject,
   onBackupNow,
   onRestoreBackup,
@@ -45,6 +46,7 @@ export function AppMenus({
   onHelpMenuToggle: () => void
   onNewProject: () => void
   onOpenProject: () => void
+  onNewProjectFromWordDoc: () => void
   onCloseProject: () => void
   onBackupNow: () => void
   onRestoreBackup: () => void
@@ -69,6 +71,7 @@ export function AppMenus({
           <div className="menu-dropdown">
             <button onClick={onNewProject}>New Project</button>
             <button onClick={onOpenProject}>Open Project...</button>
+            <button onClick={onNewProjectFromWordDoc}>New Project from Word Doc...</button>
             <div className="sep" />
             <button onClick={onCloseProject} disabled={!projectOpen}>Close Project</button>
             <div className="sep" />

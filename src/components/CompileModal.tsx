@@ -1,6 +1,8 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { LOREM_PREVIEW } from '../constants'
+import { COMPILE_STYLE_PRESETS, LOREM_PREVIEW } from '../constants'
 import type { CompileChapterEntry, ProjectStyles } from '../types'
+
+type CompileStylePreset = typeof COMPILE_STYLE_PRESETS[number]
 
 function folderLabel(chapter: CompileChapterEntry) {
   return chapter.role === 'act' ? 'Act' : 'Chapter'
@@ -12,11 +14,14 @@ type CompileModalProps = {
   format: 'docx'
   frontMatter: boolean
   includeActHeadings: boolean
-  style: string
+  includeSceneTitles: boolean
+  style: CompileStylePreset
   projectStyles: ProjectStyles
   onClose: () => void
+  onStyleChange: (style: CompileStylePreset) => void
   onFrontMatterChange: (value: boolean) => void
   onIncludeActHeadingsChange: (value: boolean) => void
+  onIncludeSceneTitlesChange: (value: boolean) => void
   onChaptersChange: Dispatch<SetStateAction<CompileChapterEntry[]>>
   onSelectionChange: (fileId: string, value: string) => void
   onExport: () => void
@@ -28,11 +33,14 @@ export function CompileModal({
   format,
   frontMatter,
   includeActHeadings,
+  includeSceneTitles,
   style,
   projectStyles,
   onClose,
+  onStyleChange,
   onFrontMatterChange,
   onIncludeActHeadingsChange,
+  onIncludeSceneTitlesChange,
   onChaptersChange,
   onSelectionChange,
   onExport,
@@ -53,6 +61,7 @@ export function CompileModal({
           border: '1px solid var(--border-main)',
           borderRadius: 6,
           width: 860,
+          height: '85vh',
           userSelect: 'none',
           maxWidth: '95vw',
           maxHeight: '85vh',
@@ -73,17 +82,25 @@ export function CompileModal({
             COMPILE MANUSCRIPT
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span
-              style={{
-                color: 'var(--text-muted)',
-                fontSize: 12,
-                border: '1px solid var(--border-soft)',
-                borderRadius: 4,
-                padding: '4px 8px',
-              }}
-            >
-              {style}
-            </span>
+            {!loading && (
+              <select
+                value={style}
+                onChange={event => onStyleChange(event.target.value as CompileStylePreset)}
+                style={{
+                  background: 'var(--input-bg)',
+                  color: 'var(--text-muted)',
+                  fontSize: 12,
+                  border: '1px solid var(--border-soft)',
+                  borderRadius: 4,
+                  padding: '4px 26px 4px 8px',
+                  outline: 'none',
+                }}
+              >
+                {COMPILE_STYLE_PRESETS.map(preset => (
+                  <option key={preset} value={preset}>{preset}</option>
+                ))}
+              </select>
+            )}
             <button
               onClick={onClose}
               style={{
@@ -100,9 +117,10 @@ export function CompileModal({
           ? (
             <div style={{
               flex: 1, display: 'flex', alignItems: 'center',
-              justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13,
+              justifyContent: 'center', color: 'var(--text-soft)', fontSize: 16,
+              letterSpacing: '0.02em',
             }}>
-              Reading scenes...
+              Reading scenes<span className="compile-loading-ellipsis" aria-hidden="true">...</span>
             </div>
           )
           : (
@@ -173,6 +191,19 @@ export function CompileModal({
                   />
                   Include act headings
                 </label>
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  color: 'var(--text-soft)', fontSize: 12, cursor: 'pointer',
+                  marginTop: 8,
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={includeSceneTitles}
+                    onChange={e => onIncludeSceneTitlesChange(e.target.checked)}
+                    style={{ accentColor: 'var(--accent)' }}
+                  />
+                  Include scene titles
+                </label>
               </div>
 
               <div style={{
@@ -193,23 +224,37 @@ export function CompileModal({
                   overflowY: 'auto',
                 }}>
                   <div style={{
-                    fontFamily: projectStyles.chapter.font,
-                    fontSize: `${projectStyles.chapter.size}pt`,
-                    fontWeight: projectStyles.chapter.bold ? 700 : 400,
-                    fontStyle: projectStyles.chapter.italic ? 'italic' : 'normal',
+                    fontFamily: style === 'Proof Copy' ? 'Courier New, Courier, monospace' : projectStyles.chapter.font,
+                    fontSize: style === 'Proof Copy' ? '12pt' : `${projectStyles.chapter.size}pt`,
+                    fontWeight: style === 'Proof Copy' ? 700 : projectStyles.chapter.bold ? 700 : 400,
+                    fontStyle: style === 'Proof Copy' ? 'normal' : projectStyles.chapter.italic ? 'italic' : 'normal',
                     color: '#111',
                     marginBottom: 16,
+                    textAlign: style === 'Proof Copy' ? 'center' : 'left',
                   }}>
-                    Chapter One
+                    {style === 'Proof Copy' ? '## CHAPTER ONE ##' : 'Chapter One'}
                   </div>
+                  {includeSceneTitles && (
+                    <div style={{
+                      fontFamily: style === 'Proof Copy' ? 'Courier New, Courier, monospace' : projectStyles.chapter.font,
+                      fontSize: style === 'Proof Copy' ? '12pt' : `${projectStyles.chapter.size}pt`,
+                      fontWeight: style === 'Proof Copy' ? 700 : projectStyles.chapter.bold ? 700 : 400,
+                      fontStyle: style === 'Proof Copy' ? 'normal' : projectStyles.chapter.italic ? 'italic' : 'normal',
+                      color: '#111',
+                      marginBottom: 16,
+                      textAlign: 'center',
+                    }}>
+                      {style === 'Proof Copy' ? '# SCENE ONE #' : 'Scene One'}
+                    </div>
+                  )}
                   {LOREM_PREVIEW.split('\n\n').map((para, i) => (
                     <p key={i} style={{
-                      fontFamily: projectStyles.body.font,
-                      fontSize: `${projectStyles.body.size}pt`,
-                      textAlign: projectStyles.body.justification === 'both' ? 'justify'
+                      fontFamily: style === 'Proof Copy' ? 'Courier New, Courier, monospace' : projectStyles.body.font,
+                      fontSize: style === 'Proof Copy' ? '12pt' : `${projectStyles.body.size}pt`,
+                      textAlign: style === 'Proof Copy' ? 'justify' : projectStyles.body.justification === 'both' ? 'justify'
                         : projectStyles.body.justification as 'left' | 'center' | 'right',
-                      textIndent: projectStyles.body.firstLineIndent ? '2em' : '0',
-                      lineHeight: projectStyles.body.lineSpacing,
+                      textIndent: style === 'Proof Copy' ? '2em' : projectStyles.body.firstLineIndent ? '2em' : '0',
+                      lineHeight: style === 'Proof Copy' ? 2 : projectStyles.body.lineSpacing,
                       margin: '0 0 8px 0',
                       color: '#111',
                     }}>

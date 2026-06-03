@@ -2,6 +2,17 @@
 
 All notable Scrivus changes are tracked here.
 
+## 0.2.2
+
+- Added horizontal split-screen draft reference in the Editor workspace, including read-only reference tabs, per-scene split restoration, tab swapping, and hoverable comment previews in the reference pane.
+- Added Word document project import for `.docx` manuscripts, including Act, Chapter, and Scene splitting plus supported Word formatting for bold, italic, underline, bulleted lists, and numbered lists.
+- Added New Project from Word Doc entry points on the welcome screen and File menu.
+- Added nested multi-level list import support from Word documents.
+- Added human-readable scene file paragraph spacing between stored HTML paragraphs.
+- Added Proof Copy as a compile preset with monospaced justified body text, first-line paragraph indents, double spacing, and proof-style act/chapter/scene headings.
+- Added an Include scene titles compile option, persisted with other compile settings, exporting scene titles as Heading 2 for Standard Manuscript and proof-style scene headings for Proof Copy.
+- Added animated loading modals for opening large projects, creating/importing projects, and preparing the compile screen.
+
 ## 0.2.1
 
 - Themed previously missed UI elements including Quick Tools headers, revision tabs, default empty-state text, and revision comment empty states.

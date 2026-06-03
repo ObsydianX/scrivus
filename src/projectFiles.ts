@@ -8,6 +8,7 @@ import defaultAtlasImageUrl from './defaultProject/images/sample_map4k.png?url'
 import defaultPortraitImageUrl from './defaultProject/images/portrait_silhouette.png?url'
 import { saveProjectToDisk, writeSceneFile } from './storage'
 import type { Atlas, LoreBook, MindMap, Project, ProjectStyles, TreeNode } from './types'
+import type { ImportedSceneFile } from './wordImport'
 
 const DEFAULT_SCENE_CONTENT = `<p>This is the beginning of your story. Somewhere in these pages, a character is waiting to surprise you - someone whose voice you don't yet know, whose choices will lead somewhere you haven't imagined. Let them.</p><p>The world you're building exists nowhere else. Every detail you set down - the quality of light through a particular window, the way two people talk around what they mean, the rules of a place that has never existed - belongs entirely to you. There is no wrong way to begin.</p><p>Write the first true sentence. The rest will follow.</p>`
 export const PROJECT_PACKAGE_EXTENSION = '.scrivus'
@@ -103,6 +104,45 @@ export async function createProjectOnDisk({
     name: projectName,
     path: projectPath,
     tree: defaultTree,
+    styles,
+    settings: DEFAULT_PROJECT_SETTINGS,
+    compileSelections: {},
+  }
+
+  await saveProjectToDisk(project)
+  return project
+}
+
+export async function createImportedProjectOnDisk({
+  parentPath,
+  name,
+  tree,
+  sceneFiles,
+  styles,
+}: {
+  parentPath: string
+  name: string
+  tree: TreeNode[]
+  sceneFiles: ImportedSceneFile[]
+  styles: ProjectStyles
+}): Promise<Project> {
+  const projectName = normalizeProjectDisplayName(name)
+  const packageName = projectPackageFolderName(projectName)
+  const projectPath = await join(parentPath, packageName)
+  if (await exists(projectPath)) {
+    throw new Error(`A project package named "${packageName}" already exists in that location. Choose a different project name or location.`)
+  }
+  await mkdir(projectPath, { recursive: true })
+
+  for (const sceneFile of sceneFiles) {
+    await writeSceneFile(projectPath, sceneFile.fileId, sceneFile.content)
+  }
+  await writeDefaultProjectCompanions(projectPath)
+
+  const project: Project = {
+    name: projectName,
+    path: projectPath,
+    tree,
     styles,
     settings: DEFAULT_PROJECT_SETTINGS,
     compileSelections: {},

@@ -1,4 +1,4 @@
-import type { RefObject } from 'react'
+import { useState, type RefObject } from 'react'
 import { EditorContent, type Editor } from '@tiptap/react'
 import type {
   Atlas,
@@ -23,7 +23,7 @@ import { AtlasView } from './AtlasView'
 import { LoreBookView } from './LoreBookView'
 import { MindMapView } from './MindMapView'
 import { OutlineView } from './OutlineView'
-import { RevisionView } from './RevisionView'
+import { getActiveComments, renderRevisionAnnotatedHtml, RevisionView } from './RevisionView'
 
 export type Workspace = 'editor' | 'revision' | 'outline' | 'lorebook' | 'mindmap' | 'atlas'
 
@@ -52,6 +52,9 @@ type EditorWorkspaceState = {
 type TabWorkspaceState = {
   sceneTabs: SceneTab[]
   activeTabIndex: number
+  splitTabIndex: number | null
+  activeSceneId: number | null
+  revisionComments: RevisionComment[]
   renamingTabIndex: number | null
   tabDragIndex: number | null
   tabDropIndex: number | null
@@ -61,6 +64,8 @@ type TabWorkspaceState = {
   onRenamingTabIndexChange: (index: number | null) => void
   onTabContextMenuChange: (menu: { x: number; y: number; index: number } | null) => void
   onSwitchTab: (index: number) => void
+  onSelectSplitTab: (index: number) => void
+  onCloseSplitTab: () => void
   onAddTab: () => void
   onRenameTab: (index: number, name: string) => void
   onTabDrop: (targetIndex: number) => void
@@ -157,6 +162,79 @@ type WorkspaceShellProps = {
   revisionState: RevisionWorkspaceState
 }
 
+function EditorSplitView({
+  tabs,
+  activeSceneId,
+  splitTabIndex,
+  comments,
+  onSelectTab,
+  onClose,
+}: {
+  tabs: SceneTab[]
+  activeSceneId: number | null
+  splitTabIndex: number
+  comments: RevisionComment[]
+  onSelectTab: (index: number) => void
+  onClose: () => void
+}) {
+  const [hoverComment, setHoverComment] = useState<{ comment: RevisionComment; x: number; y: number } | null>(null)
+  const splitTab = tabs[splitTabIndex]
+  if (!splitTab) return null
+
+  const activeComments = getActiveComments(comments, activeSceneId, splitTabIndex, tabs)
+  const hoverCommentText = hoverComment?.comment.text.trim()
+
+  return (
+    <div id="editor-split-view">
+      <div id="editor-split-tab-bar">
+        <div className="editor-split-tabs">
+          {tabs.map((tab, index) => (
+            <button
+              key={`${tab.name}-${index}`}
+              className={`editor-split-tab${index === splitTabIndex ? ' active' : ''}`}
+              onClick={() => onSelectTab(index)}
+              title={tab.name}
+            >
+              <span>{tab.name}</span>
+            </button>
+          ))}
+        </div>
+        <button className="editor-split-close" onClick={onClose} title="Close Split View" aria-label="Close Split View">
+          <i className="ti ti-x" aria-hidden="true" />
+        </button>
+      </div>
+      <div id="editor-split-scroll">
+        <div id="editor-split-wrap">
+          <div id="editor-split-title">{splitTab.name}</div>
+          <div
+            id="editor-split-body"
+            dangerouslySetInnerHTML={{ __html: renderRevisionAnnotatedHtml(splitTab.content, activeComments) }}
+            onMouseMove={e => {
+              const target = e.target as HTMLElement
+              const mark = target.closest('[data-comment-id]') as HTMLElement | null
+              const id = mark?.dataset.commentId
+              const comment = id ? activeComments.find(c => c.id === id) : null
+              setHoverComment(comment ? { comment, x: e.clientX, y: e.clientY } : null)
+            }}
+            onMouseLeave={() => setHoverComment(null)}
+          />
+        </div>
+      </div>
+      {hoverComment && hoverCommentText && (
+        <div
+          className="editor-split-comment-popover"
+          style={{
+            left: Math.min(hoverComment.x + 14, window.innerWidth - 290),
+            top: Math.min(hoverComment.y + 14, window.innerHeight - 120),
+          }}
+        >
+          <div className="editor-split-comment-text">{hoverCommentText}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function WorkspaceShell({
   workspace,
   onWorkspaceChange,
@@ -181,6 +259,9 @@ export function WorkspaceShell({
   const {
   sceneTabs,
   activeTabIndex,
+  splitTabIndex,
+  activeSceneId: editorActiveSceneId,
+  revisionComments: editorRevisionComments,
   renamingTabIndex,
   tabDragIndex,
   tabDropIndex,
@@ -190,6 +271,8 @@ export function WorkspaceShell({
   onRenamingTabIndexChange,
   onTabContextMenuChange,
   onSwitchTab,
+  onSelectSplitTab,
+  onCloseSplitTab,
   onAddTab,
   onRenameTab,
   onTabDrop,
@@ -427,19 +510,31 @@ export function WorkspaceShell({
 
       {workspace === 'editor' && (showEditor
         ? <>
-          <div id="editor-scroll">
-            <div id="editor-wrap">
-              {isTrashPreview && (
-                <div className="trash-preview-banner">
-                  <i className="ti ti-trash" aria-hidden="true" />
-                  This scene is in the trash - read only. Restore it to edit.
+          <div id="editor-split-stack" className={splitTabIndex !== null ? 'has-split' : ''}>
+            <div id="editor-scroll">
+              <div id="editor-wrap">
+                {isTrashPreview && (
+                  <div className="trash-preview-banner">
+                    <i className="ti ti-trash" aria-hidden="true" />
+                    This scene is in the trash - read only. Restore it to edit.
+                  </div>
+                )}
+                <div id="editor-title">{titleValue}</div>
+                <div className="tiptap-wrap">
+                  <EditorContent editor={editor} />
                 </div>
-              )}
-              <div id="editor-title">{titleValue}</div>
-              <div className="tiptap-wrap">
-                <EditorContent editor={editor} />
               </div>
             </div>
+            {splitTabIndex !== null && (
+              <EditorSplitView
+                tabs={sceneTabs}
+                activeSceneId={editorActiveSceneId}
+                splitTabIndex={splitTabIndex}
+                comments={editorRevisionComments}
+                onSelectTab={onSelectSplitTab}
+                onClose={onCloseSplitTab}
+              />
+            )}
           </div>
           {!isNarrow && (
             <StatusBar

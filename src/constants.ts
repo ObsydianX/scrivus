@@ -12,7 +12,7 @@ import type {
   SceneMetadata,
 } from './types'
 
-export const SCRIVUS_VERSION = '0.2.1'
+export const SCRIVUS_VERSION = '0.2.2'
 export const PROJECT_FORMAT_VERSION = 1
 
 export const DEFAULT_BACKUP_SETTINGS: BackupSettings = {
@@ -199,7 +199,8 @@ export function normalizeAtlas(data?: Partial<Atlas> | null): Atlas {
 
 export const COMPILE_STYLE_PRESETS = [
   'Standard Manuscript',
-]
+  'Proof Copy',
+] as const
 
 export const LOREM_PREVIEW = `Lorem ipsum odor amet, consectetuer adipiscing elit. Rutrum quisque himenaeos volutpat dui faucibus ridiculus. Mus semper auctor nibh; mollis taciti natoque congue. Dis aliquam hendrerit ullamcorper accumsan fringilla. Pharetra dapibus consequat fringilla senectus porta. Tortor nisi quisque class fermentum amet tortor faucibus. Nascetur mi aptent facilisi; augue duis praesent condimentum lacinia. Vitae conubia blandit scelerisque nisi consequat proin feugiat netus eros.
 

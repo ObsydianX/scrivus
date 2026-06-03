@@ -7,13 +7,21 @@ function getFolderRole(node: TreeNode) {
 export function TabContextMenu({
   menu,
   canDelete,
+  canOpenSplit,
+  splitOpen,
   onRename,
   onDelete,
+  onOpenSplit,
+  onCloseSplit,
 }: {
   menu: { x: number; y: number; index: number } | null
   canDelete: boolean
+  canOpenSplit: boolean
+  splitOpen: boolean
   onRename: (index: number) => void
   onDelete: (index: number) => void
+  onOpenSplit: (index: number) => void
+  onCloseSplit: () => void
 }) {
   if (!menu) return null
 
@@ -36,6 +44,16 @@ export function TabContextMenu({
       <button className="ctx-menu-item" onClick={() => onRename(menu.index)}>
         <i className="ti ti-pencil" /> Rename
       </button>
+      {canOpenSplit && (
+        <button className="ctx-menu-item" onClick={() => onOpenSplit(menu.index)}>
+          <i className="ti ti-layout-bottombar" /> Open in Split View
+        </button>
+      )}
+      {splitOpen && (
+        <button className="ctx-menu-item" onClick={onCloseSplit}>
+          <i className="ti ti-layout-bottombar-collapse" /> Close Split View
+        </button>
+      )}
       <div style={{ height: 1, background: '#3c3c3c', margin: '4px 0' }} />
       <button
         className="ctx-menu-item"

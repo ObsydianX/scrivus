@@ -4,7 +4,7 @@ import type { CompileChapterEntry, CompileSceneEntry, DocNode, FolderNode, TreeN
 
 type CompileNode =
   | { type: 'heading'; label: string; role: 'act' | 'chapter'; depth: number }
-  | { type: 'body'; html: string }
+  | { type: 'body'; label: string; html: string }
 
 type CompileSelectionOptions = {
   includeActHeadings?: boolean
@@ -116,7 +116,7 @@ export async function collectCompileNodesFromSelection(
         ? tabs[tabs.length - 1]
         : (tabs.find(t => t.name === scene.selectedTab) ?? tabs[tabs.length - 1])
       const html = tab?.content ?? ''
-      if (html.trim()) result.push({ type: 'body', html })
+      if (html.trim()) result.push({ type: 'body', label: scene.label, html })
     }
   }
 

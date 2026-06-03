@@ -3,6 +3,10 @@ import type { SceneTab } from './types'
 const TAB_DELIMITER = (name: string) => `<!--TAB:${name}-->`
 const DELETED_DELIMITER = (name: string, ts: number) => `<!--DELETED:${name}:${ts}-->`
 
+function formatSceneHtmlForStorage(html: string): string {
+  return html.replace(/<\/p>\s*(<p(?:\s|>))/g, '</p>\n\n$1')
+}
+
 export function parseSceneTabs(raw: string): SceneTab[] {
   if (!raw.trim()) return [{ name: 'First Draft', content: '' }]
   const lines = raw.split('\n')
@@ -80,7 +84,7 @@ export function extractDeletedBlocks(raw: string): string {
 
 export function serializeSceneTabs(tabs: SceneTab[], raw: string): string {
   const activePart = tabs
-    .map(t => `${TAB_DELIMITER(t.name)}\n${t.content}`)
+    .map(t => `${TAB_DELIMITER(t.name)}\n${formatSceneHtmlForStorage(t.content)}`)
     .join('\n')
   const deletedPart = extractDeletedBlocks(raw)
   return activePart + deletedPart
@@ -90,9 +94,9 @@ export function softDeleteTab(tabs: SceneTab[], tabIndex: number, raw: string): 
   const tab = tabs[tabIndex]
   const remaining = tabs.filter((_, i) => i !== tabIndex)
   const activePart = remaining
-    .map(t => `${TAB_DELIMITER(t.name)}\n${t.content}`)
+    .map(t => `${TAB_DELIMITER(t.name)}\n${formatSceneHtmlForStorage(t.content)}`)
     .join('\n')
   const existingDeleted = extractDeletedBlocks(raw)
-  const newDeleted = `\n${DELETED_DELIMITER(tab.name, Date.now())}\n${tab.content}`
+  const newDeleted = `\n${DELETED_DELIMITER(tab.name, Date.now())}\n${formatSceneHtmlForStorage(tab.content)}`
   return activePart + existingDeleted + newDeleted
 }

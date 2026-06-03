@@ -42,7 +42,7 @@ type RevisionCommentsPaneProps = {
   onDeleteCommentRequest: (id: string) => void
 }
 
-function getActiveComments(
+export function getActiveComments(
   comments: RevisionComment[],
   activeId: number | null,
   activeTabIndex: number,
@@ -55,6 +55,73 @@ function getActiveComments(
       if (a.resolved !== b.resolved) return a.resolved ? 1 : -1
       return a.createdAt - b.createdAt
     })
+}
+
+export function renderRevisionAnnotatedHtml(
+  html: string,
+  activeComments: RevisionComment[],
+  activeCommentId: string | null = null,
+): string {
+  let result = html
+
+  activeComments.forEach(c => {
+    const isResolved = c.resolved
+    const isActive = activeCommentId === c.id
+
+    const cls = [
+      'revision-highlight',
+      isActive ? 'revision-highlight--active' : '',
+      isResolved ? 'revision-highlight--resolved' : '',
+    ].filter(Boolean).join(' ')
+
+    const safeId = escapeAttr(c.id)
+    const startTag = `<x-comment-start data-id="${safeId}"></x-comment-start>`
+    const endTag = `<x-comment-end data-id="${safeId}"></x-comment-end>`
+
+    const startIndex = result.indexOf(startTag)
+    const endIndex = result.indexOf(endTag)
+
+    if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) return
+
+    const beforeStart = result.slice(0, startIndex)
+    const afterStart = result.slice(startIndex + startTag.length)
+    const middle = afterStart.slice(0, afterStart.indexOf(endTag))
+    const afterEnd = afterStart.slice(afterStart.indexOf(endTag) + endTag.length)
+
+    const wrap = (wrappedContent: string) =>
+      `<mark class="${cls}" data-comment-id="${safeId}">${wrappedContent}</mark>`
+
+    const segments = middle.split(/(?=<p[^>]*>)|(?<=<\/p>)/)
+
+    const wrappedMiddle = segments.map(segment => {
+      if (!segment) return segment
+
+      if (segment.match(/^<p[^>]*>/)) {
+        return segment
+          .replace(
+            /^(<p[^>]*>)([\s\S]*)(<\/p>)$/,
+            (_match, open, segmentContent, close) => `${open}${wrap(segmentContent)}${close}`
+          )
+          .replace(
+            /^(<p[^>]*>)([\s\S]*)$/,
+            (_match, open, segmentContent) => `${open}${wrap(segmentContent)}`
+          )
+      }
+
+      return segment.replace(
+        /^([\s\S]*?)(<\/p>)$/,
+        (_match, segmentContent, close) => `${wrap(segmentContent)}${close}`
+      )
+    }).join('')
+
+    const finalMiddle = wrappedMiddle === middle
+      ? wrap(middle)
+      : wrappedMiddle
+
+    result = beforeStart + finalMiddle + afterEnd
+  })
+
+  return result
 }
 
 export function RevisionView({
@@ -71,69 +138,6 @@ export function RevisionView({
   onSwitchTab,
 }: RevisionViewProps) {
   const activeComments = getActiveComments(comments, activeId, activeTabIndex, tabs)
-
-  const renderAnnotatedHtml = (html: string): string => {
-    let result = html
-
-    activeComments.forEach(c => {
-      const isResolved = c.resolved
-      const isActive = activeCommentId === c.id
-
-      const cls = [
-        'revision-highlight',
-        isActive ? 'revision-highlight--active' : '',
-        isResolved ? 'revision-highlight--resolved' : '',
-      ].filter(Boolean).join(' ')
-
-      const safeId = escapeAttr(c.id)
-      const startTag = `<x-comment-start data-id="${safeId}"></x-comment-start>`
-      const endTag = `<x-comment-end data-id="${safeId}"></x-comment-end>`
-
-      const startIndex = result.indexOf(startTag)
-      const endIndex = result.indexOf(endTag)
-
-      if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) return
-
-      const beforeStart = result.slice(0, startIndex)
-      const afterStart = result.slice(startIndex + startTag.length)
-      const middle = afterStart.slice(0, afterStart.indexOf(endTag))
-      const afterEnd = afterStart.slice(afterStart.indexOf(endTag) + endTag.length)
-
-      const wrap = (wrappedContent: string) =>
-        `<mark class="${cls}" data-comment-id="${safeId}">${wrappedContent}</mark>`
-
-      const segments = middle.split(/(?=<p[^>]*>)|(?<=<\/p>)/)
-
-      const wrappedMiddle = segments.map(segment => {
-        if (!segment) return segment
-
-        if (segment.match(/^<p[^>]*>/)) {
-          return segment
-            .replace(
-              /^(<p[^>]*>)([\s\S]*)(<\/p>)$/,
-              (_match, open, segmentContent, close) => `${open}${wrap(segmentContent)}${close}`
-            )
-            .replace(
-              /^(<p[^>]*>)([\s\S]*)$/,
-              (_match, open, segmentContent) => `${open}${wrap(segmentContent)}`
-            )
-        }
-
-        return segment.replace(
-          /^([\s\S]*?)(<\/p>)$/,
-          (_match, segmentContent, close) => `${wrap(segmentContent)}${close}`
-        )
-      }).join('')
-
-      const finalMiddle = wrappedMiddle === middle
-        ? wrap(middle)
-        : wrappedMiddle
-
-      result = beforeStart + finalMiddle + afterEnd
-    })
-
-    return result
-  }
 
   if (!activeId) {
     return (
@@ -166,7 +170,7 @@ export function RevisionView({
             <div id="revision-title">{title}</div>
             <div
               id="revision-body"
-              dangerouslySetInnerHTML={{ __html: renderAnnotatedHtml(content) }}
+              dangerouslySetInnerHTML={{ __html: renderRevisionAnnotatedHtml(content, activeComments, activeCommentId) }}
               onClick={e => {
                 const target = e.target as HTMLElement
                 const mark = target.closest('[data-comment-id]') as HTMLElement | null

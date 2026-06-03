@@ -93,7 +93,7 @@ import {
   normalizeProjectStyles,
 } from './constants'
 import { allocateNextId, getNextIdValue, setNextIdValue } from './idCounter'
-import { createProjectOnDisk, projectPackageFolderName, readProjectJson } from './projectFiles'
+import { createImportedProjectOnDisk, createProjectOnDisk, projectPackageFolderName, readProjectJson } from './projectFiles'
 import { migrateProjectData } from './projectMigrations'
 import { searchProject, type SearchResult } from './search'
 import { parseSceneTabs, serializeSceneTabs, softDeleteTab } from './sceneTabs'
@@ -127,6 +127,7 @@ import {
   writeRevisionFile,
   writeSceneFile,
 } from './storage'
+import { parseWordDocxProject } from './wordImport'
 import {
   emptyTrashFolder,
   loadTrashItems,
@@ -208,6 +209,7 @@ export default function App() {
   const [showNewProject, setShowNewProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectParent, setNewProjectParent] = useState('')
+  const [importDocxPath, setImportDocxPath] = useState<string | null>(null)
   const [recentProjects, setRecentProjects] = useState<{ name: string; path: string }[]>([])
   const [startupLoaded, setStartupLoaded] = useState(false)
   const [fileMenuOpen, setFileMenuOpen] = useState(false)
@@ -222,6 +224,8 @@ export default function App() {
   const [showAbout, setShowAbout] = useState(false)
   const [showPreferences, setShowPreferences] = useState(false)
   const [projectRecovery, setProjectRecovery] = useState<{ name: string; path: string; details: string } | null>(null)
+  const [openingProject, setOpeningProject] = useState(false)
+  const [creatingProject, setCreatingProject] = useState(false)
 
   // ── Editor stats and trash state ──
   const [wordCount, setWordCount] = useState(0)
@@ -347,6 +351,8 @@ export default function App() {
   const tabDragIndexRef = useRef<number | null>(null)
   const [tabContextMenu, setTabContextMenu] = useState<{ x: number; y: number; index: number } | null>(null)
   const [confirmDeleteTab, setConfirmDeleteTab] = useState<number | null>(null)
+  const [editorSplitTabIndex, setEditorSplitTabIndex] = useState<number | null>(null)
+  const editorSplitTabBySceneRef = useRef<Record<number, number | null>>({})
   
 
   // ── Lore Book state ──
@@ -369,7 +375,7 @@ export default function App() {
   const [compileChapters, setCompileChapters] = useState<CompileChapterEntry[]>([])
   const [compileLoading, setCompileLoading] = useState(false)
   const [compileFormat] = useState<'docx'>('docx')
-  const compileStyle = COMPILE_STYLE_PRESETS[0]
+  const [compileStyle, setCompileStyle] = useState<typeof COMPILE_STYLE_PRESETS[number]>(COMPILE_STYLE_PRESETS[0])
 
   // ── Revision workspace state ──
   const [revisionComments, setRevisionComments] = useState<RevisionComment[]>([])
@@ -426,6 +432,7 @@ export default function App() {
     compile: {
       frontMatter: false,
       includeActHeadings: true,
+      includeSceneTitles: false,
     },
     window: {
       fullscreen: false,
@@ -466,6 +473,7 @@ export default function App() {
   const initialSettings = loadSettings()
   const [compileFrontMatter, setCompileFrontMatter] = useState(() => initialSettings.compile.frontMatter)
   const [compileIncludeActHeadings, setCompileIncludeActHeadings] = useState(() => initialSettings.compile.includeActHeadings)
+  const [compileIncludeSceneTitles, setCompileIncludeSceneTitles] = useState(() => initialSettings.compile.includeSceneTitles)
   const [zoom, setZoom] = useState(() => initialSettings.zoom);
   const [appTheme, setAppTheme] = useState<ThemeId>(() => initialSettings.theme);
   const [previewTheme, setPreviewTheme] = useState<ThemeId | null>(null)
@@ -921,9 +929,10 @@ export default function App() {
       compile: {
         frontMatter: compileFrontMatter,
         includeActHeadings: compileIncludeActHeadings,
+        includeSceneTitles: compileIncludeSceneTitles,
       },
     })
-  }, [compileFrontMatter, compileIncludeActHeadings])
+  }, [compileFrontMatter, compileIncludeActHeadings, compileIncludeSceneTitles])
 
   useEffect(() => {
     if (!isTauri()) return
@@ -1145,8 +1154,18 @@ export default function App() {
         rememberedIndex !== undefined && rememberedIndex >= 0 && rememberedIndex < tabs.length
           ? rememberedIndex
           : tabs.length - 1
+      const rememberedSplitIndex = editorSplitTabBySceneRef.current[id]
+      const safeSplitIndex =
+        rememberedSplitIndex !== null &&
+          rememberedSplitIndex !== undefined &&
+          rememberedSplitIndex >= 0 &&
+          rememberedSplitIndex < tabs.length &&
+          rememberedSplitIndex !== safeIndex
+          ? rememberedSplitIndex
+          : null
 
       setActiveTabIndex(safeIndex)
+      setEditorSplitTabIndex(safeSplitIndex)
 
       const content = tabs[safeIndex]?.content ?? ''
       bodyHtmlRef.current = content
@@ -1413,9 +1432,39 @@ export default function App() {
 
   // #region === HANDLERS: SCENE TABS ===
 
+  const rememberEditorSplitTab = (index: number | null) => {
+    setEditorSplitTabIndex(index)
+    if (activeIdRef.current !== null) {
+      editorSplitTabBySceneRef.current[activeIdRef.current] = index
+    }
+  }
+
+  const openEditorSplitTab = (index: number) => {
+    if (index < 0 || index >= sceneTabsRef.current.length || index === activeTabIndexRef.current) return
+    rememberEditorSplitTab(index)
+    setTabContextMenu(null)
+  }
+
+  const closeEditorSplitTab = () => {
+    rememberEditorSplitTab(null)
+    setTabContextMenu(null)
+  }
+
+  const selectEditorSplitTab = (index: number) => {
+    if (index < 0 || index >= sceneTabsRef.current.length) return
+    if (index === editorSplitTabIndex) return
+    if (index === activeTabIndexRef.current) {
+      if (editorSplitTabIndex !== null) switchTab(editorSplitTabIndex)
+      return
+    }
+    rememberEditorSplitTab(index)
+  }
+
   // Switches to a tab, saving current tab content first.
   const switchTab = (index: number) => {
     if (index === activeTabIndex) return
+    const previousActiveIndex = activeTabIndex
+    const nextSplitIndex = index === editorSplitTabIndex ? previousActiveIndex : editorSplitTabIndex
     // Save current tab content into ref
     const cleanHtml = bodyHtmlRef.current.replace(/<mark data-fnr="" class="fnr-highlight">(.*?)<\/mark>/g, '$1')
     const updatedTabs = sceneTabsRef.current.map((t, i) =>
@@ -1437,6 +1486,9 @@ export default function App() {
     setActiveTabIndex(index)
     if (activeIdRef.current !== null) {
       sceneActiveTabRef.current[activeIdRef.current] = index
+    }
+    if (nextSplitIndex !== editorSplitTabIndex) {
+      rememberEditorSplitTab(nextSplitIndex)
     }
     const content = updatedTabs[index]?.content ?? ''
     bodyHtmlRef.current = content
@@ -1504,6 +1556,15 @@ export default function App() {
     sceneTabsRef.current = newTabs
     setSceneTabs(newTabs)
     const newIndex = Math.min(activeTabIndex, newTabs.length - 1)
+    let nextSplitIndex = editorSplitTabIndex === null ? null
+      : editorSplitTabIndex === index ? null
+        : editorSplitTabIndex > index ? editorSplitTabIndex - 1
+          : editorSplitTabIndex
+    if (nextSplitIndex === null || nextSplitIndex === newIndex) {
+      const fallbackIndex = newTabs.findIndex((_, i) => i !== newIndex)
+      nextSplitIndex = fallbackIndex >= 0 ? fallbackIndex : null
+    }
+    rememberEditorSplitTab(nextSplitIndex)
     setActiveTabIndex(newIndex)
     const content = newTabs[newIndex]?.content ?? ''
     bodyHtmlRef.current = content
@@ -1531,14 +1592,17 @@ export default function App() {
     const savedTabs = sceneTabsRef.current.map((t, i) =>
       i === activeTabIndex ? { ...t, content: cleanHtml } : t
     )
+    const splitTab = editorSplitTabIndex !== null ? savedTabs[editorSplitTabIndex] : null
     const reordered = [...savedTabs]
     const [moved] = reordered.splice(dragIndex, 1)
     reordered.splice(targetIndex, 0, moved)
     // Track where the active tab ended up
     const newActiveIndex = reordered.findIndex(t => t === savedTabs[activeTabIndex])
+    const newSplitIndex = splitTab ? reordered.findIndex(t => t === splitTab) : null
     sceneTabsRef.current = reordered
     setSceneTabs(reordered)
     setActiveTabIndex(newActiveIndex)
+    rememberEditorSplitTab(newSplitIndex !== null && newSplitIndex >= 0 && newSplitIndex !== newActiveIndex ? newSplitIndex : null)
     setTabDragIndex(null)
     setTabDropIndex(null)
     tabDragIndexRef.current = null
@@ -1556,20 +1620,67 @@ export default function App() {
 
   // #region === HANDLERS: REVISION ===
 
+  const getRevisionActiveComments = () => {
+    const legacyCommentTabIndex = Math.max(revisionTabs.length - 1, 0)
+    return revisionCommentsRef.current.filter(c =>
+      c.sceneId === revisionActiveId &&
+      (c.tabIndex ?? legacyCommentTabIndex) === revisionActiveTabIndex
+    )
+  }
+
+  const rangeIntersectsCommentHighlight = (range: Range, root: HTMLElement) => {
+    const startElement = range.startContainer instanceof HTMLElement
+      ? range.startContainer
+      : range.startContainer.parentElement
+    const endElement = range.endContainer instanceof HTMLElement
+      ? range.endContainer
+      : range.endContainer.parentElement
+
+    if (startElement?.closest('[data-comment-id]') || endElement?.closest('[data-comment-id]')) return true
+
+    const marks = Array.from(root.querySelectorAll('[data-comment-id]'))
+    return marks.some(mark => {
+      try {
+        return range.intersectsNode(mark)
+      } catch {
+        return false
+      }
+    })
+  }
+
+  const commentOffsetsOverlap = (startOffset: number, endOffset: number) =>
+    getRevisionActiveComments().some(comment =>
+      startOffset < comment.endOffset && endOffset > comment.startOffset
+    )
+
   const handleTextSelect = () => {
     const sel = window.getSelection()
     if (!sel || sel.isCollapsed || !sel.toString().trim()) return
+    if (revisionPendingComment) return
     const quote = sel.toString().trim()
     const range = sel.getRangeAt(0).cloneRange()
     if (range.collapsed) return
     const revisionBody = document.getElementById('revision-body')
     if (!revisionBody || !revisionBody.contains(range.commonAncestorContainer)) return
+    if (rangeIntersectsCommentHighlight(range, revisionBody)) {
+      const element = range.startContainer instanceof HTMLElement
+        ? range.startContainer
+        : range.startContainer.parentElement
+      const existingId = element?.closest('[data-comment-id]')?.getAttribute('data-comment-id')
+      if (existingId) setRevisionActiveCommentId(existingId)
+      window.getSelection()?.removeAllRanges()
+      return
+    }
 
     const preSelectionRange = range.cloneRange()
     preSelectionRange.selectNodeContents(revisionBody)
     preSelectionRange.setEnd(range.startContainer, range.startOffset)
     const startOffset = preSelectionRange.toString().length
     const endOffset = startOffset + range.toString().length
+    if (commentOffsetsOverlap(startOffset, endOffset)) {
+      window.getSelection()?.removeAllRanges()
+      return
+    }
 
     const tempId = 'pending'
     const endMarker = document.createElement('x-comment-end')
@@ -1746,6 +1857,17 @@ export default function App() {
           .replace(new RegExp(`<x-comment-start data-id="${id}"></x-comment-start>`, 'g'), '')
           .replace(new RegExp(`<x-comment-end data-id="${id}"></x-comment-end>`, 'g'), '')
         await writeSceneFile(projectRef.current.path, node.file, stripped)
+        if (comment.sceneId === activeIdRef.current) {
+          const tabs = parseSceneTabs(stripped)
+          sceneTabsRef.current = tabs
+          setSceneTabs(tabs)
+          const safeEditorIndex = Math.min(activeTabIndexRef.current, Math.max(tabs.length - 1, 0))
+          if (safeEditorIndex !== activeTabIndexRef.current) setActiveTabIndex(safeEditorIndex)
+          const content = tabs[safeEditorIndex]?.content ?? ''
+          bodyHtmlRef.current = content
+          editor?.commands.setContent(content, { emitUpdate: false })
+          rawFileRef.current = stripped
+        }
         if (comment.sceneId === revisionActiveId) {
           const tabs = parseSceneTabs(stripped)
           const safeIndex = Math.min(revisionActiveTabIndex, Math.max(tabs.length - 1, 0))
@@ -2202,21 +2324,31 @@ export default function App() {
   const openCompileModal = async () => {
     if (!project) return
     setFileMenuOpen(false)
-    await runProjectBackup('compile')
     setCompileLoading(true)
+    setCompileChapters([])
     setShowCompile(true)
-    const chapters = await buildCompileChapters(tree, project.path)
-    // Restore saved tab selections, defaulting to '__last__'
-    const selections = projectRef.current?.compileSelections ?? {}
-    const restored = chapters.map(ch => ({
-      ...ch,
-      scenes: ch.scenes.map(s => ({
-        ...s,
-        selectedTab: selections[s.fileId] ?? '__last__',
-      })),
-    }))
-    setCompileChapters(restored)
-    setCompileLoading(false)
+
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+
+    try {
+      await runProjectBackup('compile')
+      const chapters = await buildCompileChapters(tree, project.path)
+      // Restore saved tab selections, defaulting to '__last__'
+      const selections = projectRef.current?.compileSelections ?? {}
+      const restored = chapters.map(ch => ({
+        ...ch,
+        scenes: ch.scenes.map(s => ({
+          ...s,
+          selectedTab: selections[s.fileId] ?? '__last__',
+        })),
+      }))
+      setCompileChapters(restored)
+    } catch (e) {
+      setShowCompile(false)
+      showMessage('Failed to prepare compile screen: ' + String(e), 'Compile Failed', 'error')
+    } finally {
+      setCompileLoading(false)
+    }
   }
 
   const updateCompileSelection = (fileId: string, value: string) => {
@@ -2239,10 +2371,16 @@ export default function App() {
     underline?: boolean
   }
 
+  const isProofCompileStyle = () => compileStyle === 'Proof Copy'
+  const compileBodyFont = () => isProofCompileStyle() ? 'Courier New' : styles.body.font
+  const compileChapterFont = () => isProofCompileStyle() ? 'Courier New' : styles.chapter.font
+  const compileBodySize = () => isProofCompileStyle() ? 12 : styles.body.size
+  const compileChapterSize = () => isProofCompileStyle() ? 12 : styles.chapter.size
+
   const createCompileRun = (text: string, marks: CompileMarks) => new TextRun({
     text,
-    font: styles.body.font,
-    size: styles.body.size * 2,
+    font: compileBodyFont(),
+    size: compileBodySize() * 2,
     bold: marks.bold,
     italics: marks.italics,
     underline: marks.underline ? {} : undefined,
@@ -2286,15 +2424,39 @@ export default function App() {
   const bodyParagraphOptions = () => ({
     spacing: {
       after: 0,
-      line: styles.body.lineSpacing * 240,
+      line: (isProofCompileStyle() ? 2 : styles.body.lineSpacing) * 240,
       lineRule: 'auto' as const,
     },
-    alignment: styles.body.justification === 'both' ? AlignmentType.JUSTIFIED
+    alignment: isProofCompileStyle() ? AlignmentType.JUSTIFIED : styles.body.justification === 'both' ? AlignmentType.JUSTIFIED
       : styles.body.justification === 'center' ? AlignmentType.CENTER
         : styles.body.justification === 'right' ? AlignmentType.RIGHT
           : AlignmentType.LEFT,
-    indent: styles.body.firstLineIndent ? { firstLine: 720 } : undefined,
+    indent: isProofCompileStyle() ? { firstLine: 720 } : styles.body.firstLineIndent ? { firstLine: 720 } : undefined,
   })
+
+  const createCompileHeadingParagraph = (label: string, kind: 'folder' | 'scene', pageBreakBefore = false) => {
+    if (isProofCompileStyle()) {
+      const marker = kind === 'folder' ? '##' : '#'
+      return new Paragraph({
+        pageBreakBefore,
+        children: [new TextRun({
+          text: `${marker} ${label.toUpperCase()} ${marker}`,
+          font: 'Courier New',
+          size: 12 * 2,
+          bold: true,
+        })],
+        alignment: AlignmentType.CENTER,
+        spacing: { before: kind === 'folder' ? 400 : 240, after: 200 },
+      })
+    }
+
+    return new Paragraph({
+      pageBreakBefore,
+      text: label,
+      heading: kind === 'scene' ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_1,
+      spacing: { before: kind === 'scene' ? 240 : 400, after: 200 },
+    })
+  }
 
   const compileHtmlToParagraphs = (html: string): Paragraph[] => {
     const root = document.createElement('div')
@@ -2386,7 +2548,7 @@ export default function App() {
           children: [
             new TextRun({
               text: coverTitle.toUpperCase(),
-              font: styles.chapter.font,
+              font: compileChapterFont(),
               size: 32 * 2,
               bold: true,
             }),
@@ -2402,7 +2564,7 @@ export default function App() {
             children: [
               new TextRun({
                 text: coverSubtitle.toUpperCase(),
-                font: styles.body.font,
+                font: compileBodyFont(),
                 size: 12 * 2,
               }),
             ],
@@ -2418,7 +2580,7 @@ export default function App() {
             ...(coverAuthor
               ? [new TextRun({
                 text: coverAuthor.toUpperCase(),
-                font: styles.body.font,
+                font: compileBodyFont(),
                 size: 14 * 2,
               })]
               : []),
@@ -2434,18 +2596,13 @@ export default function App() {
     let firstHeading = true
     for (const node of nodes) {
       if (node.type === 'heading') {
-        if (!firstHeading) {
-          paragraphs.push(new Paragraph({ children: [], pageBreakBefore: true }))
-        }
+        const pageBreakBefore = !firstHeading
         firstHeading = false
-        paragraphs.push(
-          new Paragraph({
-            text: node.label,
-            heading: HeadingLevel.HEADING_1,
-            spacing: { before: 400, after: 200 },
-          })
-        )
+        paragraphs.push(createCompileHeadingParagraph(node.label, 'folder', pageBreakBefore))
       } else {
+        if (compileIncludeSceneTitles) {
+          paragraphs.push(createCompileHeadingParagraph(node.label, 'scene'))
+        }
         paragraphs.push(...compileHtmlToParagraphs(node.html))
       }
     }
@@ -2458,10 +2615,24 @@ export default function App() {
             name: 'Heading 1',
             basedOn: 'Normal',
             run: {
-              font: styles.chapter.font,
-              size: styles.chapter.size * 2,
-              bold: styles.chapter.bold,
-              italics: styles.chapter.italic,
+              font: compileChapterFont(),
+              size: compileChapterSize() * 2,
+              bold: isProofCompileStyle() ? true : styles.chapter.bold,
+              italics: isProofCompileStyle() ? false : styles.chapter.italic,
+            },
+          },
+          {
+            id: 'Heading2',
+            name: 'Heading 2',
+            basedOn: 'Normal',
+            run: {
+              font: compileChapterFont(),
+              size: compileChapterSize() * 2,
+              bold: isProofCompileStyle() ? true : styles.chapter.bold,
+              italics: isProofCompileStyle() ? false : styles.chapter.italic,
+            },
+            paragraph: {
+              spacing: { before: 240, after: 200 },
             },
           },
         ],
@@ -2508,9 +2679,41 @@ export default function App() {
     setNewProjectParent(selectedPath as string)
   }
 
+  const projectNameFromImportPath = (path: string) => {
+    const filename = path.split(/[\\/]/).pop() ?? ''
+    return filename.replace(/\.docx$/i, '').trim() || 'Imported Project'
+  }
+
+  const startNewProject = () => {
+    setImportDocxPath(null)
+    setNewProjectName('')
+    setNewProjectParent('')
+    setShowNewProject(true)
+  }
+
+  const startImportWordDoc = async () => {
+    const selectedPath = await open({
+      title: 'Import Word Document',
+      filters: [{ name: 'Word Document', extensions: ['docx'] }],
+    })
+    if (!selectedPath || Array.isArray(selectedPath)) return
+    setImportDocxPath(selectedPath)
+    setNewProjectName(projectNameFromImportPath(selectedPath))
+    setShowNewProject(true)
+  }
+
+  const closeNewProjectModal = () => {
+    setShowNewProject(false)
+    setNewProjectName('')
+    setNewProjectParent('')
+    setImportDocxPath(null)
+  }
+
   // Creates a new project folder, default tree, and project.json.
   const createProject = async () => {
+    if (creatingProject) return
     if (!newProjectName.trim() || !newProjectParent) return
+    let restoreNextId: number | null = null
     try {
       const packageName = projectPackageFolderName(newProjectName)
       const projectPath = await join(newProjectParent, packageName)
@@ -2523,21 +2726,43 @@ export default function App() {
         return
       }
 
-      closeProject()
-      setNextIdValue(10)
-      const chapterId = allocateNextId()
-      const sceneId = allocateNextId()
-      const defaultFileId = generateFileId()
-      const { defaultStyles } = await loadRecentData()
+      setCreatingProject(true)
+      await waitForUiPaint()
 
-      const newProj = await createProjectOnDisk({
-        parentPath: newProjectParent,
-        name: newProjectName.trim(),
-        chapterId,
-        sceneId,
-        sceneFileId: defaultFileId,
-        styles: defaultStyles,
-      })
+      const { defaultStyles } = await loadRecentData()
+      let firstSceneId: number
+      let newProj: Project
+
+      if (importDocxPath) {
+        restoreNextId = getNextIdValue()
+        setNextIdValue(10)
+        const imported = await parseWordDocxProject(importDocxPath, allocateNextId, generateFileId)
+        restoreNextId = null
+        closeProject()
+        firstSceneId = imported.firstSceneId
+        newProj = await createImportedProjectOnDisk({
+          parentPath: newProjectParent,
+          name: newProjectName.trim(),
+          tree: imported.tree,
+          sceneFiles: imported.sceneFiles,
+          styles: defaultStyles,
+        })
+      } else {
+        closeProject()
+        setNextIdValue(10)
+        const chapterId = allocateNextId()
+        const sceneId = allocateNextId()
+        const defaultFileId = generateFileId()
+        firstSceneId = sceneId
+        newProj = await createProjectOnDisk({
+          parentPath: newProjectParent,
+          name: newProjectName.trim(),
+          chapterId,
+          sceneId,
+          sceneFileId: defaultFileId,
+          styles: defaultStyles,
+        })
+      }
 
       setNextIdValue(Math.max(getNextIdValue(), 12))
       await addToRecentProjects(newProj.name, newProj.path)
@@ -2559,10 +2784,14 @@ export default function App() {
       setShowNewProject(false)
       setNewProjectName('')
       setNewProjectParent('')
+      setImportDocxPath(null)
       setRecentProjects(await loadRecentProjects())
-      await selectDoc(sceneId)
+      await selectDoc(firstSceneId)
     } catch (e) {
-      showMessage('Failed to create project: ' + String(e), 'Error', 'error')
+      if (restoreNextId !== null) setNextIdValue(restoreNextId)
+      showMessage(`Failed to ${importDocxPath ? 'import document' : 'create project'}: ` + String(e), 'Error', 'error')
+    } finally {
+      setCreatingProject(false)
     }
   }
   // Hydrates project state from project.json and restores the last active scene.
@@ -2676,6 +2905,9 @@ export default function App() {
     return path.split(/[\\/]/).filter(Boolean).pop() ?? 'Project'
   }
 
+  const waitForUiPaint = () =>
+    new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+
   const showProjectRecovery = (path: string, name: string, details: unknown) => {
     setProjectRecovery({
       path,
@@ -2756,6 +2988,26 @@ export default function App() {
     setRecentProjects(await loadRecentProjects())
   }
 
+  const openProjectFromPath = async (path: string, missingMessage: string, missingTitle: string) => {
+    setOpeningProject(true)
+    await waitForUiPaint()
+
+    try {
+      const data = await readProjectJson(path)
+      if (!data) {
+        showMessage(missingMessage, missingTitle, 'warning')
+        return 'missing' as const
+      }
+      return await openLoadedProject(data, path) ? 'opened' as const : 'failed' as const
+    } catch (e) {
+      const recent = recentProjects.find(project => project.path === path)
+      showProjectRecovery(path, recent?.name ?? projectNameFromPath(path), e)
+      return 'failed' as const
+    } finally {
+      setOpeningProject(false)
+    }
+  }
+
   const checkForUpdates = async () => {
     setHelpMenuOpen(false)
     showMessage('Checking GitHub Releases for the latest Scrivus version.', 'Checking for Updates')
@@ -2830,32 +3082,22 @@ export default function App() {
     const selectedPath = await open({ title: 'Open Project', directory: true })
     if (!selectedPath || Array.isArray(selectedPath)) return
     const path = selectedPath as string
-    try {
-      const data = await readProjectJson(path)
-      if (!data) { showMessage('That folder does not contain a Scrivus project.', 'Invalid Project', 'warning'); return }
-      await openLoadedProject(data, path)
-    } catch (e) {
-      showProjectRecovery(path, projectNameFromPath(path), e)
-    }
+    await openProjectFromPath(path, 'That folder does not contain a Scrivus project.', 'Invalid Project')
   }
 
   // Opens a recent project directly from its saved path.
   const openProjectByPath = async (path: string) => {
     clearSaveTimers()
     saveActive()
-    try {
-      const data = await readProjectJson(path)
-      if (!data) {
-        showMessage('That project could not be found. It may have been moved or deleted.', 'Project Not Found', 'warning')
-        const updated = recentProjects.filter(r => r.path !== path)
-        setRecentProjects(updated)
-        await saveRecentProjects(updated)
-        return
-      }
-      await openLoadedProject(data, path)
-    } catch (e) {
-      const recent = recentProjects.find(project => project.path === path)
-      showProjectRecovery(path, recent?.name ?? projectNameFromPath(path), e)
+    const status = await openProjectFromPath(
+      path,
+      'That project could not be found. It may have been moved or deleted.',
+      'Project Not Found',
+    )
+    if (status === 'missing') {
+      const updated = recentProjects.filter(r => r.path !== path)
+      setRecentProjects(updated)
+      await saveRecentProjects(updated)
     }
   }
 
@@ -3566,8 +3808,9 @@ export default function App() {
         setPreviewTheme(null)
         setHelpMenuOpen(v => !v)
       }}
-      onNewProject={() => { setFileMenuOpen(false); setShowNewProject(true) }}
+      onNewProject={() => { setFileMenuOpen(false); startNewProject() }}
       onOpenProject={openProject}
+      onNewProjectFromWordDoc={() => { setFileMenuOpen(false); void startImportWordDoc() }}
       onCloseProject={closeProject}
       onBackupNow={() => { setFileMenuOpen(false); runProjectBackup('manual', true) }}
       onRestoreBackupPicker={openRestoreBackupPicker}
@@ -3697,12 +3940,21 @@ export default function App() {
 
   const SharedModals = () => (
     <>
-      {showNewProject && (
+      {(openingProject || creatingProject) && (
+        <div className="modal-overlay modal-overlay-blocking">
+          <div className="modal-box opening-project-modal">
+            <p className="opening-project-title">
+              {creatingProject ? 'Creating project' : 'Opening project'}<span className="compile-loading-ellipsis" aria-hidden="true">...</span>
+            </p>
+          </div>
+        </div>
+      )}
+      {showNewProject && !creatingProject && (
         <NewProjectModal
           name={newProjectName}
           parent={newProjectParent}
           onNameChange={setNewProjectName}
-          onCancel={() => { setShowNewProject(false); setNewProjectName(''); setNewProjectParent('') }}
+          onCancel={closeNewProjectModal}
           onBrowse={pickParentFolder}
           onCreate={createProject}
         />
@@ -3902,11 +4154,14 @@ export default function App() {
           format={compileFormat}
           frontMatter={compileFrontMatter}
           includeActHeadings={compileIncludeActHeadings}
+          includeSceneTitles={compileIncludeSceneTitles}
           style={compileStyle}
           projectStyles={styles}
           onClose={() => setShowCompile(false)}
+          onStyleChange={setCompileStyle}
           onFrontMatterChange={setCompileFrontMatter}
           onIncludeActHeadingsChange={setCompileIncludeActHeadings}
+          onIncludeSceneTitlesChange={setCompileIncludeSceneTitles}
           onChaptersChange={setCompileChapters}
           onSelectionChange={updateCompileSelection}
           onExport={compileProject}
@@ -3939,13 +4194,20 @@ export default function App() {
 
         <i className="ti ti-feather welcome-icon" aria-hidden="true" />
         <p className="welcome-label">No project open</p>
-        <div className={`welcome-actions${recentProjects.length ? ' welcome-actions-spaced' : ''}`}>
-          <button className="welcome-btn" onClick={() => setShowNewProject(true)}>
-            <i className="ti ti-folder-plus" aria-hidden="true" /> New project
-          </button>
-          <button className="welcome-btn" onClick={openProject}>
-            <i className="ti ti-folder-open" aria-hidden="true" /> Open project
-          </button>
+        <div className={`welcome-action-stack${recentProjects.length ? ' welcome-actions-spaced' : ''}`}>
+          <div className="welcome-actions">
+            <button className="welcome-btn" onClick={startNewProject}>
+              <i className="ti ti-folder-plus" aria-hidden="true" /> New project
+            </button>
+            <button className="welcome-btn" onClick={openProject}>
+              <i className="ti ti-folder-open" aria-hidden="true" /> Open project
+            </button>
+          </div>
+          <div className="welcome-actions welcome-actions-secondary">
+            <button className="welcome-btn" onClick={startImportWordDoc}>
+              <i className="ti ti-file-import" aria-hidden="true" /> Import from Word Doc
+            </button>
+          </div>
         </div>
         {recentProjects.length > 0 && (
           <div className="welcome-recent">
@@ -4102,6 +4364,9 @@ export default function App() {
         tabState={{
           sceneTabs,
           activeTabIndex,
+          splitTabIndex: editorSplitTabIndex,
+          activeSceneId: activeId,
+          revisionComments,
           renamingTabIndex,
           tabDragIndex,
           tabDropIndex,
@@ -4111,6 +4376,8 @@ export default function App() {
           onRenamingTabIndexChange: setRenamingTabIndex,
           onTabContextMenuChange: setTabContextMenu,
           onSwitchTab: switchTab,
+          onSelectSplitTab: selectEditorSplitTab,
+          onCloseSplitTab: closeEditorSplitTab,
           onAddTab: addTab,
           onRenameTab: renameTab,
           onTabDrop: handleTabDrop,
@@ -4255,8 +4522,12 @@ export default function App() {
       <TabContextMenu
         menu={tabContextMenu}
         canDelete={sceneTabs.length > 1}
+        canOpenSplit={Boolean(tabContextMenu && sceneTabs.length > 1 && tabContextMenu.index !== activeTabIndex)}
+        splitOpen={editorSplitTabIndex !== null}
         onRename={handleTabContextRename}
         onDelete={handleTabContextDelete}
+        onOpenSplit={openEditorSplitTab}
+        onCloseSplit={closeEditorSplitTab}
       />
       
       <BinderContextMenu

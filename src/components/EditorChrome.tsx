@@ -37,7 +37,14 @@ export function SceneTabBar({
   onTabDrop: (targetIndex: number) => void
 }) {
   return (
-    <div id="scene-tab-bar">
+    <div
+      id="scene-tab-bar"
+      onContextMenu={e => {
+        if (e.target !== e.currentTarget) return
+        e.preventDefault()
+        onContextMenuChange({ x: e.clientX, y: e.clientY, index: activeIndex })
+      }}
+    >
       {tabs.map((tab, index) => {
         const isActive = index === activeIndex
         const isDragging = dragIndex === index
