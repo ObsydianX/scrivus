@@ -4,9 +4,17 @@ Scrivus is a local-first writing app for drafting, organizing, planning, and com
 
 Projects are stored as `.scrivus` folders on your computer. Your writing stays local, and Scrivus keeps project data in readable project files alongside scene documents and managed assets.
 
+## Videos
+
 [![Watch Scrivus in action](https://img.youtube.com/vi/vYGEWtNUxNw/maxresdefault.jpg)](https://www.youtube.com/watch?v=vYGEWtNUxNw)
 
 Watch a quick overview of what Scrivus can do: [Scrivus video demo](https://www.youtube.com/watch?v=vYGEWtNUxNw).
+
+###
+
+[![See Version 0.2.2 Update Video](https://img.youtube.com/vi/Sr0mo_-H4Sc/maxresdefault.jpg)](https://www.youtube.com/watch?v=Sr0mo_-H4Sc)
+
+Version 0.2.2 Update: [Scrivus video update](https://www.youtube.com/watch?v=Sr0mo_-H4Sc).
 
 ![Scrivus editor workspace](docs/screenshots/editor.png)
 
