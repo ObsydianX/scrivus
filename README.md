@@ -14,6 +14,7 @@ Watch a quick overview of what Scrivus can do: [Scrivus video demo](https://www.
 
 - Draft manuscripts in a focused rich-text editor with formatting controls for prose, lists, block quotes, scene breaks, and underline.
 - Compare drafts in a horizontal split-view reference pane while editing another draft version.
+- Review scenes in a read-only Revision workspace with anchored comments, comment counts, resolved threads, and per-draft review tabs.
 - Organize chapters, scenes, notes, and folders in a binder with drag-and-drop, multi-select actions, trash, restore, and duplicate tools.
 - Track scene metadata including status, POV, location, timeline, tags, and synopsis.
 - Review manuscript structure in the Outline workspace with chapter and scene rows, word counts, and editable scene status.
@@ -36,6 +37,14 @@ The Editor workspace is the main drafting surface. It pairs the binder, scene ta
 When a scene has multiple draft tabs, the Editor can open a read-only split-view reference pane. This lets you edit the active draft while viewing another draft below it, with comment highlights available as hover previews.
 
 ![Editor split-view reference pane](docs/screenshots/split-view.png)
+
+### Revision
+
+Revision provides a dedicated read-only review workspace for scene-level feedback. Select a scene from the binder, switch between that scene's draft tabs, highlight text to add an anchored comment, then resolve, reopen, or delete comments from the comments pane.
+
+Comments are scoped to the active scene and draft tab, so feedback for an earlier draft stays separate from notes on a later revision. Active comments are highlighted in the manuscript view, resolved comments move out of the active count, and the comments pane can collapse when you want more room to read.
+
+![Revision workspace](docs/screenshots/revision.png)
 
 ### Outline
 
