@@ -2,6 +2,10 @@
 
 All notable Scrivus changes are tracked here.
 
+## 0.2.3
+
+- Fixed a scene creation save-order bug that could overwrite the previously active scene's content and draft tabs when creating a new scene and dismissing inline rename.
+
 ## 0.2.2
 
 - Added horizontal split-screen draft reference in the Editor workspace, including read-only reference tabs, per-scene split restoration, tab swapping, and hoverable comment previews in the reference pane.

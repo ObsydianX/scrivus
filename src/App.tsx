@@ -1136,9 +1136,11 @@ export default function App() {
 
   // Opens a scene from the binder and loads its content into TipTap.
   const selectDoc = async (id: number) => {
+    clearSaveTimers()
     saveActive()
     setIsTrashPreview(false)
     setActiveId(id)
+    activeIdRef.current = id
     setSelectedBinderIds(new Set())
     selectedBinderIdsRef.current = new Set()
     setBinderSelectionAnchorId(id)
@@ -1165,6 +1167,7 @@ export default function App() {
           : null
 
       setActiveTabIndex(safeIndex)
+      activeTabIndexRef.current = safeIndex
       setEditorSplitTabIndex(safeSplitIndex)
 
       const content = tabs[safeIndex]?.content ?? ''
@@ -3202,7 +3205,7 @@ export default function App() {
   }
 
   // Adds a new scene to the selected folder, then starts rename mode.
-  const addDoc = (targetFolderId?: number) => {
+  const addDoc = async (targetFolderId?: number) => {
     const id = allocateNextId()
     const fileId = generateFileId()
     const node: DocNode = { id, type: 'doc', label: 'New scene', title: 'New scene', file: fileId, metadata: DEFAULT_SCENE_METADATA }
@@ -3214,15 +3217,11 @@ export default function App() {
     const defaultTabs: SceneTab[] = [{ name: 'First Draft', content: '' }]
     const defaultRaw = serializeSceneTabs(defaultTabs, '')
     if (projectRef.current) {
-      writeSceneFile(projectRef.current.path, fileId, defaultRaw)
-      saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+      await writeSceneFile(projectRef.current.path, fileId, defaultRaw)
+      await saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
     }
-    setSceneTabs(defaultTabs)
-    sceneTabsRef.current = defaultTabs
-    rawFileRef.current = defaultRaw
-    setActiveTabIndex(0)
     setRenamingId(id)
-    selectDoc(id)
+    await selectDoc(id)
   }
 
   const updateMindMap = (nextMap: MindMap) => {
@@ -3709,9 +3708,9 @@ export default function App() {
     setContextMenu(null)
   }
 
-  const handleBinderContextAddScene = (node: TreeNode) => {
+  const handleBinderContextAddScene = async (node: TreeNode) => {
     if (node.type === 'folder') {
-      addDoc(node.id)
+      await addDoc(node.id)
     } else {
       const parent = findParentFolder(treeRef.current, node.id)
       if (parent) {
@@ -3724,15 +3723,14 @@ export default function App() {
         parentNode.children.splice(idx + 1, 0, newDoc)
         setTree(newTree)
         treeRef.current = newTree
+        const defaultTabs: SceneTab[] = [{ name: 'First Draft', content: '' }]
+        const defaultRaw = serializeSceneTabs(defaultTabs, '')
         if (projectRef.current) {
-          writeSceneFile(projectRef.current.path, fileId, '')
-          saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+          await writeSceneFile(projectRef.current.path, fileId, defaultRaw)
+          await saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
         }
         setRenamingId(newId)
-        setActiveId(newId)
-        setTitleValue('New scene')
-        bodyHtmlRef.current = ''
-        editor?.commands.setContent('')
+        await selectDoc(newId)
       }
     }
     setContextMenu(null)
