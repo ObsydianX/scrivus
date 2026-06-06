@@ -115,6 +115,15 @@ Scrivus releases are distributed through GitHub Releases.
 2. Run the installer.
 3. Launch Scrivus and create or open a project.
 
+## macOS
+
+macOS builds are currently unsigned. If macOS reports that Scrivus is damaged, move Scrivus.app to Applications, then run:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Scrivus.app
+open /Applications/Scrivus.app
+```
+
 ## Development
 
 Scrivus is built with Tauri, React, TypeScript, and Vite.
