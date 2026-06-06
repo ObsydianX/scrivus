@@ -2,6 +2,22 @@
 
 All notable Scrivus changes are tracked here.
 
+## 0.2.4
+
+- Added a preference to increment scene, chapter, and act numbers when adding new binder items.
+- Added a duplicate tab option for quickly starting a new revision from an existing scene tab.
+- Added General and Themes tabs to Preferences, with a custom reading speed setting for status bar estimates.
+- Improved the reading speed preference field with digit-only entry and 50-1000 WPM safeguards.
+- Added an editor right-click menu with plaintext paste, select all, and selection formatting tools.
+- Added a bookmark indicator for the last opened scene in the binder and editor title, reopening parent folders to reveal it when loading a project.
+- Collapsed and locked the Binder and Quick Tools panels below 960px wide to prevent cramped editor layouts.
+- Remembered collapsed folders when leaving and returning to the Outline workspace.
+- Counted only each scene's latest revision tab in scene, chapter, manuscript, and Outline word counts.
+- Delayed spellcheck underlines while typing the current word.
+- Persisted the Lore links toolbar setting globally across app launches.
+- Fixed deleting a scene tab opening split view when split view was closed.
+- Fixed duplicated draft tabs showing a garbled title separator while renaming.
+
 ## 0.2.3
 
 - Fixed a scene creation save-order bug that could overwrite the previously active scene's content and draft tabs when creating a new scene and dismissing inline rename.

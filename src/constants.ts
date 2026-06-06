@@ -12,7 +12,7 @@ import type {
   SceneMetadata,
 } from './types'
 
-export const SCRIVUS_VERSION = '0.2.3'
+export const SCRIVUS_VERSION = '0.2.4'
 export const PROJECT_FORMAT_VERSION = 1
 
 export const DEFAULT_BACKUP_SETTINGS: BackupSettings = {

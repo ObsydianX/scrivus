@@ -38,6 +38,7 @@ function InspectorDrawer({
 
 export function InspectorPanel({
   open,
+  panelLockActive,
   workspace,
   project,
   activeSceneId,
@@ -61,6 +62,7 @@ export function InspectorPanel({
   onAddChecklistItem,
 }: {
   open: boolean
+  panelLockActive: boolean
   workspace: 'editor' | 'revision' | 'outline' | 'lorebook' | 'mindmap' | 'atlas'
   project: Project | null
   activeSceneId: number | null
@@ -94,7 +96,11 @@ export function InspectorPanel({
       <div id="inspector-header">
         <div style={{ display: 'flex', flexDirection: open ? 'row' : 'column', gap: 2, alignItems: 'center' }}>
           {!open && (
-            <button title="Expand inspector" onClick={() => onOpenChange(true)}>
+            <button
+              title={panelLockActive ? 'Quick Tools unavailable below 960px' : 'Expand inspector'}
+              onClick={() => onOpenChange(true)}
+              disabled={panelLockActive}
+            >
               <i className="ti ti-chevrons-left" aria-hidden="true" />
             </button>
           )}

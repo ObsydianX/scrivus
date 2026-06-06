@@ -1,5 +1,5 @@
 import { Extension, Mark, Node as TiptapNode } from '@tiptap/core'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { Spellchecker } from './spellcheck'
 
@@ -30,6 +30,8 @@ export const UnderlineMark = Mark.create({
 
 export const spellcheckPluginKey = new PluginKey('spellcheck')
 export const loreLinkPluginKey = new PluginKey('loreLink')
+const SPELLCHECK_TYPING_DELAY_MS = 700
+const SPELLCHECK_WORD_RE = /[A-Za-z]+(?:['\u2019-][A-Za-z]+)*/g
 
 export type LoreLinkMatch = {
   keyword: string
@@ -51,32 +53,87 @@ export const SpellcheckExtension = Extension.create<{
   addProseMirrorPlugins() {
     const getSpellchecker = this.options.getSpellchecker
 
-    const buildDecorations = (doc: Parameters<typeof DecorationSet.create>[0]) => {
+    const getActiveWordRange = (state: EditorState) => {
+      if (!state.selection.empty) return null
+      const cursor = state.selection.from
+      let activeRange: { from: number; to: number } | null = null
+
+      state.doc.descendants((node, pos) => {
+        if (activeRange || !node.isText || !node.text) return
+        const nodeEnd = pos + node.text.length
+        if (cursor < pos || cursor > nodeEnd) return
+
+        for (const match of node.text.matchAll(SPELLCHECK_WORD_RE)) {
+          const index = match.index ?? 0
+          const from = pos + index
+          const to = from + match[0].length
+          if (cursor >= from && cursor <= to) {
+            activeRange = { from, to }
+            return
+          }
+        }
+      })
+
+      return activeRange
+    }
+
+    const rangesOverlap = (a: { from: number; to: number }, b: { from: number; to: number }) =>
+      a.from < b.to && a.to > b.from
+
+    const buildDecorations = (state: EditorState, suppressActiveWord = false) => {
       const spellchecker = getSpellchecker()
       if (!spellchecker) return DecorationSet.empty
 
       const decorations: Decoration[] = []
-      doc.descendants((node, pos) => {
+      const activeWordRange = suppressActiveWord ? getActiveWordRange(state) : null
+      state.doc.descendants((node, pos) => {
         if (!node.isText || !node.text) return
         spellchecker.findMisspellings(node.text, pos).forEach(match => {
+          if (activeWordRange && rangesOverlap(match, activeWordRange)) return
           decorations.push(Decoration.inline(match.from, match.to, {
             class: 'spellcheck-misspelled',
             'data-spellcheck-word': match.word,
           }))
         })
       })
-      return DecorationSet.create(doc, decorations)
+      return DecorationSet.create(state.doc, decorations)
     }
 
     return [
       new Plugin({
         key: spellcheckPluginKey,
         state: {
-          init: (_, state) => buildDecorations(state.doc),
+          init: (_, state) => buildDecorations(state),
           apply: (tr, oldDecorations, _oldState, newState) => {
-            if (!tr.docChanged && !tr.getMeta(spellcheckPluginKey)) return oldDecorations
-            return buildDecorations(newState.doc)
+            const meta = tr.getMeta(spellcheckPluginKey)
+            if (tr.docChanged || tr.selectionSet || meta) return buildDecorations(newState, true)
+            return oldDecorations
           },
+        },
+        view: () => {
+          let refreshTimer: ReturnType<typeof setTimeout> | null = null
+
+          return {
+            update(nextView, previousState) {
+              if (!nextView.state.doc.eq(previousState.doc)) {
+                if (refreshTimer) clearTimeout(refreshTimer)
+                refreshTimer = setTimeout(() => {
+                  refreshTimer = null
+                  if ((nextView as { isDestroyed?: boolean }).isDestroyed) return
+                  nextView.dispatch(nextView.state.tr.setMeta(spellcheckPluginKey, { refresh: true }))
+                }, SPELLCHECK_TYPING_DELAY_MS)
+                return
+              }
+
+              if (!nextView.state.selection.eq(previousState.selection) && refreshTimer) {
+                clearTimeout(refreshTimer)
+                refreshTimer = null
+              }
+            },
+            destroy() {
+              if (refreshTimer) clearTimeout(refreshTimer)
+            },
+          }
         },
         props: {
           decorations(state) {

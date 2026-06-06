@@ -790,8 +790,8 @@ body,
 
 /* Left binder panel containing manuscript/notes/trash tree. */
 #sidebar {
-  width: 220px;
-  min-width: 220px;
+  width: 260px;
+  min-width: 260px;
   display: flex;
   flex-direction: column;
   background: var(--panel-bg);
@@ -835,6 +835,18 @@ body,
 #sidebar-header button:hover {
   background: #3c3c3c;
   color: #d4d4d4;
+}
+
+#sidebar-header button:disabled,
+#inspector-header button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+#sidebar-header button:disabled:hover,
+#inspector-header button:disabled:hover {
+  background: none;
+  color: #858585;
 }
 
 /* Collapsed binder rail */
@@ -1014,9 +1026,29 @@ body,
 /* Truncated item label. */
 .tree-item .item-label {
   flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tree-item .item-label-text {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.binder-bookmark {
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.tree-item.active .binder-bookmark {
+  color: #75beff;
 }
 
 /* Context actions shown only while hovering a row. */
@@ -1528,10 +1560,22 @@ body,
   font-style: var(--editor-chapter-style, normal);
   font-family: var(--editor-chapter-font, Georgia), serif;
   color: #d4d4d4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   width: 100%;
   margin-bottom: 24px;
   user-select: none;
   cursor: default;
+}
+
+.editor-title-bookmark {
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: 0.72em;
 }
 
 #editor-title::placeholder {
@@ -2815,8 +2859,8 @@ mark.fnr-highlight {
    -------------------------------------------------------------------------- */
 
 #inspector {
-  width: 220px;
-  min-width: 220px;
+  width: 260px;
+  min-width: 260px;
   display: flex;
   flex-direction: column;
   background: #252526;
@@ -2869,6 +2913,14 @@ mark.fnr-highlight {
 #inspector-header button:hover {
   background: #3c3c3c;
   color: #d4d4d4;
+}
+
+#inspector-header button:disabled,
+#inspector-header button:disabled:hover {
+  cursor: default;
+  opacity: 0.38;
+  background: none;
+  color: #858585;
 }
 
 #inspector-body {
@@ -3386,6 +3438,17 @@ input[type="checkbox"] {
   color: var(--accent-text);
 }
 
+.ctx-menu-item:disabled {
+  cursor: default;
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+
+.ctx-menu-item:disabled:hover {
+  background: none;
+  color: var(--text-muted);
+}
+
 .ctx-menu-item i {
   font-size: 13px;
   width: 14px;
@@ -3403,6 +3466,35 @@ input[type="checkbox"] {
   color: var(--text-muted);
   font-size: 12px;
   font-style: italic;
+}
+
+.editor-ctx-menu {
+  min-width: 170px;
+}
+
+.editor-ctx-formatbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+}
+
+.editor-ctx-formatbar button {
+  width: 28px;
+  height: 26px;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: #cccccc;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.editor-ctx-formatbar button:hover {
+  background: var(--accent);
+  color: var(--accent-text);
 }
 
 /* #endregion */
@@ -6097,6 +6189,16 @@ body.atlas-dragging * {
 #revision-comments-header button:hover {
   background: var(--border-soft);
   color: var(--text-main);
+}
+
+#sidebar-header button:disabled,
+#sidebar-header button:disabled:hover,
+#inspector-header button:disabled,
+#inspector-header button:disabled:hover {
+  cursor: default;
+  opacity: 0.38;
+  background: none;
+  color: var(--text-muted);
 }
 
 #inspector-header,

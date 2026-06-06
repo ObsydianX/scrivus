@@ -1,5 +1,11 @@
 import type { TreeNode } from '../types'
 
+type EditorContextMenuState = {
+  x: number
+  y: number
+  showFormatting: boolean
+}
+
 function getFolderRole(node: TreeNode) {
   return node.type === 'folder' ? node.role ?? 'chapter' : null
 }
@@ -10,6 +16,7 @@ export function TabContextMenu({
   canOpenSplit,
   splitOpen,
   onRename,
+  onDuplicate,
   onDelete,
   onOpenSplit,
   onCloseSplit,
@@ -19,6 +26,7 @@ export function TabContextMenu({
   canOpenSplit: boolean
   splitOpen: boolean
   onRename: (index: number) => void
+  onDuplicate: (index: number) => void
   onDelete: (index: number) => void
   onOpenSplit: (index: number) => void
   onCloseSplit: () => void
@@ -43,6 +51,9 @@ export function TabContextMenu({
     >
       <button className="ctx-menu-item" onClick={() => onRename(menu.index)}>
         <i className="ti ti-pencil" /> Rename
+      </button>
+      <button className="ctx-menu-item" onClick={() => onDuplicate(menu.index)}>
+        <i className="ti ti-copy" /> Duplicate Tab
       </button>
       {canOpenSplit && (
         <button className="ctx-menu-item" onClick={() => onOpenSplit(menu.index)}>
@@ -206,6 +217,77 @@ export function SpellcheckContextMenu({
       <div className="ctx-menu-sep" />
       <button className="ctx-menu-item" onClick={() => onAddToDictionary(menu.word)}>
         <i className="ti ti-book" aria-hidden="true" /> Add to Project Dictionary
+      </button>
+    </div>
+  )
+}
+
+export function EditorContextMenu({
+  menu,
+  onBold,
+  onItalic,
+  onUnderline,
+  onBulletList,
+  onOrderedList,
+  onBlockQuote,
+  onPastePlainText,
+  onSelectAll,
+}: {
+  menu: EditorContextMenuState | null
+  onBold: () => void
+  onItalic: () => void
+  onUnderline: () => void
+  onBulletList: () => void
+  onOrderedList: () => void
+  onBlockQuote: () => void
+  onPastePlainText: () => void
+  onSelectAll: () => void
+}) {
+  if (!menu) return null
+
+  return (
+    <div
+      className="ctx-menu editor-ctx-menu"
+      style={{ top: menu.y, left: menu.x }}
+      onClick={e => e.stopPropagation()}
+    >
+      {menu.showFormatting && (
+        <>
+          <div className="editor-ctx-formatbar" aria-label="Formatting">
+            <button type="button" title="Bold" onClick={onBold}>
+              <i className="ti ti-bold" aria-hidden="true" />
+            </button>
+            <button type="button" title="Italic" onClick={onItalic}>
+              <i className="ti ti-italic" aria-hidden="true" />
+            </button>
+            <button type="button" title="Underline" onClick={onUnderline}>
+              <i className="ti ti-underline" aria-hidden="true" />
+            </button>
+            <button type="button" title="Bulleted list" onClick={onBulletList}>
+              <i className="ti ti-list" aria-hidden="true" />
+            </button>
+            <button type="button" title="Numbered list" onClick={onOrderedList}>
+              <i className="ti ti-list-numbers" aria-hidden="true" />
+            </button>
+            <button type="button" title="Block quote" onClick={onBlockQuote}>
+              <i className="ti ti-blockquote" aria-hidden="true" />
+            </button>
+          </div>
+          <div className="ctx-menu-sep" />
+        </>
+      )}
+      <button className="ctx-menu-item" disabled>
+        <i className="ti ti-cut" aria-hidden="true" /> Cut
+      </button>
+      <button className="ctx-menu-item" disabled>
+        <i className="ti ti-copy" aria-hidden="true" /> Copy
+      </button>
+      <button className="ctx-menu-item" onClick={onPastePlainText}>
+        <i className="ti ti-clipboard" aria-hidden="true" /> Paste
+      </button>
+      <div className="ctx-menu-sep" />
+      <button className="ctx-menu-item" onClick={onSelectAll}>
+        <i className="ti ti-select-all" aria-hidden="true" /> Select All
       </button>
     </div>
   )

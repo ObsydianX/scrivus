@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import type { OutlineRow, SceneStatus } from '../types'
 
 const STATUS_LABELS: Record<SceneStatus | 'inProgress', string> = {
@@ -16,21 +15,24 @@ function getFolderLabel(row: OutlineRow) {
 export function OutlineView({
   rows,
   manuscriptWordCount,
+  collapsedFolderIds,
+  onCollapsedFolderIdsChange,
   onOpenScene,
   onSceneStatusChange,
 }: {
   rows: OutlineRow[]
   manuscriptWordCount: number
+  collapsedFolderIds: Set<number>
+  onCollapsedFolderIdsChange: (ids: Set<number>) => void
   onOpenScene: (id: number) => void
   onSceneStatusChange: (id: number, status: SceneStatus) => void
 }) {
-  const [collapsedChapterIds, setCollapsedChapterIds] = useState<Set<number>>(new Set())
   const sceneRows = rows.filter(row => row.type === 'scene')
   const folderRows = rows.filter(row => row.type === 'chapter')
   const folderIds = folderRows.map(row => row.id)
   const actCount = folderRows.filter(row => row.role === 'act').length
   const chapterCount = folderRows.filter(row => row.role !== 'act').length
-  const collapsedFolderCount = folderIds.filter(id => collapsedChapterIds.has(id)).length
+  const collapsedFolderCount = folderIds.filter(id => collapsedFolderIds.has(id)).length
   const sceneCount = sceneRows.length
   const visibleRows: OutlineRow[] = []
   let hiddenDepth: number | null = null
@@ -40,22 +42,20 @@ export function OutlineView({
       hiddenDepth = null
     }
     visibleRows.push(row)
-    if (row.type === 'chapter' && collapsedChapterIds.has(row.id)) {
+    if (row.type === 'chapter' && collapsedFolderIds.has(row.id)) {
       hiddenDepth = row.depth
     }
   })
 
   const toggleChapter = (id: number) => {
-    setCollapsedChapterIds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+    const next = new Set(collapsedFolderIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    onCollapsedFolderIdsChange(next)
   }
 
-  const expandAllFolders = () => setCollapsedChapterIds(new Set())
-  const collapseAllFolders = () => setCollapsedChapterIds(new Set(folderIds))
+  const expandAllFolders = () => onCollapsedFolderIdsChange(new Set())
+  const collapseAllFolders = () => onCollapsedFolderIdsChange(new Set(folderIds))
 
   return (
     <div id="outline-view">
@@ -125,11 +125,11 @@ export function OutlineView({
                           <button
                             className="outline-collapse-btn"
                             onClick={() => toggleChapter(row.id)}
-                            title={collapsedChapterIds.has(row.id) ? 'Expand folder' : 'Collapse folder'}
+                            title={collapsedFolderIds.has(row.id) ? 'Expand folder' : 'Collapse folder'}
                           >
-                            <i className={`ti ti-chevron-${collapsedChapterIds.has(row.id) ? 'right' : 'down'}`} aria-hidden="true" />
+                            <i className={`ti ti-chevron-${collapsedFolderIds.has(row.id) ? 'right' : 'down'}`} aria-hidden="true" />
                           </button>
-                          <i className={`ti ti-${row.role === 'act' ? 'books' : collapsedChapterIds.has(row.id) ? 'folder' : 'folder-open'}`} aria-hidden="true" />
+                          <i className={`ti ti-${row.role === 'act' ? 'books' : collapsedFolderIds.has(row.id) ? 'folder' : 'folder-open'}`} aria-hidden="true" />
                           <span>{row.title}</span>
                           <span className={`outline-folder-role outline-folder-role-${row.role ?? 'chapter'}`}>{getFolderLabel(row)}</span>
                         </>

@@ -209,6 +209,7 @@ export function StatusBar({
   wordCount,
   chapterWordCount,
   manuscriptWordCount,
+  readingWpm,
   zoom,
   zoomOpen,
   zoomPresets,
@@ -218,15 +219,17 @@ export function StatusBar({
   wordCount: number
   chapterWordCount: number
   manuscriptWordCount: number
+  readingWpm: number
   zoom: number
   zoomOpen: boolean
   zoomPresets: number[]
   onZoomOpenChange: (open: boolean | ((open: boolean) => boolean)) => void
   onZoomChange: (zoom: number) => void
 }) {
+  const safeReadingWpm = Math.max(1, readingWpm)
   const chapterReadTime = (() => {
     if (chapterWordCount <= 0) return '--- chapter'
-    const minutes = Math.ceil(chapterWordCount / 238)
+    const minutes = Math.ceil(chapterWordCount / safeReadingWpm)
     if (minutes < 60) return `~${minutes} min chapter`
     const hours = Math.floor(minutes / 60)
     const mins = minutes % 60
@@ -234,7 +237,7 @@ export function StatusBar({
   })()
 
   const manuscriptReadTime = (() => {
-    const minutes = Math.ceil(manuscriptWordCount / 238)
+    const minutes = Math.ceil(manuscriptWordCount / safeReadingWpm)
     if (minutes < 60) return `~${minutes} min manuscript`
     const hours = Math.floor(minutes / 60)
     const mins = minutes % 60
@@ -251,7 +254,7 @@ export function StatusBar({
         Chapter: {chapterWordCount > 0 ? `${chapterWordCount.toLocaleString()} ${chapterWordCount === 1 ? 'word' : 'words'}` : '---'}
       </span>
       <span className="statusbar-sep">·</span>
-      <span title="Estimated reading time for current chapter at 238 wpm">
+      <span title={`Estimated reading time for current chapter at ${safeReadingWpm} wpm`}>
         {chapterReadTime}
       </span>
       <span className="statusbar-sep">·</span>
@@ -259,7 +262,7 @@ export function StatusBar({
         Manuscript: {manuscriptWordCount.toLocaleString()} {manuscriptWordCount === 1 ? 'word' : 'words'}
       </span>
       <span className="statusbar-sep">·</span>
-      <span title="Estimated reading time for full manuscript at 238 wpm">
+      <span title={`Estimated reading time for full manuscript at ${safeReadingWpm} wpm`}>
         {manuscriptReadTime}
       </span>
       <div className="zoom-control">

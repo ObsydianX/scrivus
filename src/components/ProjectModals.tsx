@@ -406,47 +406,107 @@ export const THEME_OPTIONS: { id: ThemeId; name: string; swatches: string[] }[] 
 
 export function PreferencesModal({
   theme,
+  incrementNewNodeNumbers,
+  readingWpm,
   onCancel,
   onSave,
 }: {
   theme: ThemeId
+  incrementNewNodeNumbers: boolean
+  readingWpm: number
   onCancel: () => void
-  onSave: (theme: ThemeId) => void
+  onSave: (theme: ThemeId, incrementNewNodeNumbers: boolean, readingWpm: number) => void
 }) {
   const [localTheme, setLocalTheme] = useState<ThemeId>(theme)
+  const [localIncrementNewNodeNumbers, setLocalIncrementNewNodeNumbers] = useState(incrementNewNodeNumbers)
+  const [localReadingWpm, setLocalReadingWpm] = useState(String(readingWpm))
+  const [activeTab, setActiveTab] = useState<'general' | 'themes'>('general')
 
   useEffect(() => {
     setLocalTheme(theme)
-  }, [theme])
+    setLocalIncrementNewNodeNumbers(incrementNewNodeNumbers)
+    setLocalReadingWpm(String(readingWpm))
+  }, [theme, incrementNewNodeNumbers, readingWpm])
+
+  const MIN_READING_WPM = 50
+  const MAX_READING_WPM = 1000
+  const clampReadingWpm = (value: number) =>
+    Number.isFinite(value) ? Math.min(MAX_READING_WPM, Math.max(MIN_READING_WPM, Math.round(value))) : readingWpm
+  const normalizeReadingWpmInput = () => {
+    const normalized = clampReadingWpm(Number(localReadingWpm))
+    setLocalReadingWpm(String(normalized))
+    return normalized
+  }
 
   return (
     <div className="modal-overlay">
       <div className="modal-box project-settings-modal">
         <p className="modal-title">Preferences</p>
+        <div className="modal-tabs">
+          {([
+            ['general', 'General'],
+            ['themes', 'Themes'],
+          ] as const).map(([tab, label]) => (
+            <button
+              key={tab}
+              className={`modal-tab${activeTab === tab ? ' active' : ''}`}
+              onClick={() => setActiveTab(tab)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="modal-fields">
-          <div className="modal-field">
-            <label className="modal-label">Theme</label>
-            <div className="theme-grid">
-              {THEME_OPTIONS.map(theme => (
-                <button
-                  key={theme.id}
-                  className={`theme-option${localTheme === theme.id ? ' active' : ''}`}
-                  onClick={() => setLocalTheme(theme.id)}
-                >
-                  <span className="theme-swatches">
-                    {theme.swatches.map(color => (
-                      <span key={color} style={{ background: color }} />
-                    ))}
-                  </span>
-                  <span>{theme.name}</span>
-                </button>
-              ))}
+          {activeTab === 'general' && (
+            <>
+              <div className="modal-field">
+                <label className="modal-label">Reading speed (WPM)</label>
+                <input
+                  className="modal-input modal-input-sm"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
+                  value={localReadingWpm}
+                  onChange={e => setLocalReadingWpm(e.target.value.replace(/\D/g, ''))}
+                  onBlur={normalizeReadingWpmInput}
+                />
+              </div>
+              <label className="modal-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={localIncrementNewNodeNumbers}
+                  onChange={e => setLocalIncrementNewNodeNumbers(e.target.checked)}
+                />
+                Increment scene, chapter, and act numbers when adding new binder items
+              </label>
+            </>
+          )}
+          {activeTab === 'themes' && (
+            <div className="modal-field">
+              <label className="modal-label">Theme</label>
+              <div className="theme-grid">
+                {THEME_OPTIONS.map(theme => (
+                  <button
+                    key={theme.id}
+                    className={`theme-option${localTheme === theme.id ? ' active' : ''}`}
+                    onClick={() => setLocalTheme(theme.id)}
+                  >
+                    <span className="theme-swatches">
+                      {theme.swatches.map(color => (
+                        <span key={color} style={{ background: color }} />
+                      ))}
+                    </span>
+                    <span>{theme.name}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
         <div className="modal-footer">
           <button className="welcome-btn" onClick={onCancel}>Cancel</button>
-          <button className="welcome-btn" onClick={() => onSave(localTheme)}>Save</button>
+          <button className="welcome-btn" onClick={() => onSave(localTheme, localIncrementNewNodeNumbers, normalizeReadingWpmInput())}>Save</button>
         </div>
       </div>
     </div>

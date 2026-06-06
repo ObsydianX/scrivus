@@ -43,7 +43,7 @@ import {
 } from './backups'
 import { BinderSidebar } from './components/BinderSidebar'
 import { CompileModal } from './components/CompileModal'
-import { BinderContextMenu, SpellcheckContextMenu, TabContextMenu } from './components/ContextMenus'
+import { BinderContextMenu, EditorContextMenu, SpellcheckContextMenu, TabContextMenu } from './components/ContextMenus'
 import { InspectorPanel } from './components/InspectorPanel'
 import {
   LoreEntryEditorModal,
@@ -189,6 +189,7 @@ import './App.css'
 
 export default function App() {
   // #region === STATE ===
+  const SIDE_PANEL_LOCK_WIDTH = 960
 
   // ── App Message system ──
   const [appMessage, setAppMessage] = useState<AppMessage | null>(null)
@@ -248,7 +249,7 @@ export default function App() {
   const [workspace, setWorkspace] = useState<Workspace>('editor')
 
   // ── Binder states ──
-  const [binderOpen, setBinderOpen] = useState(true)
+  const [binderOpen, setBinderOpen] = useState(window.innerWidth >= SIDE_PANEL_LOCK_WIDTH)
 
   // ── Context Menu states ──
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; node: TreeNode; depth: number } | null>(null)
@@ -260,6 +261,7 @@ export default function App() {
     to: number
     suggestions: string[]
   } | null>(null)
+  const [editorContextMenu, setEditorContextMenu] = useState<{ x: number; y: number; showFormatting: boolean } | null>(null)
 
 
   // ── Mutable refs used by async handlers and delayed saves ──
@@ -307,7 +309,8 @@ export default function App() {
   const [fnrUndoSnapshot, setFnrUndoSnapshot] = useState<{ fileId: string; content: string }[]>([])
 
   // ── Inspector Panel ──
-  const [inspectorOpen, setInspectorOpen] = useState(true)
+  const [inspectorOpen, setInspectorOpen] = useState(window.innerWidth >= SIDE_PANEL_LOCK_WIDTH)
+  const [sidePanelsLocked, setSidePanelsLocked] = useState(window.innerWidth < SIDE_PANEL_LOCK_WIDTH)
 
   // ── Statusbar Panel ──
   const [isNarrow, setIsNarrow] = useState(window.innerWidth < 600);
@@ -326,6 +329,7 @@ export default function App() {
 
   // â”€â”€ Outline workspace state â”€â”€
   const [outlineRows, setOutlineRows] = useState<OutlineRow[]>([])
+  const [outlineCollapsedFolderIds, setOutlineCollapsedFolderIds] = useState<Set<number>>(new Set())
   const outlineWordCountsRef = useRef<Map<number, number>>(new Map())
   const outlineProjectPathRef = useRef<string | null>(null)
 
@@ -359,8 +363,6 @@ export default function App() {
   const [loreBook, setLoreBook] = useState<LoreBook>({ categories: [] })
   const loreBookRef = useRef<LoreBook>({ categories: [] })
   const loreLinkMatchesRef = useRef<LoreLinkMatch[]>([])
-  const [loreLinksEnabled, setLoreLinksEnabled] = useState(true)
-  const loreLinksEnabledRef = useRef(true)
   const [loreView, setLoreView] = useState<'home' | 'category'>('home')
   const [activeLoreCategoryId, setActiveLoreCategoryId] = useState<string | null>(null)
   const [loreTemplateEditor, setLoreTemplateEditor] = useState<LoreCategory | null>(null)
@@ -429,6 +431,9 @@ export default function App() {
   const DEFAULT_SETTINGS = {
     zoom: 100,
     theme: 'dark' as ThemeId,
+    incrementNewNodeNumbers: false,
+    loreLinksEnabled: true,
+    readingWpm: 240,
     compile: {
       frontMatter: false,
       includeActHeadings: true,
@@ -450,6 +455,11 @@ export default function App() {
       return {
         ...parsed,
         theme: normalizeTheme(parsed.theme),
+        incrementNewNodeNumbers: parsed.incrementNewNodeNumbers === true,
+        loreLinksEnabled: parsed.loreLinksEnabled !== false,
+        readingWpm: Number.isFinite(Number(parsed.readingWpm))
+          ? Math.min(1000, Math.max(50, Math.round(Number(parsed.readingWpm))))
+          : DEFAULT_SETTINGS.readingWpm,
         compile: {
           ...DEFAULT_SETTINGS.compile,
           ...(typeof parsed.compile === 'object' && parsed.compile ? parsed.compile : {}),
@@ -476,9 +486,37 @@ export default function App() {
   const [compileIncludeSceneTitles, setCompileIncludeSceneTitles] = useState(() => initialSettings.compile.includeSceneTitles)
   const [zoom, setZoom] = useState(() => initialSettings.zoom);
   const [appTheme, setAppTheme] = useState<ThemeId>(() => initialSettings.theme);
+  const [incrementNewNodeNumbers, setIncrementNewNodeNumbers] = useState(() => initialSettings.incrementNewNodeNumbers)
+  const [loreLinksEnabled, setLoreLinksEnabled] = useState(() => initialSettings.loreLinksEnabled)
+  const loreLinksEnabledRef = useRef(initialSettings.loreLinksEnabled)
+  const [readingWpm, setReadingWpm] = useState(() => initialSettings.readingWpm)
   const [previewTheme, setPreviewTheme] = useState<ThemeId | null>(null)
   const [themeMenuOpen, setThemeMenuOpen] = useState(false)
   const [zoomOpen, setZoomOpen] = useState(false);
+
+  const formatSceneTabTitle = (sceneTitle: string, tabs: SceneTab[], tabIndex: number) => {
+    const tabName = tabs[tabIndex]?.name
+    return tabs.length > 1 && tabName ? `${sceneTitle} - ${tabName}` : sceneTitle
+  }
+
+  const openAncestorFoldersForNode = (nodes: TreeNode[], targetId: number): { nodes: TreeNode[]; found: boolean } => {
+    let foundInNodes = false
+    const nextNodes = nodes.map(node => {
+      if (node.id === targetId) {
+        foundInNodes = true
+        return node
+      }
+      if (node.type !== 'folder') return node
+
+      const childResult = openAncestorFoldersForNode(node.children, targetId)
+      if (!childResult.found) return node
+
+      foundInNodes = true
+      return { ...node, open: true, children: childResult.nodes }
+    })
+
+    return { nodes: nextNodes, found: foundInNodes }
+  }
 
   // ── TipTap editor configuration ──
   const editor = useEditor({
@@ -532,9 +570,23 @@ export default function App() {
           event.preventDefault()
           const mouseEvent = event as MouseEvent
           const coords = view.posAtCoords({ left: mouseEvent.clientX, top: mouseEvent.clientY })
+          const selection = view.state.selection
+          const showEditorFormatting = Boolean(coords && !selection.empty && coords.pos >= selection.from && coords.pos <= selection.to)
+          const openEditorContextMenu = () => {
+            setSpellcheckMenu(null)
+            setEditorContextMenu({
+              x: mouseEvent.clientX,
+              y: mouseEvent.clientY,
+              showFormatting: showEditorFormatting,
+            })
+          }
+          if (showEditorFormatting) {
+            openEditorContextMenu()
+            return true
+          }
           const spellchecker = spellcheckerRef.current
           if (!coords || !spellchecker) {
-            setSpellcheckMenu(null)
+            openEditorContextMenu()
             return true
           }
 
@@ -549,18 +601,19 @@ export default function App() {
               : null
           const textNode = textNodeInfo?.node ?? null
           if (!textNode?.isText || !textNode.text) {
-            setSpellcheckMenu(null)
+            openEditorContextMenu()
             return true
           }
 
           const textOffset = parentOffset - (textNodeInfo?.offset ?? parentOffset)
           const word = findWordAt(textNode.text, textOffset)
           if (!word || spellchecker.check(word.word)) {
-            setSpellcheckMenu(null)
+            openEditorContextMenu()
             return true
           }
 
           const from = resolved.start() + (textNodeInfo?.offset ?? 0) + word.start
+          setEditorContextMenu(null)
           setSpellcheckMenu({
             x: mouseEvent.clientX,
             y: mouseEvent.clientY,
@@ -579,11 +632,12 @@ export default function App() {
       // const json = editor.getJSON()
       const html = editor.getHTML().replace(/<mark data-fnr="" class="fnr-highlight">(.*?)<\/mark>/g, '$1')
       bodyHtmlRef.current = html
+      const tabs = sceneTabsRef.current.map((tab, index) =>
+        index === activeTabIndexRef.current ? { ...tab, content: html } : tab)
+      setWordCount(countLatestRevisionWords(tabs))
       const div = document.createElement('div')
       div.innerHTML = html
-      const text = div.textContent ?? ''
-      setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0)
-      setCharCount(text.length)
+      setCharCount((div.textContent ?? '').length)
       triggerSave()
     },
   })
@@ -597,6 +651,17 @@ export default function App() {
     div.innerHTML = html
     const text = div.textContent ?? ''
     return text.trim() ? text.trim().split(/\s+/).length : 0
+  }
+
+  const countLatestRevisionWords = (tabs: SceneTab[]) => {
+    const latestTab = tabs[tabs.length - 1] ?? tabs[0]
+    return countHtmlWords(latestTab?.content ?? '')
+  }
+
+  const getSceneCountTabs = (node: DocNode) => {
+    if (node.id !== activeIdRef.current) return null
+    return sceneTabsRef.current.map((tab, index) =>
+      index === activeTabIndexRef.current ? { ...tab, content: bodyHtmlRef.current } : tab)
   }
 
   const refreshOutlineRows = useCallback(async () => {
@@ -620,12 +685,9 @@ export default function App() {
 
     const rows: OutlineRow[] = []
     const getSceneWordCount = async (node: DocNode) => {
-      if (node.id === activeIdRef.current) {
-        const tabs = sceneTabsRef.current.map((tab, index) =>
-          index === activeTabIndexRef.current ? { ...tab, content: bodyHtmlRef.current } : tab)
-        const selectedTab = projectRef.current!.compileSelections[node.file]
-        const tab = tabs.find(t => t.name === selectedTab) ?? tabs[tabs.length - 1] ?? tabs[0]
-        const count = countHtmlWords(tab?.content ?? '')
+      const activeTabs = getSceneCountTabs(node)
+      if (activeTabs) {
+        const count = countLatestRevisionWords(activeTabs)
         outlineWordCountsRef.current.set(node.id, count)
         return count
       }
@@ -634,9 +696,7 @@ export default function App() {
       if (cached !== undefined) return cached
 
       const tabs = parseSceneTabs(await readSceneFile(projectRef.current!.path, node.file))
-      const selectedTab = projectRef.current!.compileSelections[node.file]
-      const tab = tabs.find(t => t.name === selectedTab) ?? tabs[tabs.length - 1] ?? tabs[0]
-      const count = countHtmlWords(tab?.content ?? '')
+      const count = countLatestRevisionWords(tabs)
       outlineWordCountsRef.current.set(node.id, count)
       return count
     }
@@ -924,6 +984,10 @@ export default function App() {
   }, [appTheme])
 
   useEffect(() => {
+    saveSettings({ ...loadSettings(), loreLinksEnabled })
+  }, [loreLinksEnabled])
+
+  useEffect(() => {
     saveSettings({
       ...loadSettings(),
       compile: {
@@ -1022,10 +1086,13 @@ export default function App() {
   // --- Collapse panels on small window EFFECT --- 
   useEffect(() => {
     const handleResize = () => {
-      const narrow = window.innerWidth < 900;
-      setIsNarrow(narrow);
-      setBinderOpen(!narrow);
-      setInspectorOpen(!narrow);
+      const locked = window.innerWidth < SIDE_PANEL_LOCK_WIDTH;
+      setIsNarrow(locked);
+      setSidePanelsLocked(locked);
+      if (locked) {
+        setBinderOpen(false);
+        setInspectorOpen(false);
+      }
     };
 
     window.addEventListener('resize', handleResize);
@@ -1075,6 +1142,13 @@ export default function App() {
     window.addEventListener('click', handle)
     return () => window.removeEventListener('click', handle)
   }, [spellcheckMenu])
+
+  useEffect(() => {
+    if (!editorContextMenu) return
+    const handle = () => setEditorContextMenu(null)
+    window.addEventListener('click', handle)
+    return () => window.removeEventListener('click', handle)
+  }, [editorContextMenu])
 
   useEffect(() => {
     const handleMouseUp = () => {
@@ -1176,9 +1250,9 @@ export default function App() {
       const div = document.createElement('div')
       div.innerHTML = content
       const text = div.textContent ?? ''
-      setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0)
+      setWordCount(countLatestRevisionWords(tabs))
       setCharCount(text.length)
-      setTitleValue(tabs.length > 1 ? `${node.title} — ${tabs[safeIndex].name}` : node.title)
+      setTitleValue(formatSceneTabTitle(node.title, tabs, safeIndex))
       const revisionContent = tabs[safeIndex]?.content ?? ''
       setRevisionTabs(tabs)
       setRevisionActiveTabIndex(safeIndex)
@@ -1187,6 +1261,7 @@ export default function App() {
       setRevisionActiveId(id)
       computeChapterWordCount()
       computeManuscriptWordCount()
+      saveProjectToDisk({ ...projectRef.current, tree: treeRef.current }, id)
     }
   }
 
@@ -1482,7 +1557,7 @@ export default function App() {
         const serialized = serializeSceneTabs(updatedTabs, rawFileRef.current)
         rawFileRef.current = serialized
         writeSceneFile(projectRef.current.path, node.file, serialized)
-        setTitleValue(updatedTabs.length > 1 ? `${node.title} — ${updatedTabs[index].name}` : node.title)
+        setTitleValue(formatSceneTabTitle(node.title, updatedTabs, index))
       }
     }
     // Load new tab
@@ -1499,7 +1574,7 @@ export default function App() {
     const div = document.createElement('div')
     div.innerHTML = content
     const text = div.textContent ?? ''
-    setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0)
+    setWordCount(countLatestRevisionWords(updatedTabs))
     setCharCount(text.length)
   }
 
@@ -1523,10 +1598,60 @@ export default function App() {
         const serialized = serializeSceneTabs(newTabs, rawFileRef.current)
         rawFileRef.current = serialized
         writeSceneFile(projectRef.current.path, node.file, serialized)
-        setTitleValue(newTabs.length > 1 ? `${node.title} — ${newTab.name}` : node.title)
+        setTitleValue(formatSceneTabTitle(node.title, newTabs, newIndex))
       }
     }
     setRenamingTabIndex(newIndex)
+  }
+
+  const getDuplicateTabName = (name: string, tabs: SceneTab[]) => {
+    const existingNames = new Set(tabs.map(tab => tab.name))
+    const baseName = `${name} copy`
+    if (!existingNames.has(baseName)) return baseName
+    let suffix = 2
+    while (existingNames.has(`${baseName} ${suffix}`)) suffix += 1
+    return `${baseName} ${suffix}`
+  }
+
+  const duplicateTab = (index: number) => {
+    const sourceTab = sceneTabsRef.current[index]
+    if (!sourceTab) return
+    const cleanHtml = bodyHtmlRef.current.replace(/<mark data-fnr="" class="fnr-highlight">(.*?)<\/mark>/g, '$1')
+    const updatedTabs = sceneTabsRef.current.map((t, i) =>
+      i === activeTabIndex ? { ...t, content: cleanHtml } : t
+    )
+    const source = updatedTabs[index]
+    const newTab: SceneTab = {
+      name: getDuplicateTabName(source.name, updatedTabs),
+      content: source.content,
+    }
+    const newTabs = [...updatedTabs, newTab]
+    const newIndex = newTabs.length - 1
+    sceneTabsRef.current = newTabs
+    setSceneTabs(newTabs)
+    setActiveTabIndex(newIndex)
+    activeTabIndexRef.current = newIndex
+    if (activeIdRef.current !== null) {
+      sceneActiveTabRef.current[activeIdRef.current] = newIndex
+    }
+    bodyHtmlRef.current = newTab.content
+    editor?.commands.setContent(newTab.content, { emitUpdate: false })
+    const div = document.createElement('div')
+    div.innerHTML = newTab.content
+    const text = div.textContent ?? ''
+    setWordCount(countLatestRevisionWords(newTabs))
+    setCharCount(text.length)
+    if (activeIdRef.current !== null && projectRef.current) {
+      const node = findNode(treeRef.current, activeIdRef.current)
+      if (node && node.type === 'doc') {
+        const serialized = serializeSceneTabs(newTabs, rawFileRef.current)
+        rawFileRef.current = serialized
+        writeSceneFile(projectRef.current.path, node.file, serialized)
+        setTitleValue(formatSceneTabTitle(node.title, newTabs, newIndex))
+      }
+    }
+    setRenamingTabIndex(newIndex)
+    setTabContextMenu(null)
   }
 
   // Renames a tab.
@@ -1540,7 +1665,7 @@ export default function App() {
     setRenamingTabIndex(null)
     const node = findNode(treeRef.current, activeIdRef.current ?? -1)
     if (node && node.type === 'doc') {
-      setTitleValue(updatedTabs.length > 1 ? `${node.title} — ${label}` : node.title)
+      setTitleValue(formatSceneTabTitle(node.title, updatedTabs, index))
       if (projectRef.current) {
         const serialized = serializeSceneTabs(updatedTabs, rawFileRef.current)
         rawFileRef.current = serialized
@@ -1559,16 +1684,18 @@ export default function App() {
     sceneTabsRef.current = newTabs
     setSceneTabs(newTabs)
     const newIndex = Math.min(activeTabIndex, newTabs.length - 1)
+    const splitWasOpen = editorSplitTabIndex !== null
     let nextSplitIndex = editorSplitTabIndex === null ? null
       : editorSplitTabIndex === index ? null
         : editorSplitTabIndex > index ? editorSplitTabIndex - 1
           : editorSplitTabIndex
-    if (nextSplitIndex === null || nextSplitIndex === newIndex) {
+    if (splitWasOpen && (nextSplitIndex === null || nextSplitIndex === newIndex)) {
       const fallbackIndex = newTabs.findIndex((_, i) => i !== newIndex)
       nextSplitIndex = fallbackIndex >= 0 ? fallbackIndex : null
     }
     rememberEditorSplitTab(nextSplitIndex)
     setActiveTabIndex(newIndex)
+    activeTabIndexRef.current = newIndex
     const content = newTabs[newIndex]?.content ?? ''
     bodyHtmlRef.current = content
     editor?.commands.setContent(content, { emitUpdate: false })
@@ -1578,6 +1705,7 @@ export default function App() {
         writeSceneFile(projectRef.current.path, node.file, newRaw)
       }
     }
+    setWordCount(countLatestRevisionWords(newTabs))
     setConfirmDeleteTab(null)
   }
 
@@ -2168,9 +2296,7 @@ export default function App() {
         if (count > 0) {
           await writeSceneFile(projectRef.current.path, doc.file, result)
           const tabs = parseSceneTabs(result)
-          const selectedTab = projectRef.current.compileSelections[doc.file]
-          const tab = tabs.find(t => t.name === selectedTab) ?? tabs[tabs.length - 1] ?? tabs[0]
-          outlineWordCountsRef.current.set(doc.id, countHtmlWords(tab?.content ?? ''))
+          outlineWordCountsRef.current.set(doc.id, countLatestRevisionWords(tabs))
           if (activeIdRef.current === doc.id) {
             bodyHtmlRef.current = result
             editor?.commands.setContent(result, { emitUpdate: false })
@@ -2210,9 +2336,7 @@ export default function App() {
           snapshot.push({ fileId: doc.file, content })
           await writeSceneFile(projectRef.current.path, doc.file, result)
           const tabs = parseSceneTabs(result)
-          const selectedTab = projectRef.current.compileSelections[doc.file]
-          const tab = tabs.find(t => t.name === selectedTab) ?? tabs[tabs.length - 1] ?? tabs[0]
-          outlineWordCountsRef.current.set(doc.id, countHtmlWords(tab?.content ?? ''))
+          outlineWordCountsRef.current.set(doc.id, countLatestRevisionWords(tabs))
           if (activeIdRef.current === doc.id) {
             bodyHtmlRef.current = result
             editor?.commands.setContent(result, { emitUpdate: false })
@@ -2258,6 +2382,28 @@ export default function App() {
     refreshSpellcheck()
   }
 
+  const closeEditorContextMenu = () => setEditorContextMenu(null)
+
+  const runEditorContextCommand = (command: () => void) => {
+    command()
+    closeEditorContextMenu()
+  }
+
+  const pastePlainTextIntoEditor = async () => {
+    if (!editor) return
+    try {
+      const text = await navigator.clipboard.readText()
+      if (!text) return
+      editor.chain().focus().run()
+      const { state, dispatch } = editor.view
+      dispatch(state.tr.insertText(text, state.selection.from, state.selection.to))
+    } catch {
+      // Clipboard access may be unavailable in some browser contexts.
+    } finally {
+      closeEditorContextMenu()
+    }
+  }
+
   // #endregion
 
   // #region === HANDLERS: PROJECT MANAGEMENT ===
@@ -2278,6 +2424,7 @@ export default function App() {
     saveActive()
     setProject(null)
     projectRef.current = null
+    setOutlineCollapsedFolderIds(new Set())
     outlineWordCountsRef.current.clear()
     outlineProjectPathRef.current = null
     setTree([])
@@ -2802,20 +2949,25 @@ export default function App() {
     clearSaveStatus()
     const loadedStyles = normalizeProjectStyles(data.styles as Partial<ProjectStyles> | undefined)
     const loadedTree = data.tree as TreeNode[]
+    const restoredId = (data.lastActiveId as number | null) ?? null
+    const visibleTree = restoredId !== null
+      ? openAncestorFoldersForNode(loadedTree, restoredId).nodes
+      : loadedTree
     setNextIdValue((data.nextId as number) ?? 10)
     const loadedSettings = normalizeProjectSettings(data.settings as Partial<ProjectSettings> | undefined)
     const loadedProject: Project = {
       name: data.name as string,
       path,
-      tree: loadedTree,
+      tree: visibleTree,
       styles: loadedStyles,
       settings: loadedSettings,
       compileSelections: (data.compileSelections as Record<string, string>) ?? {},
     }
     setProject(loadedProject)
+    setOutlineCollapsedFolderIds(new Set())
     projectRef.current = loadedProject
-    setTree(loadedTree)
-    treeRef.current = loadedTree
+    setTree(visibleTree)
+    treeRef.current = visibleTree
     const notes = await readNotesFile(path)
     setQuickNote(notes.quickNote)
     quickNoteRef.current = notes.quickNote
@@ -2836,11 +2988,10 @@ export default function App() {
     const dictionaryWords = await readProjectDictionary(path)
     setProjectDictionary(dictionaryWords)
     setStyles(loadedStyles)
-    const restoredId = (data.lastActiveId as number | null) ?? null
     setActiveId(restoredId)
     activeIdRef.current = restoredId
     if (restoredId !== null) {
-      const restoredNode = findNode(loadedTree, restoredId)
+      const restoredNode = findNode(visibleTree, restoredId)
       if (restoredNode && restoredNode.type === 'doc') {
         setTitleValue(restoredNode.title)
         const raw = await readSceneFile(path, restoredNode.file)
@@ -2859,7 +3010,7 @@ export default function App() {
         const div = document.createElement('div')
         div.innerHTML = content
         const text = div.textContent ?? ''
-        setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0)
+        setWordCount(countLatestRevisionWords(tabs))
         setCharCount(text.length)
       } else {
         setRevisionActiveId(null)
@@ -2899,8 +3050,17 @@ export default function App() {
     setShowProjectSettings(false)
   }
 
-  const savePreferences = (theme: ThemeId) => {
+  const savePreferences = (theme: ThemeId, shouldIncrementNewNodeNumbers: boolean, nextReadingWpm: number) => {
+    const normalizedReadingWpm = Math.min(1000, Math.max(50, Math.round(nextReadingWpm)))
     setAppTheme(theme)
+    setIncrementNewNodeNumbers(shouldIncrementNewNodeNumbers)
+    setReadingWpm(normalizedReadingWpm)
+    saveSettings({
+      ...loadSettings(),
+      theme,
+      incrementNewNodeNumbers: shouldIncrementNewNodeNumbers,
+      readingWpm: normalizedReadingWpm,
+    })
     setShowPreferences(false)
   }
 
@@ -3204,11 +3364,56 @@ export default function App() {
     if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
   }
 
-  // Adds a new scene to the selected folder, then starts rename mode.
-  const addDoc = async (targetFolderId?: number) => {
+  const getFolderChildren = (targetFolderId?: number) => {
+    const folder = findNode(treeRef.current, targetFolderId ?? 1)
+    return folder?.type === 'folder' ? folder.children : treeRef.current
+  }
+
+  const extractNumberedLabelValue = (label: string, prefix: 'Scene' | 'Chapter' | 'Act') => {
+    const match = label.trim().match(new RegExp(`^${prefix}\\s+(\\d+)$`, 'i'))
+    return match ? Number.parseInt(match[1], 10) : null
+  }
+
+  const getNextNumberedLabel = (targetFolderId: number | undefined, prefix: 'Scene' | 'Chapter' | 'Act', role?: 'act' | 'chapter') => {
+    if (!incrementNewNodeNumbers) return prefix === 'Scene' ? 'New scene' : 'New folder'
+    const siblings = getFolderChildren(targetFolderId)
+    const matchingSiblings = siblings.filter(node => {
+      if (prefix === 'Scene') return node.type === 'doc'
+      return node.type === 'folder' && (node.role ?? 'chapter') === role
+    })
+    const highestExplicitNumber = matchingSiblings.reduce((highest, node) => {
+      const value = extractNumberedLabelValue(node.label, prefix)
+      return value !== null && value > highest ? value : highest
+    }, 0)
+    const nextNumber = highestExplicitNumber > 0 ? highestExplicitNumber + 1 : matchingSiblings.length + 1
+    return `${prefix} ${nextNumber}`
+  }
+
+  const inferNewFolderRole = (targetFolderId?: number): NonNullable<FolderNode['role']> => {
+    const target = findNode(treeRef.current, targetFolderId ?? 1)
+    if (target?.type === 'folder' && target.role === 'act') return 'chapter'
+    const folderSiblings = getFolderChildren(targetFolderId).filter((node): node is FolderNode => node.type === 'folder')
+    const lastFolder = folderSiblings[folderSiblings.length - 1]
+    return lastFolder?.role === 'act' ? 'act' : 'chapter'
+  }
+
+  const createNewDocNode = (targetFolderId?: number): DocNode => {
     const id = allocateNextId()
     const fileId = generateFileId()
-    const node: DocNode = { id, type: 'doc', label: 'New scene', title: 'New scene', file: fileId, metadata: DEFAULT_SCENE_METADATA }
+    const label = getNextNumberedLabel(targetFolderId, 'Scene')
+    return { id, type: 'doc', label, title: label, file: fileId, metadata: DEFAULT_SCENE_METADATA }
+  }
+
+  const createNewFolderNode = (targetFolderId?: number): FolderNode => {
+    const id = allocateNextId()
+    const role = inferNewFolderRole(targetFolderId)
+    const label = getNextNumberedLabel(targetFolderId, role === 'act' ? 'Act' : 'Chapter', role)
+    return { id, type: 'folder', label, open: true, role, children: [] }
+  }
+
+  // Adds a new scene to the selected folder, then starts rename mode.
+  const addDoc = async (targetFolderId?: number) => {
+    const node = createNewDocNode(targetFolderId)
     const newTree = addDocToTree(treeRef.current, targetFolderId, node)
     setTree(newTree)
     treeRef.current = newTree
@@ -3217,11 +3422,11 @@ export default function App() {
     const defaultTabs: SceneTab[] = [{ name: 'First Draft', content: '' }]
     const defaultRaw = serializeSceneTabs(defaultTabs, '')
     if (projectRef.current) {
-      await writeSceneFile(projectRef.current.path, fileId, defaultRaw)
+      await writeSceneFile(projectRef.current.path, node.file, defaultRaw)
       await saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
     }
-    setRenamingId(id)
-    await selectDoc(id)
+    setRenamingId(node.id)
+    await selectDoc(node.id)
   }
 
   const updateMindMap = (nextMap: MindMap) => {
@@ -3383,15 +3588,14 @@ export default function App() {
 
   // Adds a new binder folder, then starts rename mode.
   const addFolder = (targetFolderId?: number) => {
-    const id = allocateNextId()
-    const newFolder: FolderNode = { id, type: 'folder', label: 'New folder', open: true, role: 'chapter', children: [] }
+    const newFolder = createNewFolderNode(targetFolderId)
     const newTree = addFolderToTree(treeRef.current, targetFolderId, newFolder)
     setTree(newTree)
     treeRef.current = newTree
     setSelectedBinderIds(new Set())
     setBinderSelectionAnchorId(null)
     if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
-    setRenamingId(id)
+    setRenamingId(newFolder.id)
   }
 
   const setFolderRole = (id: number, role: 'act' | 'chapter') => {
@@ -3643,11 +3847,9 @@ export default function App() {
     const docs = collectDocs(manuscript)
     let total = 0
     for (const doc of docs) {
-      const content = await readSceneFile(projectRef.current.path, doc.file)
-      const div = document.createElement('div')
-      div.innerHTML = content
-      const text = div.textContent ?? ''
-      if (text.trim()) total += text.trim().split(/\s+/).length
+      const activeTabs = getSceneCountTabs(doc)
+      const tabs = activeTabs ?? parseSceneTabs(await readSceneFile(projectRef.current.path, doc.file))
+      total += countLatestRevisionWords(tabs)
     }
     setManuscriptWordCount(total)
   }, [])
@@ -3666,11 +3868,9 @@ export default function App() {
     const docs = collectDocs(parent)
     let total = 0
     for (const doc of docs) {
-      const content = await readSceneFile(projectRef.current.path, doc.file)
-      const div = document.createElement('div')
-      div.innerHTML = content
-      const text = div.textContent ?? ''
-      if (text.trim()) total += text.trim().split(/\s+/).length
+      const activeTabs = getSceneCountTabs(doc)
+      const tabs = activeTabs ?? parseSceneTabs(await readSceneFile(projectRef.current.path, doc.file))
+      total += countLatestRevisionWords(tabs)
     }
     setChapterWordCount(total)
   }, [])
@@ -3682,6 +3882,10 @@ export default function App() {
   const handleTabContextRename = (index: number) => {
     setRenamingTabIndex(index)
     setTabContextMenu(null)
+  }
+
+  const handleTabContextDuplicate = (index: number) => {
+    duplicateTab(index)
   }
 
   const handleTabContextDelete = (index: number) => {
@@ -3714,9 +3918,7 @@ export default function App() {
     } else {
       const parent = findParentFolder(treeRef.current, node.id)
       if (parent) {
-        const newId = allocateNextId()
-        const fileId = generateFileId()
-        const newDoc: DocNode = { id: newId, type: 'doc', label: 'New scene', title: 'New scene', file: fileId, metadata: DEFAULT_SCENE_METADATA }
+        const newDoc = createNewDocNode(parent.id)
         const newTree = JSON.parse(JSON.stringify(treeRef.current)) as TreeNode[]
         const parentNode = findNode(newTree, parent.id) as FolderNode
         const idx = parentNode.children.findIndex(c => c.id === node.id)
@@ -3726,11 +3928,11 @@ export default function App() {
         const defaultTabs: SceneTab[] = [{ name: 'First Draft', content: '' }]
         const defaultRaw = serializeSceneTabs(defaultTabs, '')
         if (projectRef.current) {
-          await writeSceneFile(projectRef.current.path, fileId, defaultRaw)
+          await writeSceneFile(projectRef.current.path, newDoc.file, defaultRaw)
           await saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
         }
-        setRenamingId(newId)
-        await selectDoc(newId)
+        setRenamingId(newDoc.id)
+        await selectDoc(newDoc.id)
       }
     }
     setContextMenu(null)
@@ -4083,6 +4285,8 @@ export default function App() {
       {showPreferences && (
         <PreferencesModal
           theme={appTheme}
+          incrementNewNodeNumbers={incrementNewNodeNumbers}
+          readingWpm={readingWpm}
           onCancel={() => setShowPreferences(false)}
           onSave={savePreferences}
         />
@@ -4250,7 +4454,9 @@ export default function App() {
         showSearch={showSearch}
         tree={tree}
         activeId={activeId}
+        bookmarkedSceneId={activeId}
         selectedIds={selectedBinderIds}
+        panelLockActive={sidePanelsLocked}
         renamingId={renamingId}
         dragId={dragId}
         dropTarget={dropTarget}
@@ -4259,7 +4465,10 @@ export default function App() {
         trashExpanded={trashExpanded}
         dragIdRef={dragIdRef}
         dropTargetRef={dropTargetRef}
-        onBinderOpenChange={setBinderOpen}
+        onBinderOpenChange={open => {
+          if (open && sidePanelsLocked) return
+          setBinderOpen(open)
+        }}
         onExpandAllFolders={() => setAllBinderFoldersOpen(true)}
         onCollapseAllFolders={() => setAllBinderFoldersOpen(false)}
         onToggleFindReplace={() => {
@@ -4356,6 +4565,7 @@ export default function App() {
           isNarrow,
           isTrashPreview,
           titleValue,
+          titleBookmarked: activeId !== null && !isTrashPreview,
           loreLinksEnabled,
           onLoreLinksEnabledChange: setLoreLinksEnabled,
         }}
@@ -4384,6 +4594,7 @@ export default function App() {
           wordCount,
           chapterWordCount,
           manuscriptWordCount,
+          readingWpm,
           zoom,
           zoomOpen,
           zoomPresets: ZOOM_PRESETS,
@@ -4393,6 +4604,8 @@ export default function App() {
         outlineState={{
           rows: outlineRows,
           manuscriptWordCount,
+          collapsedFolderIds: outlineCollapsedFolderIds,
+          onCollapsedFolderIdsChange: setOutlineCollapsedFolderIds,
           onOpenScene: openOutlineScene,
           onSceneStatusChange: updateOutlineSceneStatus,
         }}
@@ -4485,6 +4698,7 @@ export default function App() {
       )}
       <InspectorPanel
         open={inspectorOpen}
+        panelLockActive={sidePanelsLocked}
         workspace={workspace}
         project={project}
         activeSceneId={activeNode?.type === 'doc' && !isTrashPreview ? activeNode.id : null}
@@ -4495,7 +4709,10 @@ export default function App() {
         checklistDragId={checklistDragId}
         checklistDropIndex={checklistDropIndex}
         checklistDragIdRef={checklistDragIdRef}
-        onOpenChange={setInspectorOpen}
+        onOpenChange={open => {
+          if (open && sidePanelsLocked) return
+          setInspectorOpen(open)
+        }}
         onSceneMetadataChange={updateActiveSceneMetadata}
         onQuickNoteChange={val => {
           quickNoteRef.current = val
@@ -4523,6 +4740,7 @@ export default function App() {
         canOpenSplit={Boolean(tabContextMenu && sceneTabs.length > 1 && tabContextMenu.index !== activeTabIndex)}
         splitOpen={editorSplitTabIndex !== null}
         onRename={handleTabContextRename}
+        onDuplicate={handleTabContextDuplicate}
         onDelete={handleTabContextDelete}
         onOpenSplit={openEditorSplitTab}
         onCloseSplit={closeEditorSplitTab}
@@ -4544,6 +4762,17 @@ export default function App() {
         menu={spellcheckMenu}
         onReplace={replaceMisspelledWord}
         onAddToDictionary={addWordToProjectDictionary}
+      />
+      <EditorContextMenu
+        menu={editorContextMenu}
+        onBold={() => runEditorContextCommand(() => editor?.chain().focus().toggleBold().run())}
+        onItalic={() => runEditorContextCommand(() => editor?.chain().focus().toggleItalic().run())}
+        onUnderline={() => runEditorContextCommand(() => editor?.chain().focus().toggleMark('underline').run())}
+        onBulletList={() => runEditorContextCommand(() => editor?.chain().focus().toggleBulletList().run())}
+        onOrderedList={() => runEditorContextCommand(() => editor?.chain().focus().toggleOrderedList().run())}
+        onBlockQuote={() => runEditorContextCommand(() => editor?.chain().focus().toggleBlockquote().run())}
+        onPastePlainText={pastePlainTextIntoEditor}
+        onSelectAll={() => runEditorContextCommand(() => editor?.chain().focus().selectAll().run())}
       />
       <SharedModals />
 

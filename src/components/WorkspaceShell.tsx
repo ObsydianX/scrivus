@@ -45,6 +45,7 @@ type EditorWorkspaceState = {
   isNarrow: boolean
   isTrashPreview: boolean
   titleValue: string
+  titleBookmarked: boolean
   loreLinksEnabled: boolean
   onLoreLinksEnabledChange: (enabled: boolean) => void
 }
@@ -75,6 +76,7 @@ type StatusWorkspaceState = {
   wordCount: number
   chapterWordCount: number
   manuscriptWordCount: number
+  readingWpm: number
   zoom: number
   zoomOpen: boolean
   zoomPresets: number[]
@@ -102,6 +104,8 @@ type LoreWorkspaceState = {
 type OutlineWorkspaceState = {
   rows: OutlineRow[]
   manuscriptWordCount: number
+  collapsedFolderIds: Set<number>
+  onCollapsedFolderIdsChange: (ids: Set<number>) => void
   onOpenScene: (id: number) => void
   onSceneStatusChange: (id: number, status: SceneStatus) => void
 }
@@ -253,6 +257,7 @@ export function WorkspaceShell({
   isNarrow,
   isTrashPreview,
   titleValue,
+  titleBookmarked,
   loreLinksEnabled,
   onLoreLinksEnabledChange,
   } = editorState
@@ -281,6 +286,7 @@ export function WorkspaceShell({
   wordCount,
   chapterWordCount,
   manuscriptWordCount,
+  readingWpm,
   zoom,
   zoomOpen,
   zoomPresets,
@@ -290,6 +296,8 @@ export function WorkspaceShell({
   const {
   rows,
   manuscriptWordCount: outlineManuscriptWordCount,
+  collapsedFolderIds: outlineCollapsedFolderIds,
+  onCollapsedFolderIdsChange: onOutlineCollapsedFolderIdsChange,
   onOpenScene,
   onSceneStatusChange,
   } = outlineState
@@ -441,6 +449,8 @@ export function WorkspaceShell({
         <OutlineView
           rows={rows}
           manuscriptWordCount={outlineManuscriptWordCount}
+          collapsedFolderIds={outlineCollapsedFolderIds}
+          onCollapsedFolderIdsChange={onOutlineCollapsedFolderIdsChange}
           onOpenScene={onOpenScene}
           onSceneStatusChange={onSceneStatusChange}
         />
@@ -460,6 +470,7 @@ export function WorkspaceShell({
                 wordCount={countHtmlWords(revisionContent)}
                 chapterWordCount={chapterWordCount}
                 manuscriptWordCount={manuscriptWordCount}
+                readingWpm={readingWpm}
                 zoom={zoom}
                 zoomOpen={zoomOpen}
                 zoomPresets={zoomPresets}
@@ -519,7 +530,14 @@ export function WorkspaceShell({
                     This scene is in the trash - read only. Restore it to edit.
                   </div>
                 )}
-                <div id="editor-title">{titleValue}</div>
+                <div id="editor-title">
+                  <span>{titleValue}</span>
+                  {titleBookmarked && (
+                    <span className="editor-title-bookmark" title="Last opened scene" aria-label="Last opened scene">
+                      <i className="ti ti-bookmark" aria-hidden="true" />
+                    </span>
+                  )}
+                </div>
                 <div className="tiptap-wrap">
                   <EditorContent editor={editor} />
                 </div>
@@ -541,6 +559,7 @@ export function WorkspaceShell({
               wordCount={wordCount}
               chapterWordCount={chapterWordCount}
               manuscriptWordCount={manuscriptWordCount}
+              readingWpm={readingWpm}
               zoom={zoom}
               zoomOpen={zoomOpen}
               zoomPresets={zoomPresets}

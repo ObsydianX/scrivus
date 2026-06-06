@@ -36,12 +36,14 @@ function getFolderRole(node: TreeNode) {
 
 type BinderSidebarProps = {
   binderOpen: boolean
+  panelLockActive: boolean
   workspace: 'editor' | 'revision' | 'outline' | 'lorebook' | 'mindmap' | 'atlas'
   projectOpen: boolean
   showFnR: boolean
   showSearch: boolean
   tree: TreeNode[]
   activeId: number | null
+  bookmarkedSceneId: number | null
   selectedIds: Set<number>
   renamingId: number | null
   dragId: number | null
@@ -113,12 +115,14 @@ function InlineRenameInput({ id, label, onRenameNode, onRenamingIdChange }: Inli
 
 export function BinderSidebar({
   binderOpen,
+  panelLockActive,
   workspace,
   projectOpen,
   showFnR,
   showSearch,
   tree,
   activeId,
+  bookmarkedSceneId,
   selectedIds,
   renamingId,
   dragId,
@@ -324,7 +328,12 @@ export function BinderSidebar({
                 onRenamingIdChange={onRenamingIdChange}
               />
               : <span className="item-label">
-                {n.label}
+                <span className="item-label-text">{n.label}</span>
+                {n.type === 'doc' && n.id === bookmarkedSceneId && (
+                  <span className="binder-bookmark" title="Last opened scene" aria-label="Last opened scene">
+                    <i className="ti ti-bookmark" aria-hidden="true" />
+                  </span>
+                )}
               </span>
             }
             {n.type === 'folder' && (
@@ -382,8 +391,9 @@ export function BinderSidebar({
         <div style={{ display: 'flex', flexDirection: binderOpen ? 'row' : 'column', gap: 2, alignItems: 'center' }}>
           {!binderOpen && (
             <button
-              title="Expand binder"
+              title={panelLockActive ? 'Binder unavailable below 960px' : 'Expand binder'}
               onClick={() => onBinderOpenChange(true)}
+              disabled={panelLockActive}
             >
               <i className="ti ti-chevrons-right" aria-hidden="true" />
             </button>
