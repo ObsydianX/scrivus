@@ -128,6 +128,7 @@ import {
   writeSceneFile,
 } from './storage'
 import { parseWordDocxProject } from './wordImport'
+import { countLatestRevisionWords } from './wordCount'
 import {
   emptyTrashFolder,
   loadTrashItems,
@@ -142,6 +143,7 @@ import {
   FnrHighlight,
   LoreLinkExtension,
   loreLinkPluginKey,
+  PageBreakNode,
   SpellcheckExtension,
   spellcheckPluginKey,
   UnderlineMark,
@@ -261,7 +263,7 @@ export default function App() {
     to: number
     suggestions: string[]
   } | null>(null)
-  const [editorContextMenu, setEditorContextMenu] = useState<{ x: number; y: number; showFormatting: boolean } | null>(null)
+  const [editorContextMenu, setEditorContextMenu] = useState<{ x: number; y: number; showFormatting: boolean; hasSelection: boolean } | null>(null)
 
 
   // ── Mutable refs used by async handlers and delayed saves ──
@@ -524,6 +526,7 @@ export default function App() {
       StarterKit.configure({ underline: false }),
       Placeholder.configure({ placeholder: 'Begin writing…' }),
       UnderlineMark,
+      PageBreakNode,
       FnrHighlight,
       SpellcheckExtension.configure({
         getSpellchecker: () => spellcheckerRef.current,
@@ -571,6 +574,7 @@ export default function App() {
           const mouseEvent = event as MouseEvent
           const coords = view.posAtCoords({ left: mouseEvent.clientX, top: mouseEvent.clientY })
           const selection = view.state.selection
+          const hasEditorSelection = !selection.empty
           const showEditorFormatting = Boolean(coords && !selection.empty && coords.pos >= selection.from && coords.pos <= selection.to)
           const openEditorContextMenu = () => {
             setSpellcheckMenu(null)
@@ -578,6 +582,7 @@ export default function App() {
               x: mouseEvent.clientX,
               y: mouseEvent.clientY,
               showFormatting: showEditorFormatting,
+              hasSelection: hasEditorSelection,
             })
           }
           if (showEditorFormatting) {
@@ -645,18 +650,6 @@ export default function App() {
   // ───────────────────────────────────────────────────────────────────────────
   // Effects: refs, project loading, styles, menus, trash preview, shortcuts
   // ───────────────────────────────────────────────────────────────────────────
-
-  const countHtmlWords = (html: string) => {
-    const div = document.createElement('div')
-    div.innerHTML = html
-    const text = div.textContent ?? ''
-    return text.trim() ? text.trim().split(/\s+/).length : 0
-  }
-
-  const countLatestRevisionWords = (tabs: SceneTab[]) => {
-    const latestTab = tabs[tabs.length - 1] ?? tabs[0]
-    return countHtmlWords(latestTab?.content ?? '')
-  }
 
   const getSceneCountTabs = (node: DocNode) => {
     if (node.id !== activeIdRef.current) return null
@@ -2133,18 +2126,97 @@ export default function App() {
       setSearchLoading(false)
     }
   }
+
+  const textOffsetToEditorPosition = (textOffset: number) => {
+    if (!editor) return null
+    let remaining = Math.max(0, textOffset)
+    let resolvedPosition: number | null = null
+
+    editor.state.doc.descendants((node, pos) => {
+      if (resolvedPosition !== null) return false
+      if (!node.isText) return true
+      const length = node.text?.length ?? 0
+      if (remaining <= length) {
+        resolvedPosition = pos + remaining
+        return false
+      }
+      remaining -= length
+      return true
+    })
+
+    return resolvedPosition
+  }
+
+  const getEditorText = () => {
+    let text = ''
+    editor?.state.doc.descendants(node => {
+      if (node.isText) text += node.text ?? ''
+      return true
+    })
+    return text
+  }
+
+  const jumpToSearchMatch = (query: string) => {
+    if (!editor) return
+    const needle = query.trim()
+    if (!needle) return
+    const editorText = getEditorText()
+    const matchIndex = editorText.toLowerCase().indexOf(needle.toLowerCase())
+    if (matchIndex === -1) return
+    const from = textOffsetToEditorPosition(matchIndex)
+    const to = textOffsetToEditorPosition(matchIndex + needle.length)
+    if (from === null || to === null) return
+    const safeFrom = Math.max(1, Math.min(from, editor.state.doc.content.size))
+    const safeTo = Math.max(safeFrom, Math.min(to, editor.state.doc.content.size))
+    editor
+      .chain()
+      .focus()
+      .setTextSelection({ from: safeFrom, to: safeTo })
+      .scrollIntoView()
+      .run()
+  }
+
+  const switchToSearchResultTab = (result: SearchResult) => {
+    const tabs = sceneTabsRef.current
+    if (result.tabIndex < 0 || result.tabIndex >= tabs.length) return
+    const node = findNode(treeRef.current, activeIdRef.current ?? -1)
+    if (!node || node.type !== 'doc') return
+    setActiveTabIndex(result.tabIndex)
+    activeTabIndexRef.current = result.tabIndex
+    sceneActiveTabRef.current[node.id] = result.tabIndex
+    setEditorSplitTabIndex(current => current === result.tabIndex ? null : current)
+    const content = tabs[result.tabIndex]?.content ?? ''
+    bodyHtmlRef.current = content
+    editor?.commands.setContent(content, { emitUpdate: false })
+    const div = document.createElement('div')
+    div.innerHTML = content
+    setCharCount((div.textContent ?? '').length)
+    setTitleValue(formatSceneTabTitle(node.title, tabs, result.tabIndex))
+  }
+
+  const scheduleSearchMatchJump = (query: string) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => jumpToSearchMatch(query))
+    })
+  }
+
   // Opens a selected search result, previewing trash results read-only.
   const openSearchResult = async (result: SearchResult) => {
     if (result.isTrash) {
       // Preview trash scene
       const doc = result.trashNode ? collectDocs(result.trashNode).find(d => d.file === result.fileId) : null
-      if (doc) await previewTrashScene(doc)
+      if (doc) {
+        await previewTrashScene(doc)
+        if (result.tabIndex === 0) scheduleSearchMatchJump(searchQuery)
+      }
       return
     }
     // Open normal scene
     const node = findNode(treeRef.current, result.docId)
     if (node && node.type === 'doc') {
       await selectDoc(result.docId)
+      switchToSearchResultTab(result)
+      scheduleSearchMatchJump(searchQuery)
     }
   }
 
@@ -2389,14 +2461,62 @@ export default function App() {
     closeEditorContextMenu()
   }
 
+  const getSelectedEditorText = () => {
+    if (!editor || editor.state.selection.empty) return ''
+    const { from, to } = editor.state.selection
+    return editor.state.doc.textBetween(from, to, '\n\n')
+  }
+
+  const copySelectedEditorText = async () => {
+    const text = getSelectedEditorText()
+    if (!text) {
+      closeEditorContextMenu()
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      // Clipboard access may be unavailable in some browser contexts.
+    } finally {
+      closeEditorContextMenu()
+    }
+  }
+
+  const cutSelectedEditorText = async () => {
+    if (!editor) return
+    const text = getSelectedEditorText()
+    if (!text) {
+      closeEditorContextMenu()
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      editor.chain().focus().deleteSelection().run()
+    } catch {
+      // Clipboard access may be unavailable in some browser contexts.
+    } finally {
+      closeEditorContextMenu()
+    }
+  }
+
   const pastePlainTextIntoEditor = async () => {
     if (!editor) return
     try {
       const text = await navigator.clipboard.readText()
       if (!text) return
-      editor.chain().focus().run()
-      const { state, dispatch } = editor.view
-      dispatch(state.tr.insertText(text, state.selection.from, state.selection.to))
+      const normalized = text
+        .replace(/\r\n?/g, '\n')
+        .replace(/^\n+|\n+$/g, '')
+        .replace(/\n{2,}/g, '\n\n')
+      const escapeHtml = (value: string) => value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+      const html = normalized
+        .split('\n')
+        .map(line => line.trim() ? `<p>${escapeHtml(line)}</p>` : '<p></p>')
+        .join('')
+      editor.chain().focus().insertContent(html).run()
     } catch {
       // Clipboard access may be unavailable in some browser contexts.
     } finally {
@@ -2608,6 +2728,13 @@ export default function App() {
     })
   }
 
+  const createInlineHeadingParagraph = (runs: TextRun[], level: 1 | 2) => new Paragraph({
+    children: runs,
+    heading: level === 1 ? HeadingLevel.HEADING_1 : HeadingLevel.HEADING_2,
+    alignment: AlignmentType.CENTER,
+    spacing: { before: level === 1 ? 480 : 360, after: 240 },
+  })
+
   const compileHtmlToParagraphs = (html: string): Paragraph[] => {
     const root = document.createElement('div')
     root.innerHTML = html
@@ -2647,18 +2774,26 @@ export default function App() {
     const processBlock = (element: HTMLElement) => {
       if (element.tagName === 'P') {
         addTextParagraph(collectTextRuns(element))
+      } else if (element.tagName === 'H1' || element.tagName === 'H2') {
+        paragraphs.push(createInlineHeadingParagraph(
+          collectTextRuns(element, { bold: true }),
+          element.tagName === 'H1' ? 1 : 2
+        ))
       } else if (element.tagName === 'HR') {
         paragraphs.push(new Paragraph({
           children: [createCompileRun('* * *', {})],
           spacing: { before: 200, after: 200 },
           alignment: AlignmentType.CENTER,
         }))
+      } else if (element.hasAttribute('data-page-break') || element.classList.contains('page-break-node')) {
+        paragraphs.push(new Paragraph({ children: [new PageBreak()] }))
       } else if (element.tagName === 'BLOCKQUOTE') {
         const quoteBlocks = Array.from(element.children).filter((child): child is HTMLElement => child instanceof HTMLElement)
         const targets = quoteBlocks.length ? quoteBlocks : [element]
         targets.forEach(target => {
           addTextParagraph(collectTextRuns(target, { italics: true }), {
-            indent: { left: 720 },
+            indent: { left: 1440, right: 720, firstLine: 0 },
+            spacing: { before: 120, after: 120, line: (isProofCompileStyle() ? 2 : styles.body.lineSpacing) * 240, lineRule: 'auto' as const },
           })
         })
       } else if (element.tagName === 'UL' || element.tagName === 'OL') {
@@ -3694,15 +3829,17 @@ export default function App() {
   const previewTrashScene = async (doc: DocNode) => {
     if (!projectRef.current) return
 
-    const content = await readTrashPreviewContent(projectRef.current.path, doc)
+    const raw = await readTrashPreviewContent(projectRef.current.path, doc)
+    const tabs = parseSceneTabs(raw)
+    const content = tabs[tabs.length - 1]?.content ?? tabs[0]?.content ?? ''
     setIsTrashPreview(true)
-    setTitleValue(doc.title)
+    setTitleValue(formatSceneTabTitle(doc.title, tabs, tabs.length - 1))
     bodyHtmlRef.current = content
     editor?.commands.setContent(content, { emitUpdate: false })
     const div = document.createElement('div')
     div.innerHTML = content
     const text = div.textContent ?? ''
-    setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0)
+    setWordCount(countLatestRevisionWords(tabs))
     setCharCount(text.length)
   }
 
@@ -4771,6 +4908,8 @@ export default function App() {
         onBulletList={() => runEditorContextCommand(() => editor?.chain().focus().toggleBulletList().run())}
         onOrderedList={() => runEditorContextCommand(() => editor?.chain().focus().toggleOrderedList().run())}
         onBlockQuote={() => runEditorContextCommand(() => editor?.chain().focus().toggleBlockquote().run())}
+        onCut={cutSelectedEditorText}
+        onCopy={copySelectedEditorText}
         onPastePlainText={pastePlainTextIntoEditor}
         onSelectAll={() => runEditorContextCommand(() => editor?.chain().focus().selectAll().run())}
       />

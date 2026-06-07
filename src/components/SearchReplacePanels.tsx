@@ -54,7 +54,10 @@ export function SearchPanel({
         )}
         {!loading && results.map((result, i) => (
           <div key={i} className="search-result" onClick={() => onOpenResult(result)}>
-            <div className="search-result-title">{result.title}</div>
+            <div className="search-result-title">
+              {result.title}
+              {result.tabName && <span className="search-result-tab"> - {result.tabName}</span>}
+            </div>
             <div className="search-result-excerpt">
               {(() => {
                 const q = query.toLowerCase()

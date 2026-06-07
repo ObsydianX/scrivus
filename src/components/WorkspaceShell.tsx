@@ -24,13 +24,9 @@ import { LoreBookView } from './LoreBookView'
 import { MindMapView } from './MindMapView'
 import { OutlineView } from './OutlineView'
 import { getActiveComments, renderRevisionAnnotatedHtml, RevisionView } from './RevisionView'
+import { countHtmlWords } from '../wordCount'
 
 export type Workspace = 'editor' | 'revision' | 'outline' | 'lorebook' | 'mindmap' | 'atlas'
-
-function countHtmlWords(html: string) {
-  const text = html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim()
-  return text ? text.split(/\s+/).length : 0
-}
 
 type RevisionPendingComment = {
   quote: string

@@ -2421,6 +2421,34 @@ body,
   text-indent: 0;
 }
 
+.tiptap-wrap .ProseMirror h1,
+.tiptap-wrap .ProseMirror h2,
+#editor-split-body h1,
+#editor-split-body h2,
+#revision-body h1,
+#revision-body h2 {
+  font-family: var(--editor-chapter-font, Georgia), serif;
+  font-weight: var(--editor-chapter-weight, 700);
+  font-style: var(--editor-chapter-style, normal);
+  color: var(--text-main);
+  text-align: center;
+  text-indent: 0;
+}
+
+.tiptap-wrap .ProseMirror h1,
+#editor-split-body h1,
+#revision-body h1 {
+  font-size: 1.55em;
+  margin: 2.2em 0 1.2em;
+}
+
+.tiptap-wrap .ProseMirror h2,
+#editor-split-body h2,
+#revision-body h2 {
+  font-size: 1.25em;
+  margin: 1.8em 0 1em;
+}
+
 .tiptap-wrap .ProseMirror blockquote,
 #revision-body blockquote {
   margin: 1em 0;
@@ -2443,6 +2471,29 @@ body,
   content: '* * *';
   color: var(--text-muted);
   letter-spacing: 0.2em;
+}
+
+.page-break-node,
+#revision-body [data-page-break],
+#editor-split-body [data-page-break] {
+  border-top: 1px dashed var(--border-soft);
+  color: var(--text-muted);
+  margin: 2em 0;
+  text-align: center;
+  text-indent: 0;
+}
+
+.page-break-node::after,
+#revision-body [data-page-break]::after,
+#editor-split-body [data-page-break]::after {
+  content: 'Page break';
+  background: var(--editor-bg);
+  padding: 0 0.75em;
+  position: relative;
+  top: -0.8em;
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 /* Placeholder shown before a scene has content. */
@@ -2681,6 +2732,11 @@ mark.fnr-highlight {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.search-result-tab {
+  color: var(--text-muted);
+  font-weight: 400;
 }
 
 .search-result-excerpt {
@@ -5318,7 +5374,8 @@ body.atlas-dragging * {
 
 .about-modal {
   width: min(720px, calc(100vw - 32px));
-  max-height: min(760px, calc(100vh - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
 }
 
 .about-content {
@@ -5327,10 +5384,20 @@ body.atlas-dragging * {
   gap: 10px;
   color: var(--text-main);
   font-size: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-color: var(--border-soft) var(--panel-bg);
+  scrollbar-width: thin;
 }
 
 .about-content p {
   margin: 0;
+}
+
+.about-modal .modal-footer {
+  flex-shrink: 0;
 }
 
 .about-muted {
@@ -5362,7 +5429,7 @@ body.atlas-dragging * {
 }
 
 .about-licenses pre {
-  max-height: 320px;
+  max-height: min(260px, 42vh);
   overflow: auto;
   margin: 10px 0 0;
   padding: 12px;

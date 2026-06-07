@@ -16,6 +16,7 @@ const SKIP_NAMES = new Set([
   'dist',
   'target',
   '.scrivus-backup.json',
+  '.DS_Store',
 ])
 
 function safeProjectName(name: string) {
@@ -54,10 +55,15 @@ async function copyDirectoryContents(source: string, target: string) {
     const sourcePath = await join(source, entry.name)
     const targetPath = await join(target, entry.name)
 
-    if (entry.isDirectory) {
-      await copyDirectoryContents(sourcePath, targetPath)
-    } else if (entry.isFile) {
-      await copyFile(sourcePath, targetPath)
+    try {
+      if (entry.isSymlink) continue
+      if (entry.isDirectory) {
+        await copyDirectoryContents(sourcePath, targetPath)
+      } else if (entry.isFile) {
+        await copyFile(sourcePath, targetPath)
+      }
+    } catch (error) {
+      throw new Error(`Could not back up "${sourcePath}": ${String(error)}`)
     }
   }
 }

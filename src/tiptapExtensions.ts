@@ -28,6 +28,39 @@ export const UnderlineMark = Mark.create({
   },
 })
 
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    pageBreak: {
+      setPageBreak: () => ReturnType
+    }
+  }
+}
+
+export const PageBreakNode = TiptapNode.create({
+  name: 'pageBreak',
+  group: 'block',
+  atom: true,
+  selectable: true,
+
+  parseHTML() {
+    return [{ tag: 'div[data-page-break]' }]
+  },
+
+  renderHTML() {
+    return ['div', { 'data-page-break': 'true', class: 'page-break-node' }]
+  },
+
+  addCommands() {
+    return {
+      setPageBreak: () => ({ chain }) =>
+        chain()
+          .insertContent({ type: this.name })
+          .insertContent({ type: 'paragraph' })
+          .run(),
+    }
+  },
+})
+
 export const spellcheckPluginKey = new PluginKey('spellcheck')
 export const loreLinkPluginKey = new PluginKey('loreLink')
 const SPELLCHECK_TYPING_DELAY_MS = 700

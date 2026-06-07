@@ -3,467 +3,319 @@
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\code-frame
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\code-frame\LICENSE
 ├─ @babel/compat-data@7.29.3
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\compat-data
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\compat-data\LICENSE
 ├─ @babel/core@7.29.0
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\core
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\core\LICENSE
 ├─ @babel/generator@7.29.1
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\generator
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\generator\LICENSE
 ├─ @babel/helper-compilation-targets@7.28.6
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\helper-compilation-targets
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\helper-compilation-targets\LICENSE
 ├─ @babel/helper-globals@7.28.0
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\helper-globals
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\helper-globals\LICENSE
 ├─ @babel/helper-module-imports@7.28.6
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\helper-module-imports
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\helper-module-imports\LICENSE
 ├─ @babel/helper-module-transforms@7.28.6
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\helper-module-transforms
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\helper-module-transforms\LICENSE
 ├─ @babel/helper-plugin-utils@7.28.6
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\helper-plugin-utils
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\helper-plugin-utils\LICENSE
 ├─ @babel/helper-string-parser@7.27.1
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\helper-string-parser
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\helper-string-parser\LICENSE
 ├─ @babel/helper-validator-identifier@7.28.5
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\helper-validator-identifier
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\helper-validator-identifier\LICENSE
 ├─ @babel/helper-validator-option@7.27.1
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\helper-validator-option
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\helper-validator-option\LICENSE
 ├─ @babel/helpers@7.29.2
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\helpers
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\helpers\LICENSE
 ├─ @babel/parser@7.29.3
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\parser
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\parser\LICENSE
 ├─ @babel/plugin-transform-react-jsx-self@7.27.1
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\plugin-transform-react-jsx-self
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\plugin-transform-react-jsx-self\LICENSE
 ├─ @babel/plugin-transform-react-jsx-source@7.27.1
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\plugin-transform-react-jsx-source
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\plugin-transform-react-jsx-source\LICENSE
 ├─ @babel/template@7.28.6
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\template
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\template\LICENSE
 ├─ @babel/traverse@7.29.0
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\traverse
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\traverse\LICENSE
 ├─ @babel/types@7.29.0
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/babel/babel
 │  ├─ publisher: The Babel Team
 │  ├─ url: https://babel.dev/team
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@babel\types
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@babel\types\LICENSE
 ├─ @esbuild/win32-x64@0.27.7
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/evanw/esbuild
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@esbuild\win32-x64
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@esbuild\win32-x64\README.md
 ├─ @jridgewell/gen-mapping@0.3.13
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/jridgewell/sourcemaps
 │  ├─ publisher: Justin Ridgewell
 │  ├─ email: justin@ridgewell.name
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@jridgewell\gen-mapping
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@jridgewell\gen-mapping\LICENSE
 ├─ @jridgewell/remapping@2.3.5
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/jridgewell/sourcemaps
 │  ├─ publisher: Justin Ridgewell
 │  ├─ email: justin@ridgewell.name
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@jridgewell\remapping
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@jridgewell\remapping\LICENSE
 ├─ @jridgewell/resolve-uri@3.1.2
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/jridgewell/resolve-uri
 │  ├─ publisher: Justin Ridgewell
 │  ├─ email: justin@ridgewell.name
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@jridgewell\resolve-uri
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@jridgewell\resolve-uri\LICENSE
 ├─ @jridgewell/sourcemap-codec@1.5.5
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/jridgewell/sourcemaps
 │  ├─ publisher: Justin Ridgewell
 │  ├─ email: justin@ridgewell.name
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@jridgewell\sourcemap-codec
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@jridgewell\sourcemap-codec\LICENSE
 ├─ @jridgewell/trace-mapping@0.3.31
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/jridgewell/sourcemaps
 │  ├─ publisher: Justin Ridgewell
 │  ├─ email: justin@ridgewell.name
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@jridgewell\trace-mapping
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@jridgewell\trace-mapping\LICENSE
 ├─ @rolldown/pluginutils@1.0.0-beta.27
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/rolldown/rolldown
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@rolldown\pluginutils
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@rolldown\pluginutils\LICENSE
 ├─ @rollup/rollup-win32-x64-gnu@4.60.4
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/rollup/rollup
 │  ├─ publisher: Lukas Taegert-Atkinson
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@rollup\rollup-win32-x64-gnu
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@rollup\rollup-win32-x64-gnu\README.md
 ├─ @rollup/rollup-win32-x64-msvc@4.60.4
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/rollup/rollup
 │  ├─ publisher: Lukas Taegert-Atkinson
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@rollup\rollup-win32-x64-msvc
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@rollup\rollup-win32-x64-msvc\README.md
 ├─ @tauri-apps/api@2.11.0
 │  ├─ licenses: Apache-2.0 OR MIT
 │  ├─ repository: https://github.com/tauri-apps/tauri
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@tauri-apps\api
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@tauri-apps\api\README.md
 ├─ @tauri-apps/cli-win32-x64-msvc@2.11.2
 │  ├─ licenses: Apache-2.0 OR MIT
 │  ├─ repository: https://github.com/tauri-apps/tauri
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@tauri-apps\cli-win32-x64-msvc
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@tauri-apps\cli-win32-x64-msvc\README.md
 ├─ @tauri-apps/cli@2.11.2
 │  ├─ licenses: Apache-2.0 OR MIT
 │  ├─ repository: https://github.com/tauri-apps/tauri
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@tauri-apps\cli
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@tauri-apps\cli\README.md
 ├─ @tauri-apps/plugin-opener@2.5.4
 │  ├─ licenses: MIT OR Apache-2.0
 │  ├─ repository: https://github.com/tauri-apps/plugins-workspace
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@tauri-apps\plugin-opener
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@tauri-apps\plugin-opener\LICENSE.spdx
 ├─ @types/babel__core@7.20.5
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/DefinitelyTyped/DefinitelyTyped
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@types\babel__core
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@types\babel__core\LICENSE
 ├─ @types/babel__generator@7.27.0
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/DefinitelyTyped/DefinitelyTyped
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@types\babel__generator
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@types\babel__generator\LICENSE
 ├─ @types/babel__template@7.4.4
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/DefinitelyTyped/DefinitelyTyped
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@types\babel__template
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@types\babel__template\LICENSE
 ├─ @types/babel__traverse@7.28.0
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/DefinitelyTyped/DefinitelyTyped
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@types\babel__traverse
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@types\babel__traverse\LICENSE
 ├─ @types/estree@1.0.8
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/DefinitelyTyped/DefinitelyTyped
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@types\estree
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@types\estree\LICENSE
 ├─ @types/react-dom@19.2.3
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/DefinitelyTyped/DefinitelyTyped
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@types\react-dom
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@types\react-dom\LICENSE
 ├─ @types/react@19.2.14
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/DefinitelyTyped/DefinitelyTyped
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@types\react
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@types\react\LICENSE
 ├─ @vitejs/plugin-react@4.7.0
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/vitejs/vite-plugin-react
 │  ├─ publisher: Evan You
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\@vitejs\plugin-react
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\@vitejs\plugin-react\LICENSE
 ├─ baseline-browser-mapping@2.10.31
 │  ├─ licenses: Apache-2.0
 │  ├─ repository: https://github.com/web-platform-dx/baseline-browser-mapping
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\baseline-browser-mapping
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\baseline-browser-mapping\LICENSE.txt
 ├─ browserslist@4.28.2
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/browserslist/browserslist
 │  ├─ publisher: Andrey Sitnik
 │  ├─ email: andrey@sitnik.es
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\browserslist
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\browserslist\LICENSE
 ├─ caniuse-lite@1.0.30001793
 │  ├─ licenses: CC-BY-4.0
 │  ├─ repository: https://github.com/browserslist/caniuse-lite
 │  ├─ publisher: Ben Briggs
 │  ├─ email: beneb.info@gmail.com
 │  ├─ url: http://beneb.info
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\caniuse-lite
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\caniuse-lite\LICENSE
 ├─ convert-source-map@2.0.0
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/thlorenz/convert-source-map
 │  ├─ publisher: Thorsten Lorenz
 │  ├─ email: thlorenz@gmx.de
 │  ├─ url: http://thlorenz.com
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\convert-source-map
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\convert-source-map\LICENSE
 ├─ csstype@3.2.3
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/frenic/csstype
 │  ├─ publisher: Fredrik Nicol
 │  ├─ email: fredrik.nicol@gmail.com
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\csstype
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\csstype\LICENSE
 ├─ debug@4.4.3
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/debug-js/debug
 │  ├─ publisher: Josh Junon
 │  ├─ url: https://github.com/qix-
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\debug
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\debug\LICENSE
 ├─ electron-to-chromium@1.5.359
 │  ├─ licenses: ISC
 │  ├─ repository: https://github.com/Kilian/electron-to-chromium
 │  ├─ publisher: Kilian Valkhof
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\electron-to-chromium
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\electron-to-chromium\LICENSE
 ├─ esbuild@0.27.7
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/evanw/esbuild
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\esbuild
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\esbuild\LICENSE.md
 ├─ escalade@3.2.0
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/lukeed/escalade
 │  ├─ publisher: Luke Edwards
 │  ├─ email: luke.edwards05@gmail.com
 │  ├─ url: https://lukeed.com
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\escalade
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\escalade\license
 ├─ fdir@6.5.0
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/thecodrr/fdir
 │  ├─ publisher: thecodrr
 │  ├─ email: thecodrr@protonmail.com
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\fdir
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\fdir\LICENSE
 ├─ gensync@1.0.0-beta.2
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/loganfsmyth/gensync
 │  ├─ publisher: Logan Smyth
 │  ├─ email: loganfsmyth@gmail.com
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\gensync
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\gensync\LICENSE
 ├─ js-tokens@4.0.0
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/lydell/js-tokens
 │  ├─ publisher: Simon Lydell
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\js-tokens
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\js-tokens\LICENSE
 ├─ jsesc@3.1.0
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/mathiasbynens/jsesc
 │  ├─ publisher: Mathias Bynens
 │  ├─ url: https://mathiasbynens.be/
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\jsesc
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\jsesc\LICENSE-MIT.txt
 ├─ json5@2.2.3
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/json5/json5
 │  ├─ publisher: Aseem Kishore
 │  ├─ email: aseem.kishore@gmail.com
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\json5
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\json5\LICENSE.md
 ├─ lru-cache@5.1.1
 │  ├─ licenses: ISC
 │  ├─ repository: https://github.com/isaacs/node-lru-cache
 │  ├─ publisher: Isaac Z. Schlueter
 │  ├─ email: i@izs.me
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\lru-cache
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\lru-cache\LICENSE
 ├─ ms@2.1.3
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/vercel/ms
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\ms
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\ms\license.md
 ├─ nanoid@3.3.12
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/ai/nanoid
 │  ├─ publisher: Andrey Sitnik
 │  ├─ email: andrey@sitnik.ru
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\nanoid
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\nanoid\LICENSE
 ├─ node-releases@2.0.44
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/chicoxyzzy/node-releases
 │  ├─ publisher: Sergey Rubanov
 │  ├─ email: chi187@gmail.com
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\node-releases
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\node-releases\LICENSE
 ├─ picocolors@1.1.1
 │  ├─ licenses: ISC
 │  ├─ repository: https://github.com/alexeyraspopov/picocolors
 │  ├─ publisher: Alexey Raspopov
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\picocolors
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\picocolors\LICENSE
 ├─ picomatch@4.0.4
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/micromatch/picomatch
 │  ├─ publisher: Jon Schlinkert
 │  ├─ url: https://github.com/jonschlinkert
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\picomatch
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\picomatch\LICENSE
 ├─ postcss@8.5.15
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/postcss/postcss
 │  ├─ publisher: Andrey Sitnik
 │  ├─ email: andrey@sitnik.es
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\postcss
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\postcss\LICENSE
 ├─ react-dom@19.2.6
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/facebook/react
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\react-dom
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\react-dom\LICENSE
 ├─ react-refresh@0.17.0
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/facebook/react
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\react-refresh
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\react-refresh\LICENSE
 ├─ react@19.2.6
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/facebook/react
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\react
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\react\LICENSE
 ├─ rollup@4.60.4
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/rollup/rollup
 │  ├─ publisher: Rich Harris
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\rollup
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\rollup\LICENSE.md
 ├─ scheduler@0.27.0
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/facebook/react
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\scheduler
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\scheduler\LICENSE
 ├─ scrivus@0.1.0
 │  ├─ licenses: [1m[31mUNLICENSED[39m[22m
 │  ├─ private: true
-│  ├─ path: C:\Users\wcwya\scrivus
-│  └─ licenseFile: C:\Users\wcwya\scrivus\README.md
 ├─ semver@6.3.1
 │  ├─ licenses: ISC
 │  ├─ repository: https://github.com/npm/node-semver
 │  ├─ publisher: GitHub Inc.
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\semver
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\semver\LICENSE
 ├─ source-map-js@1.2.1
 │  ├─ licenses: BSD-3-Clause
 │  ├─ repository: https://github.com/7rulnik/source-map-js
 │  ├─ publisher: Valentin 7rulnik Semirulnik
 │  ├─ email: v7rulnik@gmail.com
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\source-map-js
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\source-map-js\LICENSE
 ├─ tinyglobby@0.2.16
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/SuperchupuDev/tinyglobby
 │  ├─ publisher: Superchupu
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\tinyglobby
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\tinyglobby\LICENSE
 ├─ typescript@5.8.3
 │  ├─ licenses: Apache-2.0
 │  ├─ repository: https://github.com/microsoft/TypeScript
 │  ├─ publisher: Microsoft Corp.
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\typescript
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\typescript\LICENSE.txt
 ├─ update-browserslist-db@1.2.3
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/browserslist/update-db
 │  ├─ publisher: Andrey Sitnik
 │  ├─ email: andrey@sitnik.ru
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\update-browserslist-db
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\update-browserslist-db\LICENSE
 ├─ vite@7.3.3
 │  ├─ licenses: MIT
 │  ├─ repository: https://github.com/vitejs/vite
 │  ├─ publisher: Evan You
-│  ├─ path: C:\Users\wcwya\scrivus\node_modules\vite
-│  └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\vite\LICENSE.md
 └─ yallist@3.1.1
    ├─ licenses: ISC
    ├─ repository: https://github.com/isaacs/yallist
    ├─ publisher: Isaac Z. Schlueter
    ├─ email: i@izs.me
    ├─ url: http://blog.izs.me/
-   ├─ path: C:\Users\wcwya\scrivus\node_modules\yallist
-   └─ licenseFile: C:\Users\wcwya\scrivus\node_modules\yallist\LICENSE

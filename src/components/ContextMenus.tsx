@@ -4,6 +4,7 @@ type EditorContextMenuState = {
   x: number
   y: number
   showFormatting: boolean
+  hasSelection: boolean
 }
 
 function getFolderRole(node: TreeNode) {
@@ -230,6 +231,8 @@ export function EditorContextMenu({
   onBulletList,
   onOrderedList,
   onBlockQuote,
+  onCut,
+  onCopy,
   onPastePlainText,
   onSelectAll,
 }: {
@@ -240,6 +243,8 @@ export function EditorContextMenu({
   onBulletList: () => void
   onOrderedList: () => void
   onBlockQuote: () => void
+  onCut: () => void
+  onCopy: () => void
   onPastePlainText: () => void
   onSelectAll: () => void
 }) {
@@ -276,10 +281,10 @@ export function EditorContextMenu({
           <div className="ctx-menu-sep" />
         </>
       )}
-      <button className="ctx-menu-item" disabled>
+      <button className="ctx-menu-item" disabled={!menu.hasSelection} onClick={() => { if (menu.hasSelection) onCut() }}>
         <i className="ti ti-cut" aria-hidden="true" /> Cut
       </button>
-      <button className="ctx-menu-item" disabled>
+      <button className="ctx-menu-item" disabled={!menu.hasSelection} onClick={() => { if (menu.hasSelection) onCopy() }}>
         <i className="ti ti-copy" aria-hidden="true" /> Copy
       </button>
       <button className="ctx-menu-item" onClick={onPastePlainText}>

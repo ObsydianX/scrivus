@@ -1,3 +1,4 @@
+import { useEffect, useState, type MouseEvent } from 'react'
 import type { Editor } from '@tiptap/react'
 import type { SceneTab } from '../types'
 
@@ -129,65 +130,124 @@ export function EditorToolbar({
   loreLinksEnabled: boolean
   onLoreLinksEnabledChange: (enabled: boolean) => void
 }) {
+  const [, setToolbarVersion] = useState(0)
+
+  useEffect(() => {
+    if (!editor) return
+    const refresh = () => setToolbarVersion(version => version + 1)
+    editor.on('transaction', refresh)
+    editor.on('selectionUpdate', refresh)
+    editor.on('focus', refresh)
+    editor.on('blur', refresh)
+    return () => {
+      editor.off('transaction', refresh)
+      editor.off('selectionUpdate', refresh)
+      editor.off('focus', refresh)
+      editor.off('blur', refresh)
+    }
+  }, [editor])
+
+  const runToolbarCommand = (event: MouseEvent<HTMLButtonElement>, command: () => void) => {
+    event.preventDefault()
+    command()
+    setToolbarVersion(version => version + 1)
+  }
+
   const insertSceneBreak = () => {
     editor?.chain().focus().setHorizontalRule().run()
+  }
+
+  const insertPageBreak = () => {
+    editor?.chain().focus().insertContent('<div data-page-break="true"></div><p></p>').run()
   }
 
   return (
     <div id="editor-toolbar">
       <div className="editor-toolbar-group">
         <button
+          type="button"
           className={editor?.isActive('bold') ? 'active' : ''}
-          onClick={() => editor?.chain().focus().toggleBold().run()}
+          onMouseDown={event => runToolbarCommand(event, () => editor?.chain().focus().toggleBold().run())}
           title="Bold"
         >
           <i className="ti ti-bold" aria-hidden="true" />
         </button>
         <button
+          type="button"
           className={editor?.isActive('italic') ? 'active' : ''}
-          onClick={() => editor?.chain().focus().toggleItalic().run()}
+          onMouseDown={event => runToolbarCommand(event, () => editor?.chain().focus().toggleItalic().run())}
           title="Italic"
         >
           <i className="ti ti-italic" aria-hidden="true" />
         </button>
         <button
+          type="button"
           className={editor?.isActive('underline') ? 'active' : ''}
-          onClick={() => editor?.chain().focus().toggleMark('underline').run()}
+          onMouseDown={event => runToolbarCommand(event, () => editor?.chain().focus().toggleMark('underline').run())}
           title="Underline"
         >
           <i className="ti ti-underline" aria-hidden="true" />
         </button>
         <div className="toolbar-sep" />
         <button
+          type="button"
           className={editor?.isActive('bulletList') ? 'active' : ''}
-          onClick={() => editor?.chain().focus().toggleBulletList().run()}
+          onMouseDown={event => runToolbarCommand(event, () => editor?.chain().focus().toggleBulletList().run())}
           title="Bulleted list"
         >
           <i className="ti ti-list" aria-hidden="true" />
         </button>
         <button
+          type="button"
           className={editor?.isActive('orderedList') ? 'active' : ''}
-          onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+          onMouseDown={event => runToolbarCommand(event, () => editor?.chain().focus().toggleOrderedList().run())}
           title="Numbered list"
         >
           <i className="ti ti-list-numbers" aria-hidden="true" />
         </button>
         <button
+          type="button"
           className={editor?.isActive('blockquote') ? 'active' : ''}
-          onClick={() => editor?.chain().focus().toggleBlockquote().run()}
+          onMouseDown={event => runToolbarCommand(event, () => editor?.chain().focus().toggleBlockquote().run())}
           title="Block quote"
         >
           <i className="ti ti-blockquote" aria-hidden="true" />
         </button>
         <div className="toolbar-sep" />
         <button
-          onClick={insertSceneBreak}
+          type="button"
+          className={editor?.isActive('heading', { level: 1 }) ? 'active' : ''}
+          onMouseDown={event => runToolbarCommand(event, () => editor?.chain().focus().toggleHeading({ level: 1 }).run())}
+          title="Heading 1"
+        >
+          <i className="ti ti-h-1" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className={editor?.isActive('heading', { level: 2 }) ? 'active' : ''}
+          onMouseDown={event => runToolbarCommand(event, () => editor?.chain().focus().toggleHeading({ level: 2 }).run())}
+          title="Heading 2"
+        >
+          <i className="ti ti-h-2" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onMouseDown={event => runToolbarCommand(event, insertPageBreak)}
+          title="Page break"
+        >
+          <i className="ti ti-page-break" aria-hidden="true" />
+        </button>
+        <div className="toolbar-sep" />
+        <button
+          type="button"
+          onMouseDown={event => runToolbarCommand(event, insertSceneBreak)}
           title="Scene break"
         >
           <i className="ti ti-separator-horizontal" aria-hidden="true" />
         </button>
         <button
-          onClick={() => editor?.chain().focus().unsetAllMarks().clearNodes().run()}
+          type="button"
+          onMouseDown={event => runToolbarCommand(event, () => editor?.chain().focus().unsetAllMarks().clearNodes().run())}
           title="Clear formatting"
         >
           <i className="ti ti-eraser" aria-hidden="true" />

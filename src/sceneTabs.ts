@@ -4,7 +4,27 @@ const TAB_DELIMITER = (name: string) => `<!--TAB:${name}-->`
 const DELETED_DELIMITER = (name: string, ts: number) => `<!--DELETED:${name}:${ts}-->`
 
 function formatSceneHtmlForStorage(html: string): string {
-  return html.replace(/<\/p>\s*(<p(?:\s|>))/g, '</p>\n\n$1')
+  const root = document.createElement('div')
+  root.innerHTML = html
+
+  root.querySelectorAll('p').forEach(paragraph => {
+    const isEmpty = !paragraph.textContent?.trim() && paragraph.children.length === 0
+    if (!isEmpty) return
+    const previous = paragraph.previousElementSibling
+    const next = paragraph.nextElementSibling
+    const adjacentStructural = [previous, next].some(element =>
+      element instanceof HTMLElement &&
+      ['UL', 'OL', 'HR', 'BLOCKQUOTE', 'H1', 'H2'].includes(element.tagName) ||
+      (element instanceof HTMLElement && element.hasAttribute('data-page-break'))
+    )
+    if (adjacentStructural) paragraph.remove()
+  })
+
+  return Array.from(root.childNodes)
+    .map(node => node instanceof HTMLElement ? node.outerHTML : node.textContent ?? '')
+    .map(part => part.trim())
+    .filter(Boolean)
+    .join('\n\n')
 }
 
 export function parseSceneTabs(raw: string): SceneTab[] {

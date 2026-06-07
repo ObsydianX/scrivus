@@ -1,6 +1,7 @@
 import { exists, readDir, readTextFile } from '@tauri-apps/plugin-fs'
 import { join } from '@tauri-apps/api/path'
 import { collectDocs, findNode } from './tree'
+import { parseSceneTabs } from './sceneTabs'
 import type { DocNode, TreeNode } from './types'
 
 export type SearchResult = {
@@ -9,6 +10,10 @@ export type SearchResult = {
   excerpt: string
   source: string
   fileId: string
+  tabIndex: number
+  tabName: string
+  matchIndex: number
+  matchLength: number
   isTrash: boolean
   trashNode?: TreeNode
   trashFolderId?: number
@@ -32,25 +37,32 @@ export async function searchProject(projectPath: string, tree: TreeNode[], query
       const filePath = await join(projectPath, dir, `${doc.file}.md`)
       const fileExists = await exists(filePath)
       if (!fileExists) continue
-      const content = await readTextFile(filePath)
-      const div = document.createElement('div')
-      div.innerHTML = content
-      const text = div.textContent ?? ''
-      const idx = text.toLowerCase().indexOf(q)
-      if (idx === -1) continue
-      const start = Math.max(0, idx - 60)
-      const end = Math.min(text.length, idx + query.length + 60)
-      const excerpt = (start > 0 ? '...' : '') + text.slice(start, end) + (end < text.length ? '...' : '')
-      results.push({
-        docId: doc.id,
-        title: doc.title,
-        excerpt,
-        source,
-        fileId: doc.file,
-        isTrash,
-        trashNode,
-        trashFolderId,
-      })
+      const raw = await readTextFile(filePath)
+      const tabs = parseSceneTabs(raw)
+      for (const [tabIndex, tab] of tabs.entries()) {
+        const div = document.createElement('div')
+        div.innerHTML = tab.content
+        const text = div.textContent ?? ''
+        const idx = text.toLowerCase().indexOf(q)
+        if (idx === -1) continue
+        const start = Math.max(0, idx - 60)
+        const end = Math.min(text.length, idx + query.length + 60)
+        const excerpt = (start > 0 ? '...' : '') + text.slice(start, end) + (end < text.length ? '...' : '')
+        results.push({
+          docId: doc.id,
+          title: doc.title,
+          excerpt,
+          source,
+          fileId: doc.file,
+          tabIndex,
+          tabName: tab.name,
+          matchIndex: idx,
+          matchLength: query.length,
+          isTrash,
+          trashNode,
+          trashFolderId,
+        })
+      }
     }
   }
 

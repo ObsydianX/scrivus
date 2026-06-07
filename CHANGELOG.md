@@ -2,6 +2,21 @@
 
 All notable Scrivus changes are tracked here.
 
+## 0.2.5
+
+- Fixed expanded About dialog sections overflowing past the modal window.
+- Fixed Binder row activation for trackpad taps by handling pointer-up selection separately from drag/drop.
+- Added editor Heading 1, Heading 2, and Page Break controls, including DOCX compile support.
+- Fixed page-break insertion/storage and improved saved scene HTML formatting around lists, quotes, headings, and break markers.
+- Fixed backup permissions and made backup failures identify the file that could not be copied.
+- Fixed compiled block quotes so they use distinct left/right indentation instead of aligning with normal paragraph first-line indents.
+- Improved search result navigation so opening a result switches to the matching tab and scrolls to the matched text.
+- Centralized word counting so scene, chapter, manuscript, Outline, and revision counts consistently use rendered text and ignore old/deleted tabs.
+- Removed local filesystem paths from the bundled third-party licenses text.
+- Enabled editor context-menu Cut and Copy whenever editor text is selected.
+- Fixed editor context-menu plaintext paste so pasted newlines become paragraphs without adding surplus blank lines.
+- Fixed editor toolbar formatting buttons so active states update immediately and clicks do not steal editor focus.
+
 ## 0.2.4
 
 - Added a preference to increment scene, chapter, and act numbers when adding new binder items.

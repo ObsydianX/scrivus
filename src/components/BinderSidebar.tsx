@@ -159,6 +159,8 @@ export function BinderSidebar({
   onPreviewTrashScene,
   onRestoreFromTrash,
 }: BinderSidebarProps) {
+  const rowPointerDownRef = useRef<{ id: number; x: number; y: number } | null>(null)
+
   const renderTrashItem = (sidecarId: string, node: TreeNode, originalFolderId: number, depth: number): React.ReactNode => {
     const isExpanded = trashExpanded.has(`${sidecarId}-${node.id}`)
     const toggleExpand = (e: React.MouseEvent) => {
@@ -227,6 +229,23 @@ export function BinderSidebar({
       const isDropBefore = dropTarget?.type === 'before' && dropTarget.id === n.id
       const isDropAfter = dropTarget?.type === 'after' && dropTarget.id === n.id
       const folderRole = getFolderRole(n)
+      const activateNode = (shiftKey: boolean, ctrlKey: boolean, metaKey: boolean) => {
+        if (!isProtected && shiftKey) {
+          onSelectNode(n.id, 'range')
+          return
+        }
+        if (!isProtected && (ctrlKey || metaKey)) {
+          onSelectNode(n.id, 'toggle')
+          return
+        }
+        onClearSelection(isProtected ? undefined : n.id)
+        if (n.type === 'doc') {
+          if (workspace === 'revision') onSelectRevisionDoc(n.id)
+          else onSelectDoc(n.id)
+        } else {
+          onToggleFolder(n.id)
+        }
+      }
 
       return (
         <div key={n.id} style={{ opacity: isDragging || (dragId !== null && isSelected) ? 0.4 : 1 }}>
@@ -236,6 +255,7 @@ export function BinderSidebar({
             draggable={!isProtected && renamingId !== n.id}
             onDragStart={(!isProtected && renamingId !== n.id) ? e => {
               e.stopPropagation()
+              rowPointerDownRef.current = null
               dragIdRef.current = n.id
               if (!selectedIds.has(n.id)) onClearSelection(n.id)
               onDragIdChange(n.id)
@@ -274,22 +294,19 @@ export function BinderSidebar({
               onDropTargetChange(next)
             }}
             onDrop={e => { e.preventDefault(); e.stopPropagation(); onDrop(n.id) }}
-            onClick={e => {
-              if (!isProtected && e.shiftKey) {
-                onSelectNode(n.id, 'range')
-                return
-              }
-              if (!isProtected && (e.ctrlKey || e.metaKey)) {
-                onSelectNode(n.id, 'toggle')
-                return
-              }
-              onClearSelection(isProtected ? undefined : n.id)
-              if (n.type === 'doc') {
-                if (workspace === 'revision') onSelectRevisionDoc(n.id)
-                else onSelectDoc(n.id)
-              } else {
-                onToggleFolder(n.id)
-              }
+            onPointerDown={e => {
+              if (e.button !== 0) return
+              if ((e.target as HTMLElement).closest('.item-actions, .inline-rename, button, input')) return
+              rowPointerDownRef.current = { id: n.id, x: e.clientX, y: e.clientY }
+            }}
+            onPointerUp={e => {
+              const start = rowPointerDownRef.current
+              rowPointerDownRef.current = null
+              if (!start || start.id !== n.id || e.button !== 0) return
+              if ((e.target as HTMLElement).closest('.item-actions, .inline-rename, button, input')) return
+              const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y)
+              if (moved > 5 || dragIdRef.current !== null) return
+              activateNode(e.shiftKey, e.ctrlKey, e.metaKey)
             }}
             onDoubleClick={() => {
               if (n.id === 1 || n.id === 2) return
