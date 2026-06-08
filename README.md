@@ -20,16 +20,16 @@ Version 0.2.2 Update: [Scrivus video update](https://www.youtube.com/watch?v=Sr0
 
 ## Features
 
-- Draft manuscripts in a focused rich-text editor with formatting controls for prose, lists, block quotes, scene breaks, and underline.
+- Draft manuscripts in a focused rich-text editor with draft tabs, scene navigation, focus mode, formatting controls, writing goals, and optional lore-link highlights.
 - Compare drafts in a horizontal split-view reference pane while editing another draft version.
-- Review scenes in a read-only Revision workspace with anchored comments, comment counts, resolved threads, and per-draft review tabs.
+- Review scenes in a read-only Revision workspace with anchored comments, comment counts, resolved threads, per-draft review tabs, and scene navigation.
 - Organize chapters, scenes, notes, and folders in a binder with drag-and-drop, multi-select actions, trash, restore, and duplicate tools.
 - Track scene metadata including status, POV, location, timeline, tags, and synopsis.
 - Review manuscript structure in the Outline workspace with chapter and scene rows, word counts, and editable scene status.
-- Plan visually with Canvas, a freeform board for ideas, scenes, characters, locations, notes, labels, and connections.
-- Build a Lore Book with custom categories, reusable templates, image fields, keywords, and editor lore-link highlights.
-- Manage maps in Atlas with imported map images, multiple maps, zooming, panning, marker labels, marker types, and visibility levels.
-- Compile selected manuscript content to `.docx`, with optional front matter, scene titles, Standard Manuscript styling, and Proof Copy styling.
+- Plan visually with Canvas, a freeform board for titled ideas, scenes, characters, locations, notes, color labels, and connections.
+- Build a Lore Book with custom categories, subcategories, reusable templates, image fields, pinned entries, backlinks, keywords, and editor lore-link highlights.
+- Manage maps in Atlas with imported map images, multiple maps, zooming, panning, marker search, marker categories, visibility toggles, and Lore Book-linked markers.
+- Compile selected manuscript content to `.docx`, with remembered act, chapter, scene, and draft-tab selections.
 - Import a `.docx` manuscript into a new Scrivus project, splitting Act, Chapter, and Scene headings into manuscript structure.
 - Keep project backups with configurable retention, manual backup, and restore flows.
 - Use global themes, recent projects, project compatibility checks, recovery options, and update checks from GitHub Releases.
@@ -38,11 +38,15 @@ Version 0.2.2 Update: [Scrivus video update](https://www.youtube.com/watch?v=Sr0
 
 ### Editor
 
-The Editor workspace is the main drafting surface. It pairs the binder, scene tabs, formatting toolbar, manuscript editor, inspector, scene metadata, spellcheck, and optional lore-link highlights.
+The Editor workspace is the main drafting surface. It pairs the binder, scene tabs, formatting toolbar, manuscript editor, inspector, scene metadata, spellcheck, writing goals, and optional lore-link highlights.
+
+Scene navigation buttons move through manuscript order without leaving the keyboard-heavy drafting flow. Focus mode hides the outer app chrome while keeping the draft tabs, editor toolbar, and status bar available. Scrivus also remembers the last opened scene and active draft tab when a project is reopened.
 
 ![Editor with binder and inspector](docs/screenshots/editor-full.png)
 
 When a scene has multiple draft tabs, the Editor can open a read-only split-view reference pane. This lets you edit the active draft while viewing another draft below it, with comment highlights available as hover previews.
+
+Selected editor text can be linked to existing Lore Book entries or used to create a new Lore Book entry through the context menu. When lore links are enabled, matching entry names and keywords are highlighted in the manuscript.
 
 ![Editor split-view reference pane](docs/screenshots/split-view.png)
 
@@ -50,7 +54,7 @@ When a scene has multiple draft tabs, the Editor can open a read-only split-view
 
 Revision provides a dedicated read-only review workspace for scene-level feedback. Select a scene from the binder, switch between that scene's draft tabs, highlight text to add an anchored comment, then resolve, reopen, or delete comments from the comments pane.
 
-Comments are scoped to the active scene and draft tab, so feedback for an earlier draft stays separate from notes on a later revision. Active comments are highlighted in the manuscript view, resolved comments move out of the active count, and the comments pane can collapse when you want more room to read.
+Comments are scoped to the active scene and draft tab, so feedback for an earlier draft stays separate from notes on a later revision. Active comments are highlighted in the manuscript view, unresolved comment counts appear on draft tabs, resolved comments move out of the active count, and the comments pane can collapse when you want more room to read.
 
 ![Revision workspace](docs/screenshots/revision.png)
 
@@ -64,11 +68,15 @@ Outline gives a manuscript-level view of chapters and scenes, including word cou
 
 Canvas is a freeform planning board for story structure, relationships, and loose ideas. Nodes can represent ideas, scenes, characters, locations, and notes, with labeled connections between them.
 
+Nodes support titles, auto-expanding note areas, color labels, a color legend, duplication, and quick scene creation. When a node creates a scene, Scrivus uses the node title before falling back to the node notes.
+
 ![Canvas planning workspace](docs/screenshots/canvas.png)
 
 ### Lore Book
 
-The Lore Book stores worldbuilding and reference material in customizable categories. Categories can define their own fields, long text areas, image fields, and dividers, then entries can be linked back into the editor through names and keywords.
+The Lore Book stores worldbuilding and reference material in customizable categories and subcategories. Categories can define their own fields, long text areas, image fields, and dividers, then entries can be linked back into the editor through names and keywords.
+
+Entries open in a dedicated viewer with pinned-entry shortcuts, backlinks to matching manuscript scenes, and incremental "show more" loading for large projects. Editor context menus can link selected text to an existing entry or create a new entry directly from that selection.
 
 ![Lore Book workspace](docs/screenshots/lorebook.png)
 
@@ -76,17 +84,21 @@ The Lore Book stores worldbuilding and reference material in customizable catego
 
 Atlas keeps maps inside the project. Import a map image, place markers, choose marker types, adjust labels, and control when markers appear at different zoom levels.
 
+Atlas supports multiple marker categories, category visibility toggles, a searchable marker list, and in-map controls for choosing, renaming, and sampling maps. Markers can be linked to existing Lore Book entries or used to create new Lore Book entries, and destructive map deletion requires confirmation.
+
 ![Atlas workspace](docs/screenshots/atlas.png)
 
 ### Compile
 
-The compile flow lets you choose which chapters and scenes to export, include optional front matter, optionally include scene titles, and generate a `.docx` manuscript. Standard Manuscript uses the project styles configured in Scrivus. Proof Copy exports a monospaced, double-spaced, justified manuscript with first-line indents and proof-style headings.
+The compile flow lets you choose which acts, chapters, scenes, and draft tabs to export, include optional front matter, optionally include scene titles, and generate a `.docx` manuscript. Standard Manuscript uses the project styles configured in Scrivus. Proof Copy exports a monospaced, double-spaced, justified manuscript with first-line indents and proof-style headings.
+
+Compile selections are remembered per project, and deselecting a parent act or chapter updates its child items so the export tree stays predictable.
 
 ![Compile dialog](docs/screenshots/compile.png)
 
 ## Project Format
 
-New projects are created as `.scrivus` project folders. A project contains `project.json`, scene files, Canvas data, Atlas data, Lore Book data, managed images, and backups.
+New projects are created as `.scrivus` project folders. A project contains `project.json`, scene files, Canvas data, Atlas data, Lore Book data, managed images, compile selections, writing stats, and backups.
 
 Scrivus can also create a new project from a Word `.docx` manuscript. During import, headings such as `Act X`, `Chapter X`, and `Scene X` are converted into Scrivus folders and scenes. Supported Word formatting includes bold, italic, underline, bulleted lists, and numbered lists.
 
@@ -96,7 +108,7 @@ See [PROJECT_FORMAT.md](PROJECT_FORMAT.md) for more details.
 
 ## Privacy
 
-Scrivus is local-first. Project content is stored on your machine, and the app does not require an account. The update checker contacts GitHub Releases only when you choose **Help > Check for Updates**.
+Scrivus is local-first. Project content is stored on your machine, and the app does not require an account. The update checker contacts GitHub Releases when Scrivus starts and when you choose **Help > Check for Updates**.
 
 See [PRIVACY.md](PRIVACY.md) for the full privacy note.
 
