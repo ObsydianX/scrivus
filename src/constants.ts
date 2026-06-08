@@ -10,9 +10,10 @@ import type {
   ProjectSettings,
   ProjectStyles,
   SceneMetadata,
+  WritingStats,
 } from './types'
 
-export const SCRIVUS_VERSION = '0.2.5'
+export const SCRIVUS_VERSION = '0.2.6'
 export const PROJECT_FORMAT_VERSION = 1
 
 export const DEFAULT_BACKUP_SETTINGS: BackupSettings = {
@@ -55,15 +56,20 @@ export const DEFAULT_SCENE_METADATA: SceneMetadata = {
   pov: '',
   location: '',
   timeline: '',
+  targetWordCount: 0,
   tags: [],
   synopsis: '',
 }
 
 export function normalizeSceneMetadata(metadata?: Partial<SceneMetadata> | null): SceneMetadata {
   const status = metadata?.status
+  const targetWordCount = Number(metadata?.targetWordCount)
   return {
     ...DEFAULT_SCENE_METADATA,
     ...(metadata ?? {}),
+    targetWordCount: Number.isFinite(targetWordCount)
+      ? Math.min(999999, Math.max(0, Math.round(targetWordCount)))
+      : DEFAULT_SCENE_METADATA.targetWordCount,
     status:
       status === 'draft' || status === 'revised' || status === 'needsWork' || status === 'complete'
         ? status
@@ -74,9 +80,26 @@ export function normalizeSceneMetadata(metadata?: Partial<SceneMetadata> | null)
   }
 }
 
+export const DEFAULT_WRITING_STATS: WritingStats = {
+  dailyWordDeltas: {},
+}
+
+export function normalizeWritingStats(data?: Partial<WritingStats> | null): WritingStats {
+  const dailyWordDeltas: Record<string, number> = {}
+  if (data?.dailyWordDeltas && typeof data.dailyWordDeltas === 'object' && !Array.isArray(data.dailyWordDeltas)) {
+    Object.entries(data.dailyWordDeltas).forEach(([key, value]) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return
+      const numeric = Number(value)
+      if (Number.isFinite(numeric) && numeric !== 0) dailyWordDeltas[key] = Math.round(numeric)
+    })
+  }
+  return { dailyWordDeltas }
+}
+
 export const DEFAULT_MIND_MAP: MindMap = {
   nodes: [],
   edges: [],
+  colorLabels: {},
   viewport: {
     x: 0,
     y: 0,
@@ -85,6 +108,7 @@ export const DEFAULT_MIND_MAP: MindMap = {
 }
 
 export function normalizeMindMap(data?: Partial<MindMap> | null): MindMap {
+  const validColors: MindMapNodeColor[] = ['default', 'blue', 'green', 'rose', 'gold', 'violet', 'cyan', 'orange', 'red', 'slate']
   const nodes = Array.isArray(data?.nodes)
     ? data.nodes
       .filter(node => node && typeof node.id === 'string')
@@ -92,13 +116,14 @@ export function normalizeMindMap(data?: Partial<MindMap> | null): MindMap {
         const kind: MindMapNodeKind = node.kind === 'scene' || node.kind === 'character' || node.kind === 'location' || node.kind === 'note'
           ? node.kind
           : 'idea'
-        const color: MindMapNodeColor = node.color === 'blue' || node.color === 'green' || node.color === 'rose' || node.color === 'gold' || node.color === 'violet'
-          ? node.color
+        const color: MindMapNodeColor = validColors.includes(node.color as MindMapNodeColor)
+          ? node.color as MindMapNodeColor
           : 'default'
         return {
           id: String(node.id),
           x: Number.isFinite(Number(node.x)) ? Number(node.x) : 0,
           y: Number.isFinite(Number(node.y)) ? Number(node.y) : 0,
+          title: typeof node.title === 'string' ? node.title : undefined,
           text: typeof node.text === 'string' ? node.text : '',
           kind,
           color,
@@ -125,11 +150,19 @@ export function normalizeMindMap(data?: Partial<MindMap> | null): MindMap {
         label: typeof edge.label === 'string' ? edge.label : undefined,
       }))
     : DEFAULT_MIND_MAP.edges
+  const colorLabels: Partial<Record<MindMapNodeColor, string>> = {}
+  if (data?.colorLabels && typeof data.colorLabels === 'object') {
+    validColors.forEach(color => {
+      const label = data.colorLabels?.[color]
+      if (typeof label === 'string') colorLabels[color] = label
+    })
+  }
   const zoom = Number(data?.viewport?.zoom)
 
   return {
     nodes,
     edges,
+    colorLabels,
     viewport: {
       x: Number.isFinite(Number(data?.viewport?.x)) ? Number(data?.viewport?.x) : DEFAULT_MIND_MAP.viewport.x,
       y: Number.isFinite(Number(data?.viewport?.y)) ? Number(data?.viewport?.y) : DEFAULT_MIND_MAP.viewport.y,
@@ -147,6 +180,7 @@ export const DEFAULT_ATLAS: Atlas = {
 }
 
 export function normalizeAtlas(data?: Partial<Atlas> | null): Atlas {
+  const validMarkerKinds: AtlasMarkerKind[] = ['town', 'city', 'capital', 'village', 'camp', 'landmark', 'ruin', 'dungeon', 'region', 'route', 'border', 'water', 'danger', 'note']
   const maps = Array.isArray(data?.maps)
     ? data.maps
       .filter(map => map && typeof map.id === 'string' && typeof map.imagePath === 'string')
@@ -156,8 +190,8 @@ export function normalizeAtlas(data?: Partial<Atlas> | null): Atlas {
             .filter(marker => marker && typeof marker.id === 'string')
             .map(marker => {
               const kind: AtlasMarkerKind =
-                marker.kind === 'landmark' || marker.kind === 'region' || marker.kind === 'route' || marker.kind === 'note'
-                  ? marker.kind
+                validMarkerKinds.includes(marker.kind as AtlasMarkerKind)
+                  ? marker.kind as AtlasMarkerKind
                   : 'town'
               const visibility: AtlasMarkerVisibility =
                 marker.visibility === 'medium' || marker.visibility === 'close'
@@ -170,10 +204,15 @@ export function normalizeAtlas(data?: Partial<Atlas> | null): Atlas {
                 label: typeof marker.label === 'string' ? marker.label : '',
                 kind,
                 visibility,
+                linkedLoreCategoryId: typeof marker.linkedLoreCategoryId === 'string' ? marker.linkedLoreCategoryId : undefined,
+                linkedLoreEntryId: typeof marker.linkedLoreEntryId === 'string' ? marker.linkedLoreEntryId : undefined,
               }
             })
           : []
         const zoom = Number(map.viewport?.zoom)
+        const hiddenMarkerKinds = Array.isArray(map.hiddenMarkerKinds)
+          ? Array.from(new Set(map.hiddenMarkerKinds.filter(kind => validMarkerKinds.includes(kind as AtlasMarkerKind)))) as AtlasMarkerKind[]
+          : []
         return {
           id: String(map.id),
           name: typeof map.name === 'string' && map.name.trim() ? map.name : 'Untitled Map',
@@ -187,6 +226,7 @@ export function normalizeAtlas(data?: Partial<Atlas> | null): Atlas {
             zoom: Number.isFinite(zoom) ? Math.min(4, Math.max(0.1, zoom)) : 1,
           },
           markers,
+          hiddenMarkerKinds,
         }
       })
     : []

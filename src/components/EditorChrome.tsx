@@ -9,10 +9,14 @@ type MutableRef<T> = {
 export function SceneTabBar({
   tabs,
   activeIndex,
+  canSelectPreviousScene,
+  canSelectNextScene,
   renamingIndex,
   dragIndex,
   dropIndex,
   dragIndexRef,
+  onSelectPreviousScene,
+  onSelectNextScene,
   onDragIndexChange,
   onDropIndexChange,
   onRenamingIndexChange,
@@ -21,13 +25,19 @@ export function SceneTabBar({
   onAddTab,
   onRenameTab,
   onTabDrop,
+  focusMode,
+  onFocusModeChange,
 }: {
   tabs: SceneTab[]
   activeIndex: number
+  canSelectPreviousScene: boolean
+  canSelectNextScene: boolean
   renamingIndex: number | null
   dragIndex: number | null
   dropIndex: number | null
   dragIndexRef: MutableRef<number | null>
+  onSelectPreviousScene: () => void
+  onSelectNextScene: () => void
   onDragIndexChange: (index: number | null) => void
   onDropIndexChange: (index: number | null) => void
   onRenamingIndexChange: (index: number | null) => void
@@ -36,6 +46,8 @@ export function SceneTabBar({
   onAddTab: () => void
   onRenameTab: (index: number, name: string) => void
   onTabDrop: (targetIndex: number) => void
+  focusMode: boolean
+  onFocusModeChange: (focusMode: boolean) => void
 }) {
   return (
     <div
@@ -46,6 +58,28 @@ export function SceneTabBar({
         onContextMenuChange({ x: e.clientX, y: e.clientY, index: activeIndex })
       }}
     >
+      <div className="scene-nav-controls">
+        <button
+          type="button"
+          className="scene-nav-btn"
+          disabled={!canSelectPreviousScene}
+          onClick={onSelectPreviousScene}
+          title="Previous scene"
+          aria-label="Previous scene"
+        >
+          <i className="ti ti-chevron-left" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="scene-nav-btn"
+          disabled={!canSelectNextScene}
+          onClick={onSelectNextScene}
+          title="Next scene"
+          aria-label="Next scene"
+        >
+          <i className="ti ti-chevron-right" aria-hidden="true" />
+        </button>
+      </div>
       {tabs.map((tab, index) => {
         const isActive = index === activeIndex
         const isDragging = dragIndex === index
@@ -116,6 +150,16 @@ export function SceneTabBar({
         onClick={onAddTab}
       >
         <i className="ti ti-plus" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className={`scene-focus-btn${focusMode ? ' active' : ''}`}
+        title={focusMode ? 'Exit focus mode' : 'Focus mode'}
+        aria-label={focusMode ? 'Exit focus mode' : 'Focus mode'}
+        aria-pressed={focusMode}
+        onClick={() => onFocusModeChange(!focusMode)}
+      >
+        <i className={`ti ${focusMode ? 'ti-arrows-minimize' : 'ti-arrows-maximize'}`} aria-hidden="true" />
       </button>
     </div>
   )
@@ -267,6 +311,8 @@ export function EditorToolbar({
 
 export function StatusBar({
   wordCount,
+  targetWordCount,
+  onGoalClick,
   chapterWordCount,
   manuscriptWordCount,
   readingWpm,
@@ -277,6 +323,8 @@ export function StatusBar({
   onZoomChange,
 }: {
   wordCount: number
+  targetWordCount?: number
+  onGoalClick?: () => void
   chapterWordCount: number
   manuscriptWordCount: number
   readingWpm: number
@@ -287,6 +335,10 @@ export function StatusBar({
   onZoomChange: (zoom: number) => void
 }) {
   const safeReadingWpm = Math.max(1, readingWpm)
+  const safeTargetWordCount = targetWordCount && targetWordCount > 0 ? targetWordCount : 0
+  const targetProgress = safeTargetWordCount > 0
+    ? Math.min(100, Math.round((wordCount / safeTargetWordCount) * 100))
+    : 0
   const chapterReadTime = (() => {
     if (chapterWordCount <= 0) return '--- chapter'
     const minutes = Math.ceil(chapterWordCount / safeReadingWpm)
@@ -305,7 +357,7 @@ export function StatusBar({
   })()
 
   return (
-    <div id="statusbar">
+    <div id="statusbar" className={onGoalClick ? 'has-goal' : undefined}>
       <span title="Words in current scene">
         Scene: {wordCount.toLocaleString()} {wordCount === 1 ? 'word' : 'words'}
       </span>
@@ -325,6 +377,23 @@ export function StatusBar({
       <span title={`Estimated reading time for full manuscript at ${safeReadingWpm} wpm`}>
         {manuscriptReadTime}
       </span>
+      {onGoalClick && (
+        <button
+          type="button"
+          className="statusbar-goal"
+          onClick={onGoalClick}
+          title={safeTargetWordCount > 0 ? `Scene target: ${safeTargetWordCount.toLocaleString()} words` : 'Set writing goals'}
+        >
+          <span className="statusbar-goal-label">
+            Goal: {safeTargetWordCount > 0
+              ? `${wordCount.toLocaleString()} / ${safeTargetWordCount.toLocaleString()}`
+              : 'Set'}
+          </span>
+          <span className="statusbar-goal-track" aria-hidden="true">
+            <span style={{ width: `${targetProgress}%` }} />
+          </span>
+        </button>
+      )}
       <div className="zoom-control">
         <button className="zoom-btn" onClick={() => onZoomOpenChange(o => !o)}>
           {zoom}% <i className="ti ti-chevron-up" />

@@ -19,7 +19,7 @@
           "x": 1842.131561484843,
           "y": 1510.3342259711994,
           "label": "City",
-          "kind": "town",
+          "kind": "city",
           "visibility": "always"
         },
         {
@@ -27,7 +27,7 @@
           "x": 2045.6578772743164,
           "y": 903.6982303878355,
           "label": "City",
-          "kind": "town",
+          "kind": "city",
           "visibility": "always"
         },
         {
@@ -35,7 +35,7 @@
           "x": 966.1949586140292,
           "y": 945.2956724194879,
           "label": "Lake",
-          "kind": "landmark",
+          "kind": "water",
           "visibility": "always"
         },
         {
@@ -51,10 +51,11 @@
           "x": 1850.4878991531066,
           "y": 1437.5413143690816,
           "label": "Docks",
-          "kind": "route",
+          "kind": "landmark",
           "visibility": "close"
         }
-      ]
+      ],
+      "hiddenMarkerKinds": []
     }
   ]
 }

@@ -408,25 +408,29 @@ export function PreferencesModal({
   theme,
   incrementNewNodeNumbers,
   readingWpm,
+  defaultSceneTargetWordCount,
   onCancel,
   onSave,
 }: {
   theme: ThemeId
   incrementNewNodeNumbers: boolean
   readingWpm: number
+  defaultSceneTargetWordCount: number
   onCancel: () => void
-  onSave: (theme: ThemeId, incrementNewNodeNumbers: boolean, readingWpm: number) => void
+  onSave: (theme: ThemeId, incrementNewNodeNumbers: boolean, readingWpm: number, defaultSceneTargetWordCount: number) => void
 }) {
   const [localTheme, setLocalTheme] = useState<ThemeId>(theme)
   const [localIncrementNewNodeNumbers, setLocalIncrementNewNodeNumbers] = useState(incrementNewNodeNumbers)
   const [localReadingWpm, setLocalReadingWpm] = useState(String(readingWpm))
+  const [localDefaultSceneTargetWordCount, setLocalDefaultSceneTargetWordCount] = useState(String(defaultSceneTargetWordCount || ''))
   const [activeTab, setActiveTab] = useState<'general' | 'themes'>('general')
 
   useEffect(() => {
     setLocalTheme(theme)
     setLocalIncrementNewNodeNumbers(incrementNewNodeNumbers)
     setLocalReadingWpm(String(readingWpm))
-  }, [theme, incrementNewNodeNumbers, readingWpm])
+    setLocalDefaultSceneTargetWordCount(String(defaultSceneTargetWordCount || ''))
+  }, [theme, incrementNewNodeNumbers, readingWpm, defaultSceneTargetWordCount])
 
   const MIN_READING_WPM = 50
   const MAX_READING_WPM = 1000
@@ -435,6 +439,12 @@ export function PreferencesModal({
   const normalizeReadingWpmInput = () => {
     const normalized = clampReadingWpm(Number(localReadingWpm))
     setLocalReadingWpm(String(normalized))
+    return normalized
+  }
+  const normalizeDefaultSceneTargetInput = () => {
+    const value = Number(localDefaultSceneTargetWordCount)
+    const normalized = Number.isFinite(value) ? Math.min(999999, Math.max(0, Math.round(value))) : 0
+    setLocalDefaultSceneTargetWordCount(normalized > 0 ? String(normalized) : '')
     return normalized
   }
 
@@ -472,6 +482,20 @@ export function PreferencesModal({
                   onBlur={normalizeReadingWpmInput}
                 />
               </div>
+              <div className="modal-field">
+                <label className="modal-label">Default scene word target</label>
+                <input
+                  className="modal-input modal-input-sm"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  value={localDefaultSceneTargetWordCount}
+                  onChange={e => setLocalDefaultSceneTargetWordCount(e.target.value.replace(/\D/g, ''))}
+                  onBlur={normalizeDefaultSceneTargetInput}
+                  placeholder="0"
+                />
+              </div>
               <label className="modal-checkbox-label">
                 <input
                   type="checkbox"
@@ -506,7 +530,7 @@ export function PreferencesModal({
         </div>
         <div className="modal-footer">
           <button className="welcome-btn" onClick={onCancel}>Cancel</button>
-          <button className="welcome-btn" onClick={() => onSave(localTheme, localIncrementNewNodeNumbers, normalizeReadingWpmInput())}>Save</button>
+          <button className="welcome-btn" onClick={() => onSave(localTheme, localIncrementNewNodeNumbers, normalizeReadingWpmInput(), normalizeDefaultSceneTargetInput())}>Save</button>
         </div>
       </div>
     </div>

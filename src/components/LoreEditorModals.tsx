@@ -16,7 +16,10 @@ export function LoreTemplateEditorModal({
   const [local, setLocal] = useState<LoreCategory | null>(category)
   const [templateDragIndex, setTemplateDragIndex] = useState<number | null>(null)
   const [templateDropIndex, setTemplateDropIndex] = useState<number | null>(null)
+  const [subcategoryDragIndex, setSubcategoryDragIndex] = useState<number | null>(null)
+  const [subcategoryDropIndex, setSubcategoryDropIndex] = useState<number | null>(null)
   const templateDragIndexRef = useRef<number | null>(null)
+  const subcategoryDragIndexRef = useRef<number | null>(null)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [hardDeleteTarget, setHardDeleteTarget] = useState<{ fieldId: string; label: string } | null>(null)
   const addBtnRef = useRef<HTMLButtonElement>(null)
@@ -29,6 +32,7 @@ export function LoreTemplateEditorModal({
 
   const activeElements = local.template.filter(f => !f.removed)
   const removedElements = local.template.filter(f => f.removed)
+  const subcategories = local.subcategories ?? []
 
   const addElement = (type: LoreFieldType) => {
     const newEl: LoreTemplateElement = {
@@ -106,6 +110,45 @@ export function LoreTemplateEditorModal({
     templateDragIndexRef.current = null
   }
 
+  const addSubcategory = () => {
+    const subcategory = { id: generateId(), name: 'New Subcategory' }
+    setLocal(prev => prev ? { ...prev, subcategories: [...(prev.subcategories ?? []), subcategory] } : prev)
+  }
+
+  const updateSubcategory = (id: string, name: string) => {
+    setLocal(prev => prev ? {
+      ...prev,
+      subcategories: (prev.subcategories ?? []).map(subcategory =>
+        subcategory.id === id ? { ...subcategory, name } : subcategory
+      ),
+    } : prev)
+  }
+
+  const removeSubcategory = (id: string) => {
+    setLocal(prev => prev ? {
+      ...prev,
+      subcategories: (prev.subcategories ?? []).filter(subcategory => subcategory.id !== id),
+      entries: prev.entries.map(entry => entry.subcategoryId === id ? { ...entry, subcategoryId: undefined } : entry),
+    } : prev)
+  }
+
+  const handleSubcategoryDrop = (targetIndex: number) => {
+    const dragIndex = subcategoryDragIndexRef.current
+    if (dragIndex === null || dragIndex === targetIndex) {
+      setSubcategoryDragIndex(null)
+      setSubcategoryDropIndex(null)
+      subcategoryDragIndexRef.current = null
+      return
+    }
+    const reordered = [...subcategories]
+    const [moved] = reordered.splice(dragIndex, 1)
+    reordered.splice(targetIndex, 0, moved)
+    setLocal(prev => prev ? { ...prev, subcategories: reordered } : prev)
+    setSubcategoryDragIndex(null)
+    setSubcategoryDropIndex(null)
+    subcategoryDragIndexRef.current = null
+  }
+
   return (
     <div className="modal-overlay" style={{ zIndex: 150 }}>
       <div className="modal-box lore-template-modal">
@@ -122,6 +165,67 @@ export function LoreTemplateEditorModal({
         <div className="lore-template-entry-name">
           <span className="lore-template-locked-label">Entry Name</span>
           <span className="lore-template-locked-hint">(set when creating an entry)</span>
+        </div>
+
+        <div className="lore-template-subcategories">
+          <div className="lore-template-section-heading">
+            <span>Subcategories</span>
+            <button type="button" onClick={addSubcategory}>
+              <i className="ti ti-plus" aria-hidden="true" /> Add
+            </button>
+          </div>
+          {subcategories.length > 0 ? (
+            <div className="lore-template-subcategory-list">
+              {subcategories.map((subcategory, index) => {
+                const isDragging = subcategoryDragIndex === index
+                const isDropTarget = subcategoryDropIndex === index
+                return (
+                  <div key={subcategory.id}>
+                    {isDropTarget && subcategoryDragIndex !== index && (
+                      <div className="drop-line" />
+                    )}
+                    <div
+                      className={`lore-template-subcategory${isDragging ? ' dragging' : ''}`}
+                      draggable
+                      onDragStart={e => {
+                        e.stopPropagation()
+                        subcategoryDragIndexRef.current = index
+                        setSubcategoryDragIndex(index)
+                        e.dataTransfer.effectAllowed = 'move'
+                      }}
+                      onDragEnd={() => {
+                        setSubcategoryDragIndex(null)
+                        setSubcategoryDropIndex(null)
+                        subcategoryDragIndexRef.current = null
+                      }}
+                      onDragOver={e => { e.preventDefault(); e.stopPropagation(); setSubcategoryDropIndex(index) }}
+                      onDrop={e => { e.preventDefault(); e.stopPropagation(); handleSubcategoryDrop(index) }}
+                    >
+                      <span className="lore-template-drag-handle">
+                        <i className="ti ti-grip-vertical" aria-hidden="true" />
+                      </span>
+                      <input
+                        className="lore-template-label-input"
+                        value={subcategory.name}
+                        onChange={e => updateSubcategory(subcategory.id, e.target.value)}
+                        onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
+                        placeholder="Subcategory name..."
+                      />
+                      <button
+                        className="lore-template-remove-btn"
+                        title="Remove"
+                        onClick={() => removeSubcategory(subcategory.id)}
+                      >
+                        <i className="ti ti-trash" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="lore-template-subcategory-empty">Entries can remain uncategorized.</div>
+          )}
         </div>
 
         <div className="lore-template-elements">
@@ -323,6 +427,23 @@ export function LoreEntryEditorModal({
             placeholder="Comma-separated aliases..."
           />
         </div>
+
+        {(category.subcategories ?? []).length > 0 && (
+          <div className="lore-entry-field-wrap">
+            <label className="lore-entry-label">Subcategory</label>
+            <select
+              className="modal-input"
+              value={local.subcategoryId ?? ''}
+              onChange={e => setLocal(prev => prev ? { ...prev, subcategoryId: e.target.value || undefined } : prev)}
+              onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
+            >
+              <option value="">Uncategorized</option>
+              {(category.subcategories ?? []).map(subcategory => (
+                <option key={subcategory.id} value={subcategory.id}>{subcategory.name || 'Unnamed subcategory'}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {activeFields.map(field => {
           if (field.type === 'divider') {

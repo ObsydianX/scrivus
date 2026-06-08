@@ -91,8 +91,10 @@ import {
   normalizeProjectSettings,
   normalizeSceneMetadata,
   normalizeProjectStyles,
+  normalizeWritingStats,
 } from './constants'
 import { allocateNextId, getNextIdValue, setNextIdValue } from './idCounter'
+import { buildLoreBacklinks, type LoreBacklink } from './loreBacklinks'
 import { createImportedProjectOnDisk, createProjectOnDisk, projectPackageFolderName, readProjectJson } from './projectFiles'
 import { migrateProjectData } from './projectMigrations'
 import { searchProject, type SearchResult } from './search'
@@ -184,6 +186,12 @@ import './App.css'
 
 // #endregion
 
+type WelcomeUpdateStatus =
+  | { status: 'checking'; currentVersion: string }
+  | { status: 'available'; currentVersion: string; latestVersion: string; releaseUrl: string }
+  | { status: 'current'; currentVersion: string; latestVersion: string }
+  | { status: 'failed'; currentVersion: string }
+
 // #region === APP COMPONENT ===
 // ─────────────────────────────────────────────────────────────────────────────
 // Main application component
@@ -215,6 +223,10 @@ export default function App() {
   const [importDocxPath, setImportDocxPath] = useState<string | null>(null)
   const [recentProjects, setRecentProjects] = useState<{ name: string; path: string }[]>([])
   const [startupLoaded, setStartupLoaded] = useState(false)
+  const [welcomeUpdateStatus, setWelcomeUpdateStatus] = useState<WelcomeUpdateStatus>({
+    status: 'checking',
+    currentVersion: SCRIVUS_VERSION,
+  })
   const [fileMenuOpen, setFileMenuOpen] = useState(false)
   const [styles, setStyles] = useState<ProjectStyles>(DEFAULT_STYLES)
   const [showStyles, setShowStyles] = useState(false)
@@ -249,6 +261,7 @@ export default function App() {
 
 // ── Workspace state ──
   const [workspace, setWorkspace] = useState<Workspace>('editor')
+  const [focusMode, setFocusMode] = useState(false)
 
   // ── Binder states ──
   const [binderOpen, setBinderOpen] = useState(window.innerWidth >= SIDE_PANEL_LOCK_WIDTH)
@@ -263,7 +276,7 @@ export default function App() {
     to: number
     suggestions: string[]
   } | null>(null)
-  const [editorContextMenu, setEditorContextMenu] = useState<{ x: number; y: number; showFormatting: boolean; hasSelection: boolean } | null>(null)
+  const [editorContextMenu, setEditorContextMenu] = useState<{ x: number; y: number; showFormatting: boolean; hasSelection: boolean; selectedText: string } | null>(null)
 
 
   // ── Mutable refs used by async handlers and delayed saves ──
@@ -288,6 +301,10 @@ export default function App() {
   // ── Manuscript/chapter statistics ──
   const [manuscriptWordCount, setManuscriptWordCount] = useState(0)
   const [chapterWordCount, setChapterWordCount] = useState(0)
+  const [sessionWordDelta, setSessionWordDelta] = useState(0)
+  const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null)
+  const sceneWordCountsRef = useRef<Record<string, number>>({})
+  const sessionWordDeltaRef = useRef(0)
 
 
   // ── Project search panel state ──
@@ -365,7 +382,9 @@ export default function App() {
   const [loreBook, setLoreBook] = useState<LoreBook>({ categories: [] })
   const loreBookRef = useRef<LoreBook>({ categories: [] })
   const loreLinkMatchesRef = useRef<LoreLinkMatch[]>([])
-  const [loreView, setLoreView] = useState<'home' | 'category'>('home')
+  const [loreBacklinks, setLoreBacklinks] = useState<Record<string, LoreBacklink[]>>({})
+  const [loreBacklinkVersion, setLoreBacklinkVersion] = useState(0)
+  const [loreView, setLoreView] = useState<'home' | 'category' | 'entry'>('home')
   const [activeLoreCategoryId, setActiveLoreCategoryId] = useState<string | null>(null)
   const [loreTemplateEditor, setLoreTemplateEditor] = useState<LoreCategory | null>(null)
   const [loreTemplateIsNew, setLoreTemplateIsNew] = useState(false)
@@ -436,6 +455,12 @@ export default function App() {
     incrementNewNodeNumbers: false,
     loreLinksEnabled: true,
     readingWpm: 240,
+    defaultSceneTargetWordCount: 0,
+    goals: {
+      monthlyTargetWordCount: 0,
+      dailyTargetWordCount: 0,
+      sessionTargetWordCount: 0,
+    },
     compile: {
       frontMatter: false,
       includeActHeadings: true,
@@ -462,6 +487,22 @@ export default function App() {
         readingWpm: Number.isFinite(Number(parsed.readingWpm))
           ? Math.min(1000, Math.max(50, Math.round(Number(parsed.readingWpm))))
           : DEFAULT_SETTINGS.readingWpm,
+        defaultSceneTargetWordCount: Number.isFinite(Number(parsed.defaultSceneTargetWordCount))
+          ? Math.min(999999, Math.max(0, Math.round(Number(parsed.defaultSceneTargetWordCount))))
+          : DEFAULT_SETTINGS.defaultSceneTargetWordCount,
+        goals: {
+          ...DEFAULT_SETTINGS.goals,
+          ...(typeof parsed.goals === 'object' && parsed.goals ? parsed.goals : {}),
+          monthlyTargetWordCount: Number.isFinite(Number(parsed.goals?.monthlyTargetWordCount))
+            ? Math.min(9999999, Math.max(0, Math.round(Number(parsed.goals.monthlyTargetWordCount))))
+            : DEFAULT_SETTINGS.goals.monthlyTargetWordCount,
+          dailyTargetWordCount: Number.isFinite(Number(parsed.goals?.dailyTargetWordCount))
+            ? Math.min(999999, Math.max(0, Math.round(Number(parsed.goals.dailyTargetWordCount))))
+            : DEFAULT_SETTINGS.goals.dailyTargetWordCount,
+          sessionTargetWordCount: Number.isFinite(Number(parsed.goals?.sessionTargetWordCount))
+            ? Math.min(999999, Math.max(0, Math.round(Number(parsed.goals.sessionTargetWordCount))))
+            : DEFAULT_SETTINGS.goals.sessionTargetWordCount,
+        },
         compile: {
           ...DEFAULT_SETTINGS.compile,
           ...(typeof parsed.compile === 'object' && parsed.compile ? parsed.compile : {}),
@@ -492,6 +533,9 @@ export default function App() {
   const [loreLinksEnabled, setLoreLinksEnabled] = useState(() => initialSettings.loreLinksEnabled)
   const loreLinksEnabledRef = useRef(initialSettings.loreLinksEnabled)
   const [readingWpm, setReadingWpm] = useState(() => initialSettings.readingWpm)
+  const [defaultSceneTargetWordCount, setDefaultSceneTargetWordCount] = useState(() => initialSettings.defaultSceneTargetWordCount)
+  const [goals, setGoals] = useState(() => initialSettings.goals)
+  const [showGoalModal, setShowGoalModal] = useState(false)
   const [previewTheme, setPreviewTheme] = useState<ThemeId | null>(null)
   const [themeMenuOpen, setThemeMenuOpen] = useState(false)
   const [zoomOpen, setZoomOpen] = useState(false);
@@ -564,7 +608,7 @@ export default function App() {
           if (!entryId || !categoryId) return false
           mouseEvent.preventDefault()
           setWorkspace('lorebook')
-          setLoreView('category')
+          setLoreView('entry')
           setActiveLoreCategoryId(categoryId)
           setExpandedEntryId(entryId)
           return true
@@ -576,6 +620,9 @@ export default function App() {
           const selection = view.state.selection
           const hasEditorSelection = !selection.empty
           const showEditorFormatting = Boolean(coords && !selection.empty && coords.pos >= selection.from && coords.pos <= selection.to)
+          const selectedText = hasEditorSelection
+            ? view.state.doc.textBetween(selection.from, selection.to, '\n\n').replace(/\s+/g, ' ').trim()
+            : ''
           const openEditorContextMenu = () => {
             setSpellcheckMenu(null)
             setEditorContextMenu({
@@ -583,6 +630,7 @@ export default function App() {
               y: mouseEvent.clientY,
               showFormatting: showEditorFormatting,
               hasSelection: hasEditorSelection,
+              selectedText,
             })
           }
           if (showEditorFormatting) {
@@ -801,6 +849,22 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
+    setWelcomeUpdateStatus({ status: 'checking', currentVersion: SCRIVUS_VERSION })
+    checkForScrivusUpdate(SCRIVUS_VERSION)
+      .then(result => {
+        if (cancelled) return
+        setWelcomeUpdateStatus(result)
+      })
+      .catch(() => {
+        if (!cancelled) setWelcomeUpdateStatus({ status: 'failed', currentVersion: SCRIVUS_VERSION })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     projectDictionaryRef.current = projectDictionary
     spellcheckerRef.current = createSpellchecker(projectDictionary)
     if (editor) {
@@ -831,6 +895,24 @@ export default function App() {
     loreLinkMatchesRef.current = matches
     if (editor) editor.view.dispatch(editor.state.tr.setMeta(loreLinkPluginKey, true))
   }, [loreBook, loreLinksEnabled, editor])
+
+  useEffect(() => {
+    if (!project?.path) {
+      setLoreBacklinks({})
+      return
+    }
+    let cancelled = false
+    buildLoreBacklinks(project.path, tree, loreBook)
+      .then(backlinks => {
+        if (!cancelled) setLoreBacklinks(backlinks)
+      })
+      .catch(() => {
+        if (!cancelled) setLoreBacklinks({})
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [project?.path, tree, loreBook, loreBacklinkVersion])
 
   useEffect(() => {
     const root = document.documentElement
@@ -877,6 +959,32 @@ export default function App() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [themeMenuOpen])
+
+  useEffect(() => {
+    if (!focusMode) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      setFocusMode(false)
+    }
+    window.addEventListener('keydown', handler, true)
+    return () => window.removeEventListener('keydown', handler, true)
+  }, [focusMode])
+
+  useEffect(() => {
+    if (!focusMode) return
+    setFileMenuOpen(false)
+    setEditMenuOpen(false)
+    setHelpMenuOpen(false)
+    setThemeMenuOpen(false)
+    setPreviewTheme(null)
+    setShowSearch(false)
+    setShowFnR(false)
+    setContextMenu(null)
+    setTabContextMenu(null)
+    setSpellcheckMenu(null)
+    setEditorContextMenu(null)
+  }, [focusMode])
 
   useEffect(() => {
     if (editor) editor.setEditable(!isTrashPreview)
@@ -1144,6 +1252,18 @@ export default function App() {
   }, [editorContextMenu])
 
   useEffect(() => {
+    if (!contextMenu && !tabContextMenu && !spellcheckMenu && !editorContextMenu) return
+    const handle = () => {
+      setContextMenu(null)
+      setTabContextMenu(null)
+      setSpellcheckMenu(null)
+      setEditorContextMenu(null)
+    }
+    window.addEventListener('scroll', handle, true)
+    return () => window.removeEventListener('scroll', handle, true)
+  }, [contextMenu, tabContextMenu, spellcheckMenu, editorContextMenu])
+
+  useEffect(() => {
     const handleMouseUp = () => {
       setTimeout(handleTextSelect, 10)
     }
@@ -1155,6 +1275,41 @@ export default function App() {
   // #endregion
 
   // #region === HANDLERS: SAVE & EDITOR ===
+
+  const localDateKey = (date = new Date()) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const recordSceneWordDelta = (fileId: string, nextWordCount: number) => {
+    const previousWordCount = sceneWordCountsRef.current[fileId] ?? nextWordCount
+    sceneWordCountsRef.current[fileId] = nextWordCount
+    const delta = nextWordCount - previousWordCount
+    if (delta === 0 || !projectRef.current) return
+
+    sessionWordDeltaRef.current += delta
+    setSessionWordDelta(sessionWordDeltaRef.current)
+
+    const dayKey = localDateKey()
+    const writingStats = normalizeWritingStats(projectRef.current.writingStats)
+    const nextWritingStats = {
+      dailyWordDeltas: {
+        ...writingStats.dailyWordDeltas,
+        [dayKey]: (writingStats.dailyWordDeltas[dayKey] ?? 0) + delta,
+      },
+    }
+    const updatedProject = { ...projectRef.current, writingStats: nextWritingStats }
+    projectRef.current = updatedProject
+  }
+
+  const saveProjectState = (project: Project, activeId: number | null = activeIdRef.current, activeTabIndex = activeTabIndexRef.current) => {
+    const updatedProject = { ...project, lastActiveTabIndex: activeTabIndex }
+    projectRef.current = updatedProject
+    setProject(updatedProject)
+    saveProjectToDisk(updatedProject, activeId ?? undefined, activeTabIndex)
+  }
 
   // Saves the currently active scene and project metadata.
   const saveActive = useCallback((currentTree?: TreeNode[]) => {
@@ -1170,12 +1325,14 @@ export default function App() {
       sceneTabsRef.current = updatedTabs
       const serialized = serializeSceneTabs(updatedTabs, rawFileRef.current)
       rawFileRef.current = serialized
+      recordSceneWordDelta(node.file, countLatestRevisionWords(updatedTabs))
       writeSceneFile(projectRef.current.path, node.file, serialized)
+      setLoreBacklinkVersion(version => version + 1)
     }
     setTree(clone)
     treeRef.current = clone
     if (projectRef.current) {
-      saveProjectToDisk({ ...projectRef.current, tree: clone }, activeIdRef.current ?? undefined)
+      saveProjectState({ ...projectRef.current, tree: clone })
     }
   }, [])
 
@@ -1216,6 +1373,7 @@ export default function App() {
       const raw = await readSceneFile(projectRef.current.path, node.file)
       rawFileRef.current = raw
       const tabs = parseSceneTabs(raw)
+      sceneWordCountsRef.current[node.file] = countLatestRevisionWords(tabs)
       setSceneTabs(tabs)
       sceneTabsRef.current = tabs
       const rememberedIndex = sceneActiveTabRef.current[id]
@@ -1243,7 +1401,7 @@ export default function App() {
       const div = document.createElement('div')
       div.innerHTML = content
       const text = div.textContent ?? ''
-      setWordCount(countLatestRevisionWords(tabs))
+      setWordCount(sceneWordCountsRef.current[node.file])
       setCharCount(text.length)
       setTitleValue(formatSceneTabTitle(node.title, tabs, safeIndex))
       const revisionContent = tabs[safeIndex]?.content ?? ''
@@ -1254,7 +1412,7 @@ export default function App() {
       setRevisionActiveId(id)
       computeChapterWordCount()
       computeManuscriptWordCount()
-      saveProjectToDisk({ ...projectRef.current, tree: treeRef.current }, id)
+      saveProjectState({ ...projectRef.current, tree: treeRef.current }, id, safeIndex)
     }
   }
 
@@ -1298,7 +1456,7 @@ export default function App() {
       atlasSaveTimerRef.current = null
     }
     await writeAtlasFile(projectRef.current.path, atlasRef.current)
-    await saveProjectToDisk({ ...projectRef.current, tree: treeRef.current }, activeIdRef.current ?? undefined)
+    saveProjectState({ ...projectRef.current, tree: treeRef.current })
   }
 
   const runProjectBackup = async (reason: BackupReason, showNotification = false) => {
@@ -1550,6 +1708,7 @@ export default function App() {
         const serialized = serializeSceneTabs(updatedTabs, rawFileRef.current)
         rawFileRef.current = serialized
         writeSceneFile(projectRef.current.path, node.file, serialized)
+        saveProjectState({ ...projectRef.current, tree: treeRef.current }, activeIdRef.current, index)
         setTitleValue(formatSceneTabTitle(node.title, updatedTabs, index))
       }
     }
@@ -1583,6 +1742,10 @@ export default function App() {
     sceneTabsRef.current = newTabs
     setSceneTabs(newTabs)
     setActiveTabIndex(newIndex)
+    activeTabIndexRef.current = newIndex
+    if (activeIdRef.current !== null) {
+      sceneActiveTabRef.current[activeIdRef.current] = newIndex
+    }
     bodyHtmlRef.current = ''
     editor?.commands.setContent('', { emitUpdate: false })
     if (activeIdRef.current !== null && projectRef.current) {
@@ -1591,6 +1754,7 @@ export default function App() {
         const serialized = serializeSceneTabs(newTabs, rawFileRef.current)
         rawFileRef.current = serialized
         writeSceneFile(projectRef.current.path, node.file, serialized)
+        saveProjectState({ ...projectRef.current, tree: treeRef.current }, activeIdRef.current, newIndex)
         setTitleValue(formatSceneTabTitle(node.title, newTabs, newIndex))
       }
     }
@@ -1640,6 +1804,7 @@ export default function App() {
         const serialized = serializeSceneTabs(newTabs, rawFileRef.current)
         rawFileRef.current = serialized
         writeSceneFile(projectRef.current.path, node.file, serialized)
+        saveProjectState({ ...projectRef.current, tree: treeRef.current }, activeIdRef.current, newIndex)
         setTitleValue(formatSceneTabTitle(node.title, newTabs, newIndex))
       }
     }
@@ -1689,6 +1854,9 @@ export default function App() {
     rememberEditorSplitTab(nextSplitIndex)
     setActiveTabIndex(newIndex)
     activeTabIndexRef.current = newIndex
+    if (activeIdRef.current !== null) {
+      sceneActiveTabRef.current[activeIdRef.current] = newIndex
+    }
     const content = newTabs[newIndex]?.content ?? ''
     bodyHtmlRef.current = content
     editor?.commands.setContent(content, { emitUpdate: false })
@@ -1696,6 +1864,7 @@ export default function App() {
       const node = findNode(treeRef.current, activeIdRef.current)
       if (node && node.type === 'doc') {
         writeSceneFile(projectRef.current.path, node.file, newRaw)
+        saveProjectState({ ...projectRef.current, tree: treeRef.current }, activeIdRef.current, newIndex)
       }
     }
     setWordCount(countLatestRevisionWords(newTabs))
@@ -1726,6 +1895,10 @@ export default function App() {
     sceneTabsRef.current = reordered
     setSceneTabs(reordered)
     setActiveTabIndex(newActiveIndex)
+    activeTabIndexRef.current = newActiveIndex
+    if (activeIdRef.current !== null) {
+      sceneActiveTabRef.current[activeIdRef.current] = newActiveIndex
+    }
     rememberEditorSplitTab(newSplitIndex !== null && newSplitIndex >= 0 && newSplitIndex !== newActiveIndex ? newSplitIndex : null)
     setTabDragIndex(null)
     setTabDropIndex(null)
@@ -1736,6 +1909,7 @@ export default function App() {
         const serialized = serializeSceneTabs(reordered, rawFileRef.current)
         rawFileRef.current = serialized
         writeSceneFile(projectRef.current.path, node.file, serialized)
+        saveProjectState({ ...projectRef.current, tree: treeRef.current }, activeIdRef.current, newActiveIndex)
       }
     }
   }
@@ -1833,6 +2007,7 @@ export default function App() {
     const newCat: LoreCategory = {
       id: generateLoreId(),
       name: 'New Category',
+      subcategories: [],
       template: [],
       entries: [],
     }
@@ -1849,10 +2024,23 @@ export default function App() {
   // Saves the template editor result.
   const saveLoreTemplate = async (edited: LoreCategory) => {
     const updated = { ...loreBookRef.current }
+    const subcategoryIds = new Set((edited.subcategories ?? []).map(subcategory => subcategory.id))
+    const normalizedEdited = {
+      ...edited,
+      subcategories: (edited.subcategories ?? []).map(subcategory => ({
+        ...subcategory,
+        name: subcategory.name.trim() || 'Unnamed Subcategory',
+      })),
+      entries: edited.entries.map(entry =>
+        entry.subcategoryId && !subcategoryIds.has(entry.subcategoryId)
+          ? { ...entry, subcategoryId: undefined }
+          : entry
+      ),
+    }
     if (loreTemplateIsNew) {
-      updated.categories = [...updated.categories, edited]
+      updated.categories = [...updated.categories, normalizedEdited]
     } else {
-      updated.categories = updated.categories.map(c => c.id === edited.id ? edited : c)
+      updated.categories = updated.categories.map(c => c.id === edited.id ? normalizedEdited : c)
     }
     await saveLoreBook(updated)
     setLoreTemplateEditor(null)
@@ -2037,14 +2225,117 @@ export default function App() {
     const updated = { ...loreBookRef.current }
     updated.categories = updated.categories.map(c => {
       if (c.id !== categoryId) return c
+      const subcategoryIds = new Set((c.subcategories ?? []).map(subcategory => subcategory.id))
+      const normalizedEntry = entry.subcategoryId && !subcategoryIds.has(entry.subcategoryId)
+        ? { ...entry, subcategoryId: undefined }
+        : entry
       const exists = c.entries.find(e => e.id === entry.id)
       const entries = exists
-        ? c.entries.map(e => e.id === entry.id ? entry : e)
-        : [...c.entries, entry]
+        ? c.entries.map(e => e.id === entry.id ? normalizedEntry : e)
+        : [...c.entries, normalizedEntry]
       return { ...c, entries }
     })
     await saveLoreBook(updated)
     setLoreEntryEditor(null)
+  }
+
+  const toggleLoreEntryPinned = async (categoryId: string, entryId: string, pinned: boolean) => {
+    const updated = {
+      ...loreBookRef.current,
+      categories: loreBookRef.current.categories.map(category => {
+        if (category.id !== categoryId) return category
+        return {
+          ...category,
+          entries: category.entries.map(entry =>
+            entry.id === entryId ? { ...entry, pinned } : entry
+          ),
+        }
+      }),
+    }
+    await saveLoreBook(updated)
+  }
+
+  const addLoreKeywordFromSelection = async (categoryId: string, entryId: string, keyword: string) => {
+    const normalizedKeyword = keyword.replace(/\s+/g, ' ').trim()
+    if (!normalizedKeyword) {
+      setEditorContextMenu(null)
+      return
+    }
+    const updated = {
+      ...loreBookRef.current,
+      categories: loreBookRef.current.categories.map(category => {
+        if (category.id !== categoryId) return category
+        return {
+          ...category,
+          entries: category.entries.map(entry => {
+            if (entry.id !== entryId) return entry
+            const keywords = entry.keywords ?? []
+            const exists = keywords.some(existing =>
+              existing.trim().toLocaleLowerCase() === normalizedKeyword.toLocaleLowerCase()
+            )
+            return exists ? entry : { ...entry, keywords: [...keywords, normalizedKeyword] }
+          }),
+        }
+      }),
+    }
+    await saveLoreBook(updated)
+    setEditorContextMenu(null)
+  }
+
+  const createLoreEntryFromSelection = async (categoryId: string, name: string) => {
+    const normalizedName = name.replace(/\s+/g, ' ').trim()
+    if (!normalizedName) {
+      setEditorContextMenu(null)
+      return
+    }
+    const entry: LoreEntry = {
+      id: generateLoreId(),
+      name: normalizedName,
+      keywords: [normalizedName],
+      fields: {},
+    }
+    const updated = {
+      ...loreBookRef.current,
+      categories: loreBookRef.current.categories.map(category =>
+        category.id === categoryId
+          ? { ...category, entries: [...category.entries, entry] }
+          : category
+      ),
+    }
+    await saveLoreBook(updated)
+    setActiveLoreCategoryId(categoryId)
+    setExpandedEntryId(entry.id)
+    setLoreView('entry')
+    setWorkspace('lorebook')
+    setEditorContextMenu(null)
+  }
+
+  const createLoreEntryFromAtlasMarker = async (categoryId: string, name: string): Promise<{ categoryId: string; entryId: string } | null> => {
+    const normalizedName = name.replace(/\s+/g, ' ').trim()
+    if (!normalizedName) return null
+    const entry: LoreEntry = {
+      id: generateLoreId(),
+      name: normalizedName,
+      keywords: [normalizedName],
+      fields: {},
+    }
+    const updated = {
+      ...loreBookRef.current,
+      categories: loreBookRef.current.categories.map(category =>
+        category.id === categoryId
+          ? { ...category, entries: [...category.entries, entry] }
+          : category
+      ),
+    }
+    await saveLoreBook(updated)
+    return { categoryId, entryId: entry.id }
+  }
+
+  const openLoreEntryById = (categoryId: string, entryId: string) => {
+    setWorkspace('lorebook')
+    setLoreView('entry')
+    setActiveLoreCategoryId(categoryId)
+    setExpandedEntryId(entryId)
   }
 
   // Deletes an entry.
@@ -2549,6 +2840,10 @@ export default function App() {
     outlineProjectPathRef.current = null
     setTree([])
     treeRef.current = []
+    sceneWordCountsRef.current = {}
+    sessionWordDeltaRef.current = 0
+    setSessionWordDelta(0)
+    setSessionStartedAt(null)
     setActiveId(null)
     activeIdRef.current = null
     setTitleValue('')
@@ -2569,6 +2864,7 @@ export default function App() {
     setConfirmDeleteTab(null)
     setLoreBook({ categories: [] })
     loreBookRef.current = { categories: [] }
+    setLoreBacklinks({})
     setLoreView('home')
     setActiveLoreCategoryId(null)
     setLoreTemplateEditor(null)
@@ -2603,15 +2899,26 @@ export default function App() {
     try {
       await runProjectBackup('compile')
       const chapters = await buildCompileChapters(tree, project.path)
-      // Restore saved tab selections, defaulting to '__last__'
+      // Restore saved tab and inclusion selections, defaulting to the current tree.
       const selections = projectRef.current?.compileSelections ?? {}
-      const restored = chapters.map(ch => ({
-        ...ch,
-        scenes: ch.scenes.map(s => ({
-          ...s,
-          selectedTab: selections[s.fileId] ?? '__last__',
-        })),
-      }))
+      const includes = projectRef.current?.compileIncludes ?? {}
+      const ancestorIncludedByDepth: boolean[] = []
+      const restored = chapters.map(ch => {
+        const depth = ch.depth ?? 0
+        ancestorIncludedByDepth.length = depth
+        const ancestorsIncluded = ancestorIncludedByDepth.every(included => included !== false)
+        const folderIncluded = includes[`folder:${ch.folderId}`] ?? ancestorsIncluded
+        ancestorIncludedByDepth[depth] = folderIncluded
+        return {
+          ...ch,
+          included: folderIncluded,
+          scenes: ch.scenes.map(s => ({
+            ...s,
+            selectedTab: selections[s.fileId] ?? '__last__',
+            included: includes[`scene:${s.fileId}`] ?? folderIncluded,
+          })),
+        }
+      })
       setCompileChapters(restored)
     } catch (e) {
       setShowCompile(false)
@@ -2619,6 +2926,11 @@ export default function App() {
     } finally {
       setCompileLoading(false)
     }
+  }
+
+  const saveCompileProjectMetadata = (project: Project) => {
+    projectRef.current = project
+    saveProjectToDisk(project, activeIdRef.current ?? undefined)
   }
 
   const updateCompileSelection = (fileId: string, value: string) => {
@@ -2630,9 +2942,19 @@ export default function App() {
         [fileId]: value,
       },
     }
-    projectRef.current = updated
-    setProject(updated)
-    saveProjectToDisk(updated, activeIdRef.current ?? undefined)
+    saveCompileProjectMetadata(updated)
+  }
+
+  const updateCompileIncludes = (updates: Record<string, boolean>) => {
+    if (!projectRef.current) return
+    const updated: Project = {
+      ...projectRef.current,
+      compileIncludes: {
+        ...projectRef.current.compileIncludes,
+        ...updates,
+      },
+    }
+    saveCompileProjectMetadata(updated)
   }
 
   type CompileMarks = {
@@ -3056,6 +3378,10 @@ export default function App() {
       const loadedAtlas = await readAtlasFile(newProj.path)
       setProject(newProj)
       projectRef.current = newProj
+      sceneWordCountsRef.current = {}
+      sessionWordDeltaRef.current = 0
+      setSessionWordDelta(0)
+      setSessionStartedAt(Date.now())
       setStyles(defaultStyles)
       setProjectDictionary([])
       setLoreBook(loadedLoreBook)
@@ -3085,6 +3411,7 @@ export default function App() {
     const loadedStyles = normalizeProjectStyles(data.styles as Partial<ProjectStyles> | undefined)
     const loadedTree = data.tree as TreeNode[]
     const restoredId = (data.lastActiveId as number | null) ?? null
+    const restoredTabIndex = Number.isInteger(data.lastActiveTabIndex) ? data.lastActiveTabIndex as number : 0
     const visibleTree = restoredId !== null
       ? openAncestorFoldersForNode(loadedTree, restoredId).nodes
       : loadedTree
@@ -3096,8 +3423,15 @@ export default function App() {
       tree: visibleTree,
       styles: loadedStyles,
       settings: loadedSettings,
+      lastActiveTabIndex: restoredTabIndex,
       compileSelections: (data.compileSelections as Record<string, string>) ?? {},
+      compileIncludes: (data.compileIncludes as Record<string, boolean>) ?? {},
+      writingStats: normalizeWritingStats(data.writingStats as Partial<Project['writingStats']> | undefined),
     }
+    sceneWordCountsRef.current = {}
+    sessionWordDeltaRef.current = 0
+    setSessionWordDelta(0)
+    setSessionStartedAt(Date.now())
     setProject(loadedProject)
     setOutlineCollapsedFolderIds(new Set())
     projectRef.current = loadedProject
@@ -3134,19 +3468,26 @@ export default function App() {
         const tabs = parseSceneTabs(raw)
         setSceneTabs(tabs)
         sceneTabsRef.current = tabs
-        setActiveTabIndex(0)
-        activeTabIndexRef.current = 0
-        const content = tabs[0]?.content ?? ''
+        const safeTabIndex = restoredTabIndex >= 0 && restoredTabIndex < tabs.length
+          ? restoredTabIndex
+          : Math.max(tabs.length - 1, 0)
+        sceneActiveTabRef.current[restoredId] = safeTabIndex
+        setActiveTabIndex(safeTabIndex)
+        activeTabIndexRef.current = safeTabIndex
+        const content = tabs[safeTabIndex]?.content ?? ''
         bodyHtmlRef.current = content
         editor?.commands.setContent(content, { emitUpdate: false })
         setRevisionActiveId(restoredId)
         setRevisionTitle(restoredNode.title)
-        setRevisionContent(tabs[tabs.length - 1]?.content ?? '')
+        setRevisionTabs(tabs)
+        setRevisionActiveTabIndex(safeTabIndex)
+        setRevisionContent(tabs[safeTabIndex]?.content ?? '')
         const div = document.createElement('div')
         div.innerHTML = content
         const text = div.textContent ?? ''
         setWordCount(countLatestRevisionWords(tabs))
         setCharCount(text.length)
+        setTitleValue(formatSceneTabTitle(restoredNode.title, tabs, safeTabIndex))
       } else {
         setRevisionActiveId(null)
         setRevisionTitle('')
@@ -3185,16 +3526,24 @@ export default function App() {
     setShowProjectSettings(false)
   }
 
-  const savePreferences = (theme: ThemeId, shouldIncrementNewNodeNumbers: boolean, nextReadingWpm: number) => {
+  const savePreferences = (
+    theme: ThemeId,
+    shouldIncrementNewNodeNumbers: boolean,
+    nextReadingWpm: number,
+    nextDefaultSceneTargetWordCount: number,
+  ) => {
     const normalizedReadingWpm = Math.min(1000, Math.max(50, Math.round(nextReadingWpm)))
+    const normalizedDefaultSceneTargetWordCount = Math.min(999999, Math.max(0, Math.round(nextDefaultSceneTargetWordCount)))
     setAppTheme(theme)
     setIncrementNewNodeNumbers(shouldIncrementNewNodeNumbers)
     setReadingWpm(normalizedReadingWpm)
+    setDefaultSceneTargetWordCount(normalizedDefaultSceneTargetWordCount)
     saveSettings({
       ...loadSettings(),
       theme,
       incrementNewNodeNumbers: shouldIncrementNewNodeNumbers,
       readingWpm: normalizedReadingWpm,
+      defaultSceneTargetWordCount: normalizedDefaultSceneTargetWordCount,
     })
     setShowPreferences(false)
   }
@@ -3312,6 +3661,7 @@ export default function App() {
 
     try {
       const result = await checkForScrivusUpdate(SCRIVUS_VERSION)
+      setWelcomeUpdateStatus(result)
       if (result.status === 'available') {
         showMessage(
           `Scrivus ${result.latestVersion} is available. You are currently running ${result.currentVersion}.`,
@@ -3332,6 +3682,7 @@ export default function App() {
         'Scrivus Is Up to Date',
       )
     } catch (e) {
+      setWelcomeUpdateStatus({ status: 'failed', currentVersion: SCRIVUS_VERSION })
       showMessage(
         `Scrivus could not check GitHub Releases right now.\n\n${String(e)}`,
         'Update Check Failed',
@@ -3532,11 +3883,17 @@ export default function App() {
     return lastFolder?.role === 'act' ? 'act' : 'chapter'
   }
 
+  const createDefaultSceneMetadata = (): SceneMetadata => ({
+    ...DEFAULT_SCENE_METADATA,
+    tags: [...DEFAULT_SCENE_METADATA.tags],
+    targetWordCount: defaultSceneTargetWordCount,
+  })
+
   const createNewDocNode = (targetFolderId?: number): DocNode => {
     const id = allocateNextId()
     const fileId = generateFileId()
     const label = getNextNumberedLabel(targetFolderId, 'Scene')
-    return { id, type: 'doc', label, title: label, file: fileId, metadata: DEFAULT_SCENE_METADATA }
+    return { id, type: 'doc', label, title: label, file: fileId, metadata: createDefaultSceneMetadata() }
   }
 
   const createNewFolderNode = (targetFolderId?: number): FolderNode => {
@@ -3550,6 +3907,7 @@ export default function App() {
   const addDoc = async (targetFolderId?: number) => {
     const node = createNewDocNode(targetFolderId)
     const newTree = addDocToTree(treeRef.current, targetFolderId, node)
+    sceneWordCountsRef.current[node.file] = 0
     setTree(newTree)
     treeRef.current = newTree
     setSelectedBinderIds(new Set())
@@ -3579,11 +3937,14 @@ export default function App() {
 
   const createSceneFromMindMapNode = async (mindMapNode: MindMapNode): Promise<number | null> => {
     if (!projectRef.current) return null
-    const title = mindMapNode.text.trim().split(/\s+/).slice(0, 8).join(' ') || 'New scene'
+    const title = mindMapNode.title?.trim() ||
+      mindMapNode.text.trim().split(/\s+/).slice(0, 8).join(' ') ||
+      'New scene'
     const id = allocateNextId()
     const fileId = generateFileId()
-    const node: DocNode = { id, type: 'doc', label: title, title, file: fileId, metadata: DEFAULT_SCENE_METADATA }
+    const node: DocNode = { id, type: 'doc', label: title, title, file: fileId, metadata: createDefaultSceneMetadata() }
     const newTree = addDocToTree(treeRef.current, 1, node)
+    sceneWordCountsRef.current[fileId] = 0
     const defaultTabs: SceneTab[] = [{ name: 'First Draft', content: '' }]
     const defaultRaw = serializeSceneTabs(defaultTabs, '')
 
@@ -3971,6 +4332,35 @@ export default function App() {
     activeNode?.type === 'doc' && !isTrashPreview
       ? normalizeSceneMetadata(activeNode.metadata)
       : null
+  useEffect(() => {
+    if (workspace !== 'editor' || !showEditor) setFocusMode(false)
+  }, [workspace, showEditor])
+
+  const manuscriptSceneIds = useMemo(() => {
+    const manuscript = findNode(tree, 1)
+    return manuscript?.type === 'folder'
+      ? collectDocs(manuscript).map(doc => doc.id)
+      : []
+  }, [tree])
+  const activeManuscriptSceneIndex = activeId !== null && !isTrashPreview
+    ? manuscriptSceneIds.indexOf(activeId)
+    : -1
+  const previousSceneId = activeManuscriptSceneIndex > 0
+    ? manuscriptSceneIds[activeManuscriptSceneIndex - 1]
+    : null
+  const nextSceneId = activeManuscriptSceneIndex >= 0 && activeManuscriptSceneIndex < manuscriptSceneIds.length - 1
+    ? manuscriptSceneIds[activeManuscriptSceneIndex + 1]
+    : null
+
+  const selectPreviousScene = () => {
+    if (previousSceneId === null) return
+    void selectDoc(previousSceneId)
+  }
+
+  const selectNextScene = () => {
+    if (nextSceneId === null) return
+    void selectDoc(nextSceneId)
+  }
 
   // #endregion
 
@@ -4060,6 +4450,7 @@ export default function App() {
         const parentNode = findNode(newTree, parent.id) as FolderNode
         const idx = parentNode.children.findIndex(c => c.id === node.id)
         parentNode.children.splice(idx + 1, 0, newDoc)
+        sceneWordCountsRef.current[newDoc.file] = 0
         setTree(newTree)
         treeRef.current = newTree
         const defaultTabs: SceneTab[] = [{ name: 'First Draft', content: '' }]
@@ -4241,6 +4632,215 @@ export default function App() {
     )
   }
 
+  const WelcomeUpdateNotice = () => {
+    const statusClass = welcomeUpdateStatus.status === 'available'
+      ? ' available'
+      : welcomeUpdateStatus.status === 'failed'
+        ? ' failed'
+        : ''
+    const title = welcomeUpdateStatus.status === 'available'
+      ? 'Update Available'
+      : welcomeUpdateStatus.status === 'current'
+        ? 'Latest Version Up to Date'
+        : welcomeUpdateStatus.status === 'checking'
+          ? 'Checking for Updates'
+          : 'Update Check Unavailable'
+    const versionText = welcomeUpdateStatus.status === 'available'
+      ? `Scrivus ${welcomeUpdateStatus.currentVersion} -> ${welcomeUpdateStatus.latestVersion}`
+      : `Scrivus Version ${welcomeUpdateStatus.currentVersion}`
+
+    const content = (
+      <>
+        <span className="welcome-update-title">{title}</span>
+        <span className="welcome-update-version">{versionText}</span>
+      </>
+    )
+
+    if (welcomeUpdateStatus.status === 'available') {
+      return (
+        <button
+          className={`welcome-update-notice${statusClass}`}
+          onClick={() => { void openUrl(welcomeUpdateStatus.releaseUrl) }}
+        >
+          {content}
+        </button>
+      )
+    }
+
+    return (
+      <div className={`welcome-update-notice${statusClass}`}>
+        {content}
+      </div>
+    )
+  }
+
+  const GoalModal = () => {
+    const [monthlyTarget, setMonthlyTarget] = useState(String(goals.monthlyTargetWordCount || ''))
+    const [dailyTarget, setDailyTarget] = useState(String(goals.dailyTargetWordCount || ''))
+    const [sessionTarget, setSessionTarget] = useState(String(goals.sessionTargetWordCount || ''))
+    const [sceneTarget, setSceneTarget] = useState(String(activeSceneMetadata?.targetWordCount || ''))
+    const writingStats = normalizeWritingStats(projectRef.current?.writingStats)
+    const todayKey = localDateKey()
+    const monthKey = todayKey.slice(0, 7)
+    const dailyProgress = writingStats.dailyWordDeltas[todayKey] ?? 0
+    const monthlyProgress = Object.entries(writingStats.dailyWordDeltas)
+      .filter(([key]) => key.startsWith(monthKey))
+      .reduce((total, [, value]) => total + value, 0)
+    const sceneProgress = wordCount
+    const sessionStartedLabel = sessionStartedAt
+      ? new Date(sessionStartedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+      : 'this project session'
+    const sessionElapsedLabel = (() => {
+      if (!sessionStartedAt) return ''
+      const elapsedMinutes = Math.max(0, Math.floor((Date.now() - sessionStartedAt) / 60000))
+      if (elapsedMinutes < 60) return `${elapsedMinutes}m elapsed`
+      const hours = Math.floor(elapsedMinutes / 60)
+      const minutes = elapsedMinutes % 60
+      return minutes > 0 ? `${hours}h ${minutes}m elapsed` : `${hours}h elapsed`
+    })()
+
+    useEffect(() => {
+      setMonthlyTarget(String(goals.monthlyTargetWordCount || ''))
+      setDailyTarget(String(goals.dailyTargetWordCount || ''))
+      setSessionTarget(String(goals.sessionTargetWordCount || ''))
+      setSceneTarget(String(activeSceneMetadata?.targetWordCount || ''))
+    }, [activeSceneMetadata?.targetWordCount, goals])
+
+    const cleanInput = (value: string) => value.replace(/\D/g, '')
+    const normalizeGoal = (value: string, max: number) => {
+      const parsed = Number(value)
+      return Number.isFinite(parsed) ? Math.min(max, Math.max(0, Math.round(parsed))) : 0
+    }
+
+    const saveGoals = () => {
+      const nextGoals = {
+        monthlyTargetWordCount: normalizeGoal(monthlyTarget, 9999999),
+        dailyTargetWordCount: normalizeGoal(dailyTarget, 999999),
+        sessionTargetWordCount: normalizeGoal(sessionTarget, 999999),
+      }
+      const nextSceneTarget = normalizeGoal(sceneTarget, 999999)
+      setGoals(nextGoals)
+      saveSettings({
+        ...loadSettings(),
+        goals: nextGoals,
+      })
+      if (activeSceneMetadata) {
+        updateActiveSceneMetadata({
+          ...activeSceneMetadata,
+          targetWordCount: nextSceneTarget,
+        })
+      }
+      setShowGoalModal(false)
+    }
+
+    const GoalProgressRow = ({
+      label,
+      progress,
+      target,
+      detail,
+    }: {
+      label: string
+      progress: number
+      target: number
+      detail: string
+    }) => {
+      const width = target > 0 ? Math.min(100, Math.max(0, (progress / target) * 100)) : 0
+      return (
+        <div className="goal-progress-row">
+          <div className="goal-progress-header">
+            <span>{label}</span>
+            <span>{target > 0 ? `${progress.toLocaleString()} / ${target.toLocaleString()}` : 'No target'}</span>
+          </div>
+          <div className="goal-progress-track" aria-hidden="true">
+            <span style={{ width: `${width}%` }} />
+          </div>
+          <div className="goal-progress-detail">{detail}</div>
+        </div>
+      )
+    }
+
+    return (
+      <div className="modal-overlay">
+        <div className="modal-box goal-modal">
+          <p className="modal-title">Writing Goals</p>
+          <div className="goal-progress-list">
+            <GoalProgressRow
+              label="Monthly"
+              progress={monthlyProgress}
+              target={goals.monthlyTargetWordCount}
+              detail={`Tracked for ${monthKey}`}
+            />
+            <GoalProgressRow
+              label="Daily"
+              progress={dailyProgress}
+              target={goals.dailyTargetWordCount}
+              detail={`Tracked for ${todayKey}`}
+            />
+            <GoalProgressRow
+              label="Session"
+              progress={sessionWordDelta}
+              target={goals.sessionTargetWordCount}
+              detail={`Net words since ${sessionStartedLabel}${sessionElapsedLabel ? ` · ${sessionElapsedLabel}` : ''}`}
+            />
+            <GoalProgressRow
+              label="Current scene"
+              progress={sceneProgress}
+              target={activeSceneMetadata?.targetWordCount ?? 0}
+              detail={activeSceneMetadata ? 'Current scene word count' : 'No scene selected'}
+            />
+          </div>
+          <div className="goal-fields">
+            <label className="modal-field">
+              <span className="modal-label">Monthly target</span>
+              <input
+                className="modal-input"
+                inputMode="numeric"
+                value={monthlyTarget}
+                onChange={e => setMonthlyTarget(cleanInput(e.target.value))}
+                placeholder="0"
+              />
+            </label>
+            <label className="modal-field">
+              <span className="modal-label">Daily target</span>
+              <input
+                className="modal-input"
+                inputMode="numeric"
+                value={dailyTarget}
+                onChange={e => setDailyTarget(cleanInput(e.target.value))}
+                placeholder="0"
+              />
+            </label>
+            <label className="modal-field">
+              <span className="modal-label">Session target</span>
+              <input
+                className="modal-input"
+                inputMode="numeric"
+                value={sessionTarget}
+                onChange={e => setSessionTarget(cleanInput(e.target.value))}
+                placeholder="0"
+              />
+            </label>
+            <label className="modal-field">
+              <span className="modal-label">Current scene target</span>
+              <input
+                className="modal-input"
+                inputMode="numeric"
+                value={sceneTarget}
+                onChange={e => setSceneTarget(cleanInput(e.target.value))}
+                placeholder="0"
+                disabled={!activeSceneMetadata}
+              />
+            </label>
+          </div>
+          <div className="modal-footer">
+            <button className="welcome-btn" onClick={() => setShowGoalModal(false)}>Cancel</button>
+            <button className="welcome-btn" onClick={saveGoals}>Save</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const handleWorkspaceChange = (nextWorkspace: Workspace) => {
     if (workspace === 'editor' && nextWorkspace !== 'editor' && saveTimer.current) {
       clearTimeout(saveTimer.current)
@@ -4267,6 +4867,7 @@ export default function App() {
       setRevisionContent(updatedTabs[safeIndex]?.content ?? '')
     }
     setWorkspace(nextWorkspace)
+    if (nextWorkspace !== 'editor') setFocusMode(false)
   }
 
   const openOutlineScene = async (id: number) => {
@@ -4424,10 +5025,12 @@ export default function App() {
           theme={appTheme}
           incrementNewNodeNumbers={incrementNewNodeNumbers}
           readingWpm={readingWpm}
+          defaultSceneTargetWordCount={defaultSceneTargetWordCount}
           onCancel={() => setShowPreferences(false)}
           onSave={savePreferences}
         />
       )}
+      {showGoalModal && <GoalModal />}
       <RestoreBackupModal
         open={restoreBackupOpen}
         backups={availableBackups}
@@ -4503,6 +5106,7 @@ export default function App() {
           onIncludeSceneTitlesChange={setCompileIncludeSceneTitles}
           onChaptersChange={setCompileChapters}
           onSelectionChange={updateCompileSelection}
+          onIncludeChange={updateCompileIncludes}
           onExport={compileProject}
         />
       )}
@@ -4564,6 +5168,7 @@ export default function App() {
             </div>
           </div>
         )}
+        <WelcomeUpdateNotice />
       </div>
     )
   }
@@ -4575,7 +5180,7 @@ export default function App() {
   // Render: main editor workspace
   // ───────────────────────────────────────────────────────────────────────────
   return (
-    <div id="app" style={{ position: 'relative' }}>
+    <div id="app" className={focusMode ? 'editor-focus-mode' : undefined} style={{ position: 'relative' }}>
       <div id="menubar">
         <MenuBarMenus />
         <span className="project-title">{project.name}</span>
@@ -4664,7 +5269,7 @@ export default function App() {
         onRestoreFromTrash={restoreFromTrash}
       />
       <SearchPanel
-        open={showSearch && workspace === 'editor'}
+        open={showSearch && workspace === 'editor' && !focusMode}
         query={searchQuery}
         results={searchResults}
         loading={searchLoading}
@@ -4678,7 +5283,7 @@ export default function App() {
       />
 
       <FindReplacePanel
-        open={showFnR && workspace === 'editor'}
+        open={showFnR && workspace === 'editor' && !focusMode}
         find={fnrFind}
         replace={fnrReplace}
         scope={fnrScope}
@@ -4699,16 +5304,20 @@ export default function App() {
         editorState={{
           showEditor,
           editor,
+          focusMode,
           isNarrow,
           isTrashPreview,
           titleValue,
           titleBookmarked: activeId !== null && !isTrashPreview,
           loreLinksEnabled,
+          onFocusModeChange: setFocusMode,
           onLoreLinksEnabledChange: setLoreLinksEnabled,
         }}
         tabState={{
           sceneTabs,
           activeTabIndex,
+          canSelectPreviousScene: previousSceneId !== null,
+          canSelectNextScene: nextSceneId !== null,
           splitTabIndex: editorSplitTabIndex,
           activeSceneId: activeId,
           revisionComments,
@@ -4720,6 +5329,8 @@ export default function App() {
           onTabDropIndexChange: setTabDropIndex,
           onRenamingTabIndexChange: setRenamingTabIndex,
           onTabContextMenuChange: setTabContextMenu,
+          onSelectPreviousScene: selectPreviousScene,
+          onSelectNextScene: selectNextScene,
           onSwitchTab: switchTab,
           onSelectSplitTab: selectEditorSplitTab,
           onCloseSplitTab: closeEditorSplitTab,
@@ -4729,6 +5340,8 @@ export default function App() {
         }}
         statusState={{
           wordCount,
+          targetWordCount: activeSceneMetadata?.targetWordCount,
+          onGoalClick: () => setShowGoalModal(true),
           chapterWordCount,
           manuscriptWordCount,
           readingWpm,
@@ -4761,6 +5374,9 @@ export default function App() {
           onImportMap: importAtlasMap,
           onDeleteMap: deleteAtlasMap,
           onReplaceMapImage: replaceAtlasMapImage,
+          loreBook,
+          onOpenLoreEntry: openLoreEntryById,
+          onCreateLoreEntry: createLoreEntryFromAtlasMarker,
         }}
         loreState={{
           loreBook,
@@ -4768,6 +5384,7 @@ export default function App() {
           activeLoreCategoryId,
           expandedEntryId,
           projectPath: projectRef.current?.path ?? null,
+          backlinks: loreBacklinks,
           onLoreViewChange: setLoreView,
           onActiveLoreCategoryChange: setActiveLoreCategoryId,
           onExpandedEntryChange: setExpandedEntryId,
@@ -4777,6 +5394,8 @@ export default function App() {
           onNewEntry: openNewEntryEditor,
           onEditEntry: openEditEntryEditor,
           onDeleteEntryRequest: setConfirmDeleteLoreEntry,
+          onToggleEntryPinned: toggleLoreEntryPinned,
+          onOpenScene: openOutlineScene,
         }}
         revisionState={{
           revisionActiveId,
@@ -4902,12 +5521,15 @@ export default function App() {
       />
       <EditorContextMenu
         menu={editorContextMenu}
+        loreBook={loreBook}
         onBold={() => runEditorContextCommand(() => editor?.chain().focus().toggleBold().run())}
         onItalic={() => runEditorContextCommand(() => editor?.chain().focus().toggleItalic().run())}
         onUnderline={() => runEditorContextCommand(() => editor?.chain().focus().toggleMark('underline').run())}
         onBulletList={() => runEditorContextCommand(() => editor?.chain().focus().toggleBulletList().run())}
         onOrderedList={() => runEditorContextCommand(() => editor?.chain().focus().toggleOrderedList().run())}
         onBlockQuote={() => runEditorContextCommand(() => editor?.chain().focus().toggleBlockquote().run())}
+        onLinkLoreKeyword={addLoreKeywordFromSelection}
+        onCreateLoreEntry={createLoreEntryFromSelection}
         onCut={cutSelectedEditorText}
         onCopy={copySelectedEditorText}
         onPastePlainText={pastePlainTextIntoEditor}

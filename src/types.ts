@@ -30,7 +30,14 @@ export type Project = {
   tree: TreeNode[]
   styles: ProjectStyles
   settings: ProjectSettings
+  lastActiveTabIndex?: number
   compileSelections: Record<string, string>
+  compileIncludes: Record<string, boolean>
+  writingStats: WritingStats
+}
+
+export type WritingStats = {
+  dailyWordDeltas: Record<string, number>
 }
 
 export type ChapterStyle = {
@@ -84,6 +91,7 @@ export type SceneMetadata = {
   pov: string
   location: string
   timeline: string
+  targetWordCount: number
   tags: string[]
   synopsis: string
 }
@@ -97,9 +105,16 @@ export type LoreTemplateElement = {
   removed: boolean
 }
 
+export type LoreSubcategory = {
+  id: string
+  name: string
+}
+
 export type LoreEntry = {
   id: string
   name: string
+  pinned?: boolean
+  subcategoryId?: string
   keywords?: string[]
   fields: Record<string, string>
 }
@@ -107,6 +122,7 @@ export type LoreEntry = {
 export type LoreCategory = {
   id: string
   name: string
+  subcategories?: LoreSubcategory[]
   template: LoreTemplateElement[]
   entries: LoreEntry[]
 }
@@ -194,12 +210,13 @@ export type OutlineRow = {
 
 export type MindMapNodeKind = 'idea' | 'scene' | 'character' | 'location' | 'note'
 
-export type MindMapNodeColor = 'default' | 'blue' | 'green' | 'rose' | 'gold' | 'violet'
+export type MindMapNodeColor = 'default' | 'blue' | 'green' | 'rose' | 'gold' | 'violet' | 'cyan' | 'orange' | 'red' | 'slate'
 
 export type MindMapNode = {
   id: string
   x: number
   y: number
+  title?: string
   text: string
   kind: MindMapNodeKind
   color: MindMapNodeColor
@@ -223,6 +240,7 @@ export type MindMap = {
   nodes: MindMapNode[]
   edges: MindMapEdge[]
   viewport: MindMapViewport
+  colorLabels?: Partial<Record<MindMapNodeColor, string>>
 }
 
 export type MindMapSceneOption = {
@@ -231,7 +249,7 @@ export type MindMapSceneOption = {
   chapter: string
 }
 
-export type AtlasMarkerKind = 'town' | 'landmark' | 'region' | 'route' | 'note'
+export type AtlasMarkerKind = 'town' | 'city' | 'capital' | 'village' | 'camp' | 'landmark' | 'ruin' | 'dungeon' | 'region' | 'route' | 'border' | 'water' | 'danger' | 'note'
 
 export type AtlasMarkerVisibility = 'always' | 'medium' | 'close'
 
@@ -244,6 +262,8 @@ export type AtlasMarker = {
   label: string
   kind: AtlasMarkerKind
   visibility: AtlasMarkerVisibility
+  linkedLoreCategoryId?: string
+  linkedLoreEntryId?: string
 }
 
 export type AtlasViewport = {
@@ -261,6 +281,7 @@ export type AtlasMap = {
   imageSampling: AtlasImageSampling
   viewport: AtlasViewport
   markers: AtlasMarker[]
+  hiddenMarkerKinds?: AtlasMarkerKind[]
 }
 
 export type Atlas = {

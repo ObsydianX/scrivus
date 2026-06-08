@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { COMPILE_STYLE_PRESETS, LOREM_PREVIEW } from '../constants'
 import type { CompileChapterEntry, ProjectStyles } from '../types'
@@ -6,6 +7,17 @@ type CompileStylePreset = typeof COMPILE_STYLE_PRESETS[number]
 
 function folderLabel(chapter: CompileChapterEntry) {
   return chapter.role === 'act' ? 'Act' : 'Chapter'
+}
+
+function isRowInFolderRange(chapters: CompileChapterEntry[], parentIndex: number, index: number) {
+  if (index === parentIndex) return true
+  if (index < parentIndex) return false
+  const parentDepth = chapters[parentIndex]?.depth ?? 0
+  for (let i = parentIndex + 1; i <= index; i++) {
+    const depth = chapters[i]?.depth ?? 0
+    if (depth <= parentDepth) return false
+  }
+  return true
 }
 
 type CompileModalProps = {
@@ -24,6 +36,7 @@ type CompileModalProps = {
   onIncludeSceneTitlesChange: (value: boolean) => void
   onChaptersChange: Dispatch<SetStateAction<CompileChapterEntry[]>>
   onSelectionChange: (fileId: string, value: string) => void
+  onIncludeChange: (updates: Record<string, boolean>) => void
   onExport: () => void
 }
 
@@ -43,8 +56,20 @@ export function CompileModal({
   onIncludeSceneTitlesChange,
   onChaptersChange,
   onSelectionChange,
+  onIncludeChange,
   onExport,
 }: CompileModalProps) {
+  const sceneListRef = useRef<HTMLDivElement | null>(null)
+
+  const preserveSceneListScroll = () => {
+    const list = sceneListRef.current
+    if (!list) return
+    const scrollTop = list.scrollTop
+    requestAnimationFrame(() => {
+      if (sceneListRef.current) sceneListRef.current.scrollTop = scrollTop
+    })
+  }
+
   return (
     <div
       style={{
@@ -276,7 +301,7 @@ export function CompileModal({
                 }}>
                   SCENE SELECTION
                 </div>
-                <div className="compile-scene-list" style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px' }}>
+                <div ref={sceneListRef} className="compile-scene-list" style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px' }}>
                   {chapters.map((chapter, ci) => (
                     <div key={chapter.folderId} style={{ marginBottom: 8 }}>
                       <label style={{
@@ -291,13 +316,24 @@ export function CompileModal({
                           checked={chapter.included}
                           onChange={e => {
                             const checked = e.target.checked
-                            onChaptersChange(prev => prev.map((ch, i) =>
-                              i !== ci ? ch : {
-                                ...ch,
-                                included: checked,
-                                scenes: ch.scenes.map(s => ({ ...s, included: checked })),
-                              }
+                            const updates: Record<string, boolean> = {}
+                            chapters.forEach((ch, i) => {
+                              if (!isRowInFolderRange(chapters, ci, i)) return
+                              updates[`folder:${ch.folderId}`] = checked
+                              for (const scene of ch.scenes) updates[`scene:${scene.fileId}`] = checked
+                            })
+                            preserveSceneListScroll()
+                            onChaptersChange(prev => (
+                              prev.map((ch, i) => {
+                                if (!isRowInFolderRange(prev, ci, i)) return ch
+                                return {
+                                  ...ch,
+                                  included: checked,
+                                  scenes: ch.scenes.map(s => ({ ...s, included: checked })),
+                                }
+                              })
                             ))
+                            onIncludeChange(updates)
                           }}
                         />
                         <span style={{ fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -319,6 +355,7 @@ export function CompileModal({
                             style={{ accentColor: 'var(--accent)', flexShrink: 0 }}
                             onChange={e => {
                               const checked = e.target.checked
+                              preserveSceneListScroll()
                               onChaptersChange(prev => prev.map((ch, ci2) => {
                                 if (ci2 !== ci) return ch
                                 const newScenes = ch.scenes.map((s, si2) =>
@@ -327,6 +364,10 @@ export function CompileModal({
                                 const anyIncluded = newScenes.some(s => s.included)
                                 return { ...ch, included: anyIncluded, scenes: newScenes }
                               }))
+                              onIncludeChange({
+                                [`folder:${chapter.folderId}`]: checked || chapter.scenes.some((s, si2) => si2 !== si && s.included),
+                                [`scene:${scene.fileId}`]: checked,
+                              })
                             }}
                           />
                           <span style={{

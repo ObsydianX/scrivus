@@ -4,7 +4,8 @@
       "id": "node_mpsfjx9s_2s39ce",
       "x": -124,
       "y": -56,
-      "text": "Beginning Node",
+      "title": "Beginning Node",
+      "text": "Start the board here.",
       "kind": "idea",
       "color": "default"
     },
@@ -12,7 +13,8 @@
       "id": "node_mpsfk3au_jpmyjd",
       "x": 515,
       "y": -55,
-      "text": "Next Idea",
+      "title": "Next Idea",
+      "text": "Follow-up beat or branch.",
       "kind": "idea",
       "color": "default"
     },
@@ -20,7 +22,8 @@
       "id": "node_mpsfk95t_mnzxro",
       "x": 195,
       "y": 136,
-      "text": "Secondary Idea",
+      "title": "Secondary Idea",
+      "text": "Related note or subplot.",
       "kind": "idea",
       "color": "default"
     }
@@ -47,5 +50,11 @@
     "x": 2,
     "y": 0,
     "zoom": 1
+  },
+  "colorLabels": {
+    "default": "General",
+    "blue": "Plot",
+    "green": "Character",
+    "gold": "Worldbuilding"
   }
 }

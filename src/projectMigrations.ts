@@ -3,8 +3,9 @@ import {
   SCRIVUS_VERSION,
   normalizeProjectSettings,
   normalizeProjectStyles,
+  normalizeWritingStats,
 } from './constants'
-import type { ProjectSettings, ProjectStyles } from './types'
+import type { ProjectSettings, ProjectStyles, WritingStats } from './types'
 
 export type ProjectMigrationResult = {
   data: Record<string, unknown>
@@ -66,6 +67,12 @@ function migrateFormat0To1(data: Record<string, unknown>) {
     changed = setIfChanged(data, 'compileSelections', {}) || changed
   }
 
+  if (!data.compileIncludes || typeof data.compileIncludes !== 'object' || Array.isArray(data.compileIncludes)) {
+    changed = setIfChanged(data, 'compileIncludes', {}) || changed
+  }
+
+  changed = setIfChanged(data, 'writingStats', normalizeWritingStats(data.writingStats as Partial<WritingStats> | undefined)) || changed
+
   return changed
 }
 
@@ -83,6 +90,10 @@ export function migrateProjectData(rawData: Record<string, unknown>): ProjectMig
   if (currentFormatVersion === PROJECT_FORMAT_VERSION) {
     changed = setIfChanged(data, 'scrivusVersion', SCRIVUS_VERSION) || changed
     changed = setIfChanged(data, 'projectFormatVersion', PROJECT_FORMAT_VERSION) || changed
+    if (!data.compileIncludes || typeof data.compileIncludes !== 'object' || Array.isArray(data.compileIncludes)) {
+      changed = setIfChanged(data, 'compileIncludes', {}) || changed
+    }
+    changed = setIfChanged(data, 'writingStats', normalizeWritingStats(data.writingStats as Partial<WritingStats> | undefined)) || changed
   }
 
   return {

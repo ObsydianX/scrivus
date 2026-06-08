@@ -1,14 +1,62 @@
-import type { TreeNode } from '../types'
+import { useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
+import type { LoreBook, TreeNode } from '../types'
 
 type EditorContextMenuState = {
   x: number
   y: number
   showFormatting: boolean
   hasSelection: boolean
+  selectedText: string
 }
 
 function getFolderRole(node: TreeNode) {
   return node.type === 'folder' ? node.role ?? 'chapter' : null
+}
+
+function FloatingContextMenu({
+  x,
+  y,
+  className = '',
+  children,
+  onClick,
+}: {
+  x: number
+  y: number
+  className?: string
+  children: ReactNode
+  onClick?: (event: MouseEvent<HTMLDivElement>) => void
+}) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const [style, setStyle] = useState<CSSProperties>({ top: y, left: x })
+
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (!element) return
+    const rect = element.getBoundingClientRect()
+    const margin = 8
+    const nextTop = rect.bottom > window.innerHeight - margin
+      ? Math.max(margin, y - rect.height)
+      : y
+    const nextLeft = rect.right > window.innerWidth - margin
+      ? Math.max(margin, x - rect.width)
+      : x
+    setStyle(current =>
+      current.top === nextTop && current.left === nextLeft
+        ? current
+        : { top: nextTop, left: nextLeft }
+    )
+  }, [x, y])
+
+  return (
+    <div
+      ref={ref}
+      className={`ctx-menu${className ? ` ${className}` : ''}`}
+      style={style}
+      onClick={onClick}
+    >
+      {children}
+    </div>
+  )
 }
 
 export function TabContextMenu({
@@ -201,9 +249,9 @@ export function SpellcheckContextMenu({
   if (!menu) return null
 
   return (
-    <div
-      className="ctx-menu"
-      style={{ top: menu.y, left: menu.x }}
+    <FloatingContextMenu
+      x={menu.x}
+      y={menu.y}
       onClick={e => e.stopPropagation()}
     >
       {menu.suggestions.length > 0 ? (
@@ -219,46 +267,71 @@ export function SpellcheckContextMenu({
       <button className="ctx-menu-item" onClick={() => onAddToDictionary(menu.word)}>
         <i className="ti ti-book" aria-hidden="true" /> Add to Project Dictionary
       </button>
-    </div>
+    </FloatingContextMenu>
   )
 }
 
 export function EditorContextMenu({
   menu,
+  loreBook,
   onBold,
   onItalic,
   onUnderline,
   onBulletList,
   onOrderedList,
   onBlockQuote,
+  onLinkLoreKeyword,
+  onCreateLoreEntry,
   onCut,
   onCopy,
   onPastePlainText,
   onSelectAll,
 }: {
   menu: EditorContextMenuState | null
+  loreBook: LoreBook
   onBold: () => void
   onItalic: () => void
   onUnderline: () => void
   onBulletList: () => void
   onOrderedList: () => void
   onBlockQuote: () => void
+  onLinkLoreKeyword: (categoryId: string, entryId: string, keyword: string) => void
+  onCreateLoreEntry: (categoryId: string, name: string) => void
   onCut: () => void
   onCopy: () => void
   onPastePlainText: () => void
   onSelectAll: () => void
 }) {
+  const [activeLoreMenu, setActiveLoreMenu] = useState<'link' | 'create' | null>(null)
+  const [activeLoreCategory, setActiveLoreCategory] = useState<string | null>(null)
+
   if (!menu) return null
 
+  const categoriesWithEntries = loreBook.categories
+    .map(category => ({
+      ...category,
+      entries: [...category.entries].sort((a, b) => a.name.localeCompare(b.name)),
+    }))
+    .filter(category => category.entries.length > 0)
+    .sort((a, b) => a.name.localeCompare(b.name))
+  const sortedCategories = [...loreBook.categories].sort((a, b) => a.name.localeCompare(b.name))
+  const canLinkLoreKeyword = Boolean(menu.selectedText && categoriesWithEntries.length > 0)
+  const canCreateLoreEntry = Boolean(menu.selectedText && sortedCategories.length > 0)
+  const clearLoreSubmenus = () => {
+    setActiveLoreMenu(null)
+    setActiveLoreCategory(null)
+  }
+
   return (
-    <div
-      className="ctx-menu editor-ctx-menu"
-      style={{ top: menu.y, left: menu.x }}
+    <FloatingContextMenu
+      x={menu.x}
+      y={menu.y}
+      className="editor-ctx-menu"
       onClick={e => e.stopPropagation()}
     >
       {menu.showFormatting && (
         <>
-          <div className="editor-ctx-formatbar" aria-label="Formatting">
+          <div className="editor-ctx-formatbar" aria-label="Formatting" onMouseEnter={clearLoreSubmenus}>
             <button type="button" title="Bold" onClick={onBold}>
               <i className="ti ti-bold" aria-hidden="true" />
             </button>
@@ -281,19 +354,107 @@ export function EditorContextMenu({
           <div className="ctx-menu-sep" />
         </>
       )}
-      <button className="ctx-menu-item" disabled={!menu.hasSelection} onClick={() => { if (menu.hasSelection) onCut() }}>
+      {menu.hasSelection && (
+        <>
+          <div
+            className="ctx-submenu-wrap"
+            onMouseEnter={() => {
+              if (!canLinkLoreKeyword) return clearLoreSubmenus()
+              setActiveLoreMenu('link')
+              setActiveLoreCategory(null)
+            }}
+          >
+            <button className="ctx-menu-item" disabled={!canLinkLoreKeyword}>
+              <i className="ti ti-link-plus" aria-hidden="true" /> Link to Lore Book Entry
+              <i className="ti ti-chevron-right ctx-menu-chevron" aria-hidden="true" />
+            </button>
+            {canLinkLoreKeyword && activeLoreMenu === 'link' && (
+              <div className="ctx-submenu ctx-submenu-level-1 open">
+                {categoriesWithEntries.map(category => (
+                  <div
+                    key={category.id}
+                    className="ctx-submenu-wrap"
+                    onMouseEnter={() => setActiveLoreCategory(`link:${category.id}`)}
+                  >
+                    <button className="ctx-menu-item">
+                      <i className="ti ti-folder" aria-hidden="true" /> {category.name}
+                      <i className="ti ti-chevron-right ctx-menu-chevron" aria-hidden="true" />
+                    </button>
+                    {activeLoreCategory === `link:${category.id}` && (
+                      <div className="ctx-submenu ctx-submenu-level-2 open">
+                        {category.entries.map(entry => (
+                          <button
+                            key={entry.id}
+                            className="ctx-menu-item"
+                            onClick={() => onLinkLoreKeyword(category.id, entry.id, menu.selectedText)}
+                          >
+                            <i className="ti ti-book" aria-hidden="true" />
+                            {entry.name || 'Unnamed entry'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div
+            className="ctx-submenu-wrap"
+            onMouseEnter={() => {
+              if (!canCreateLoreEntry) return clearLoreSubmenus()
+              setActiveLoreMenu('create')
+              setActiveLoreCategory(null)
+            }}
+          >
+            <button className="ctx-menu-item" disabled={!canCreateLoreEntry}>
+              <i className="ti ti-book-upload" aria-hidden="true" /> Create Lore Book Entry
+              <i className="ti ti-chevron-right ctx-menu-chevron" aria-hidden="true" />
+            </button>
+            {canCreateLoreEntry && activeLoreMenu === 'create' && (
+              <div className="ctx-submenu ctx-submenu-level-1 open">
+                {sortedCategories.map(category => (
+                  <div
+                    key={category.id}
+                    className="ctx-submenu-wrap"
+                    onMouseEnter={() => setActiveLoreCategory(`create:${category.id}`)}
+                  >
+                    <button className="ctx-menu-item">
+                      <i className="ti ti-folder" aria-hidden="true" /> {category.name}
+                      <i className="ti ti-chevron-right ctx-menu-chevron" aria-hidden="true" />
+                    </button>
+                    {activeLoreCategory === `create:${category.id}` && (
+                      <div className="ctx-submenu ctx-submenu-level-2 open">
+                        <button
+                          className="ctx-menu-item"
+                          onClick={() => onCreateLoreEntry(category.id, menu.selectedText)}
+                        >
+                          <i className="ti ti-plus" aria-hidden="true" />
+                          New Entry
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="ctx-menu-sep" />
+        </>
+      )}
+      <button className="ctx-menu-item" disabled={!menu.hasSelection} onMouseEnter={clearLoreSubmenus} onClick={() => { if (menu.hasSelection) onCut() }}>
         <i className="ti ti-cut" aria-hidden="true" /> Cut
       </button>
-      <button className="ctx-menu-item" disabled={!menu.hasSelection} onClick={() => { if (menu.hasSelection) onCopy() }}>
+      <button className="ctx-menu-item" disabled={!menu.hasSelection} onMouseEnter={clearLoreSubmenus} onClick={() => { if (menu.hasSelection) onCopy() }}>
         <i className="ti ti-copy" aria-hidden="true" /> Copy
       </button>
-      <button className="ctx-menu-item" onClick={onPastePlainText}>
+      <button className="ctx-menu-item" onMouseEnter={clearLoreSubmenus} onClick={onPastePlainText}>
         <i className="ti ti-clipboard" aria-hidden="true" /> Paste
       </button>
       <div className="ctx-menu-sep" />
-      <button className="ctx-menu-item" onClick={onSelectAll}>
+      <button className="ctx-menu-item" onMouseEnter={clearLoreSubmenus} onClick={onSelectAll}>
         <i className="ti ti-select-all" aria-hidden="true" /> Select All
       </button>
-    </div>
+    </FloatingContextMenu>
   )
 }

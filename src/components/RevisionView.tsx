@@ -17,9 +17,13 @@ type RevisionViewProps = {
   title: string
   tabs: SceneTab[]
   activeTabIndex: number
+  canSelectPreviousScene: boolean
+  canSelectNextScene: boolean
   footer?: ReactNode
   scrollRef: RefObject<HTMLDivElement | null>
   onActiveCommentChange: (id: string | null) => void
+  onSelectPreviousScene: () => void
+  onSelectNextScene: () => void
   onSwitchTab: (index: number) => void
 }
 
@@ -55,6 +59,22 @@ export function getActiveComments(
       if (a.resolved !== b.resolved) return a.resolved ? 1 : -1
       return a.createdAt - b.createdAt
     })
+}
+
+function getRevisionTabCommentCounts(
+  comments: RevisionComment[],
+  activeId: number | null,
+  tabs: SceneTab[],
+) {
+  const counts = new Map<number, number>()
+  const legacyCommentTabIndex = Math.max(tabs.length - 1, 0)
+  comments.forEach(comment => {
+    if (comment.sceneId !== activeId || comment.resolved) return
+    const tabIndex = comment.tabIndex ?? legacyCommentTabIndex
+    if (tabIndex < 0 || tabIndex >= tabs.length) return
+    counts.set(tabIndex, (counts.get(tabIndex) ?? 0) + 1)
+  })
+  return counts
 }
 
 export function renderRevisionAnnotatedHtml(
@@ -132,12 +152,17 @@ export function RevisionView({
   title,
   tabs,
   activeTabIndex,
+  canSelectPreviousScene,
+  canSelectNextScene,
   footer,
   scrollRef,
   onActiveCommentChange,
+  onSelectPreviousScene,
+  onSelectNextScene,
   onSwitchTab,
 }: RevisionViewProps) {
   const activeComments = getActiveComments(comments, activeId, activeTabIndex, tabs)
+  const tabCommentCounts = getRevisionTabCommentCounts(comments, activeId, tabs)
 
   if (!activeId) {
     return (
@@ -151,18 +176,49 @@ export function RevisionView({
   return (
     <div id="revision-layout">
       <div id="revision-main">
-        {tabs.length > 1 && (
+        {tabs.length > 0 && (
           <div id="revision-tab-bar">
-            {tabs.map((tab, index) => (
+            <div className="scene-nav-controls">
               <button
-                key={`${tab.name}-${index}`}
-                className={`revision-tab${index === activeTabIndex ? ' active' : ''}`}
-                onClick={() => onSwitchTab(index)}
-                title={tab.name}
+                type="button"
+                className="scene-nav-btn"
+                disabled={!canSelectPreviousScene}
+                onClick={onSelectPreviousScene}
+                title="Previous scene"
+                aria-label="Previous scene"
               >
-                <span>{tab.name}</span>
+                <i className="ti ti-chevron-left" aria-hidden="true" />
               </button>
-            ))}
+              <button
+                type="button"
+                className="scene-nav-btn"
+                disabled={!canSelectNextScene}
+                onClick={onSelectNextScene}
+                title="Next scene"
+                aria-label="Next scene"
+              >
+                <i className="ti ti-chevron-right" aria-hidden="true" />
+              </button>
+            </div>
+            {tabs.map((tab, index) => {
+              const commentCount = tabCommentCounts.get(index) ?? 0
+              const commentLabel = commentCount === 1 ? '1 unresolved comment' : `${commentCount} unresolved comments`
+              return (
+                <button
+                  key={`${tab.name}-${index}`}
+                  className={`revision-tab${index === activeTabIndex ? ' active' : ''}${commentCount > 0 ? ' has-comments' : ''}`}
+                  onClick={() => onSwitchTab(index)}
+                  title={commentCount > 0 ? `${tab.name} - ${commentLabel}` : tab.name}
+                >
+                  <span className="revision-tab-label">{tab.name}</span>
+                  {commentCount > 0 && (
+                    <span className="revision-tab-comment-badge" aria-label={commentLabel}>
+                      {commentCount}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
           </div>
         )}
         <div id="revision-scroll" ref={scrollRef}>

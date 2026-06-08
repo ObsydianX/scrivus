@@ -25,6 +25,7 @@ import { MindMapView } from './MindMapView'
 import { OutlineView } from './OutlineView'
 import { getActiveComments, renderRevisionAnnotatedHtml, RevisionView } from './RevisionView'
 import { countHtmlWords } from '../wordCount'
+import type { LoreBacklink } from '../loreBacklinks'
 
 export type Workspace = 'editor' | 'revision' | 'outline' | 'lorebook' | 'mindmap' | 'atlas'
 
@@ -38,17 +39,21 @@ type RevisionPendingComment = {
 type EditorWorkspaceState = {
   showEditor: boolean
   editor: Editor | null
+  focusMode: boolean
   isNarrow: boolean
   isTrashPreview: boolean
   titleValue: string
   titleBookmarked: boolean
   loreLinksEnabled: boolean
+  onFocusModeChange: (focusMode: boolean) => void
   onLoreLinksEnabledChange: (enabled: boolean) => void
 }
 
 type TabWorkspaceState = {
   sceneTabs: SceneTab[]
   activeTabIndex: number
+  canSelectPreviousScene: boolean
+  canSelectNextScene: boolean
   splitTabIndex: number | null
   activeSceneId: number | null
   revisionComments: RevisionComment[]
@@ -60,6 +65,8 @@ type TabWorkspaceState = {
   onTabDropIndexChange: (index: number | null) => void
   onRenamingTabIndexChange: (index: number | null) => void
   onTabContextMenuChange: (menu: { x: number; y: number; index: number } | null) => void
+  onSelectPreviousScene: () => void
+  onSelectNextScene: () => void
   onSwitchTab: (index: number) => void
   onSelectSplitTab: (index: number) => void
   onCloseSplitTab: () => void
@@ -70,6 +77,8 @@ type TabWorkspaceState = {
 
 type StatusWorkspaceState = {
   wordCount: number
+  targetWordCount?: number
+  onGoalClick?: () => void
   chapterWordCount: number
   manuscriptWordCount: number
   readingWpm: number
@@ -82,11 +91,12 @@ type StatusWorkspaceState = {
 
 type LoreWorkspaceState = {
   loreBook: LoreBook
-  loreView: 'home' | 'category'
+  loreView: 'home' | 'category' | 'entry'
   activeLoreCategoryId: string | null
   expandedEntryId: string | null
   projectPath: string | null
-  onLoreViewChange: (view: 'home' | 'category') => void
+  backlinks: Record<string, LoreBacklink[]>
+  onLoreViewChange: (view: 'home' | 'category' | 'entry') => void
   onActiveLoreCategoryChange: (categoryId: string | null) => void
   onExpandedEntryChange: (entryId: string | null) => void
   onNewCategory: () => void
@@ -95,6 +105,8 @@ type LoreWorkspaceState = {
   onNewEntry: () => void
   onEditEntry: (entry: LoreEntry) => void
   onDeleteEntryRequest: (entry: LoreEntry) => void
+  onToggleEntryPinned: (categoryId: string, entryId: string, pinned: boolean) => void
+  onOpenScene: (id: number) => void
 }
 
 type OutlineWorkspaceState = {
@@ -122,6 +134,9 @@ type AtlasWorkspaceState = {
   onImportMap: (candidate: AtlasImportCandidate) => Promise<void>
   onDeleteMap: (mapId: string) => Promise<void>
   onReplaceMapImage: (mapId: string, candidate: AtlasImportCandidate) => Promise<void>
+  loreBook: LoreBook
+  onOpenLoreEntry: (categoryId: string, entryId: string) => void
+  onCreateLoreEntry: (categoryId: string, name: string) => Promise<{ categoryId: string; entryId: string } | null>
 }
 
 type RevisionWorkspaceState = {
@@ -250,16 +265,20 @@ export function WorkspaceShell({
   const {
   showEditor,
   editor,
+  focusMode,
   isNarrow,
   isTrashPreview,
   titleValue,
   titleBookmarked,
   loreLinksEnabled,
+  onFocusModeChange,
   onLoreLinksEnabledChange,
   } = editorState
   const {
   sceneTabs,
   activeTabIndex,
+  canSelectPreviousScene,
+  canSelectNextScene,
   splitTabIndex,
   activeSceneId: editorActiveSceneId,
   revisionComments: editorRevisionComments,
@@ -271,6 +290,8 @@ export function WorkspaceShell({
   onTabDropIndexChange,
   onRenamingTabIndexChange,
   onTabContextMenuChange,
+  onSelectPreviousScene,
+  onSelectNextScene,
   onSwitchTab,
   onSelectSplitTab,
   onCloseSplitTab,
@@ -280,6 +301,8 @@ export function WorkspaceShell({
   } = tabState
   const {
   wordCount,
+  targetWordCount,
+  onGoalClick,
   chapterWordCount,
   manuscriptWordCount,
   readingWpm,
@@ -312,6 +335,9 @@ export function WorkspaceShell({
   onImportMap,
   onDeleteMap,
   onReplaceMapImage,
+  loreBook: atlasLoreBook,
+  onOpenLoreEntry: onAtlasOpenLoreEntry,
+  onCreateLoreEntry: onAtlasCreateLoreEntry,
   } = atlasState
   const {
   loreBook,
@@ -319,6 +345,7 @@ export function WorkspaceShell({
   activeLoreCategoryId,
   expandedEntryId,
   projectPath,
+  backlinks: loreBacklinks,
   onLoreViewChange,
   onActiveLoreCategoryChange,
   onExpandedEntryChange,
@@ -328,6 +355,8 @@ export function WorkspaceShell({
   onNewEntry,
   onEditEntry,
   onDeleteEntryRequest,
+  onToggleEntryPinned,
+  onOpenScene: onLoreOpenScene,
   } = loreState
   const {
   revisionActiveId,
@@ -346,7 +375,7 @@ export function WorkspaceShell({
   } = revisionState
 
   return (
-    <div id="editor-area">
+    <div id="editor-area" className={focusMode && workspace === 'editor' ? 'focus-mode' : undefined}>
       <div id="workspace-bar">
         <button
           className={workspace === 'editor' ? 'active' : ''}
@@ -402,6 +431,8 @@ export function WorkspaceShell({
         <SceneTabBar
           tabs={sceneTabs}
           activeIndex={activeTabIndex}
+          canSelectPreviousScene={canSelectPreviousScene}
+          canSelectNextScene={canSelectNextScene}
           renamingIndex={renamingTabIndex}
           dragIndex={tabDragIndex}
           dropIndex={tabDropIndex}
@@ -410,10 +441,14 @@ export function WorkspaceShell({
           onDropIndexChange={onTabDropIndexChange}
           onRenamingIndexChange={onRenamingTabIndexChange}
           onContextMenuChange={onTabContextMenuChange}
+          onSelectPreviousScene={onSelectPreviousScene}
+          onSelectNextScene={onSelectNextScene}
           onSwitchTab={onSwitchTab}
           onAddTab={onAddTab}
           onRenameTab={onRenameTab}
           onTabDrop={onTabDrop}
+          focusMode={focusMode}
+          onFocusModeChange={onFocusModeChange}
         />
       )}
       {workspace === 'editor' && (
@@ -430,6 +465,7 @@ export function WorkspaceShell({
           activeCategoryId={activeLoreCategoryId}
           expandedEntryId={expandedEntryId}
           projectPath={projectPath}
+          backlinks={loreBacklinks}
           onLoreViewChange={onLoreViewChange}
           onActiveCategoryChange={onActiveLoreCategoryChange}
           onExpandedEntryChange={onExpandedEntryChange}
@@ -439,6 +475,8 @@ export function WorkspaceShell({
           onNewEntry={onNewEntry}
           onEditEntry={onEditEntry}
           onDeleteEntryRequest={onDeleteEntryRequest}
+          onToggleEntryPinned={onToggleEntryPinned}
+          onOpenScene={onLoreOpenScene}
         />
       )}
       {workspace === 'outline' && (
@@ -461,6 +499,8 @@ export function WorkspaceShell({
             title={revisionTitle}
             tabs={revisionTabs}
             activeTabIndex={revisionActiveTabIndex}
+            canSelectPreviousScene={canSelectPreviousScene}
+            canSelectNextScene={canSelectNextScene}
             footer={!isNarrow && revisionActiveId !== null ? (
               <StatusBar
                 wordCount={countHtmlWords(revisionContent)}
@@ -476,6 +516,8 @@ export function WorkspaceShell({
             ) : undefined}
             scrollRef={revisionScrollRef}
             onActiveCommentChange={onRevisionActiveCommentChange}
+            onSelectPreviousScene={onSelectPreviousScene}
+            onSelectNextScene={onSelectNextScene}
             onSwitchTab={onSwitchRevisionTab}
           />
         </>
@@ -512,6 +554,9 @@ export function WorkspaceShell({
           onImportMap={onImportMap}
           onDeleteMap={onDeleteMap}
           onReplaceMapImage={onReplaceMapImage}
+          loreBook={atlasLoreBook}
+          onOpenLoreEntry={onAtlasOpenLoreEntry}
+          onCreateLoreEntry={onAtlasCreateLoreEntry}
         />
       )}
 
@@ -553,6 +598,8 @@ export function WorkspaceShell({
           {!isNarrow && (
             <StatusBar
               wordCount={wordCount}
+              targetWordCount={targetWordCount}
+              onGoalClick={onGoalClick}
               chapterWordCount={chapterWordCount}
               manuscriptWordCount={manuscriptWordCount}
               readingWpm={readingWpm}

@@ -10,7 +10,12 @@ import type {
 } from '../types'
 
 const NODE_WIDTH = 190
-const NODE_HEIGHT = 88
+const MIN_NODE_HEIGHT = 88
+const NODE_TITLE_Y = 18
+const NODE_TITLE_HEIGHT = 20
+const NODE_TEXT_Y = 40
+const NODE_META_HEIGHT = 22
+const NODE_BOTTOM_PADDING = 10
 const MIN_ZOOM = 0.35
 const MAX_ZOOM = 3
 
@@ -29,6 +34,10 @@ const NODE_COLORS: { value: MindMapNodeColor; label: string }[] = [
   { value: 'rose', label: 'Rose' },
   { value: 'gold', label: 'Gold' },
   { value: 'violet', label: 'Violet' },
+  { value: 'cyan', label: 'Cyan' },
+  { value: 'orange', label: 'Orange' },
+  { value: 'red', label: 'Red' },
+  { value: 'slate', label: 'Slate' },
 ]
 
 type MindMapViewProps = {
@@ -62,6 +71,31 @@ function getSceneLabel(scene: MindMapSceneOption) {
   return scene.chapter ? `${scene.chapter} / ${scene.title}` : scene.title
 }
 
+function getDefaultColorLabel(color: MindMapNodeColor) {
+  return NODE_COLORS.find(item => item.value === color)?.label ?? color
+}
+
+function countWrappedLines(text: string, charactersPerLine: number) {
+  const normalized = text.replace(/\r\n?/g, '\n')
+  if (!normalized.trim()) return 1
+  return normalized.split('\n').reduce((count, line) => {
+    return count + Math.max(1, Math.ceil(line.length / charactersPerLine))
+  }, 0)
+}
+
+function getNodeLayout(node: MindMapNode) {
+  const textLines = countWrappedLines(node.text, 28)
+  const textHeight = Math.max(22, textLines * 15)
+  const metaY = NODE_TEXT_Y + textHeight + 7
+  const height = Math.max(MIN_NODE_HEIGHT, metaY + NODE_META_HEIGHT + NODE_BOTTOM_PADDING)
+  return {
+    height,
+    textHeight,
+    metaY,
+    actionY: metaY - 2,
+  }
+}
+
 export function MindMapView({
   map,
   scenes,
@@ -81,6 +115,11 @@ export function MindMapView({
   const selectedEdge = map.edges.find(edge => edge.id === selectedEdgeId) ?? null
   const sceneById = useMemo(() => new Map(scenes.map(scene => [scene.id, scene])), [scenes])
   const nodeById = useMemo(() => new Map(map.nodes.map(node => [node.id, node])), [map.nodes])
+  const usedColors = useMemo(() => {
+    const colors = new Set<MindMapNodeColor>(map.nodes.map(node => node.color))
+    if (colors.size === 0) colors.add('default')
+    return NODE_COLORS.filter(color => colors.has(color.value))
+  }, [map.nodes])
   const viewport = map.viewport
   const viewWidth = canvasSize.width / viewport.zoom
   const viewHeight = canvasSize.height / viewport.zoom
@@ -113,12 +152,23 @@ export function MindMapView({
   const updateViewport = (nextViewport: MindMapViewport) => {
     updateMap({ ...map, viewport: { ...nextViewport, zoom: clampZoom(nextViewport.zoom) } })
   }
+  const getColorLabel = (color: MindMapNodeColor) => map.colorLabels?.[color]?.trim() || getDefaultColorLabel(color)
+  const updateColorLabel = (color: MindMapNodeColor, label: string) => {
+    updateMap({
+      ...map,
+      colorLabels: {
+        ...(map.colorLabels ?? {}),
+        [color]: label,
+      },
+    })
+  }
 
-  const createNode = (x: number, y: number, text = 'New idea'): MindMapNode => ({
+  const createNode = (x: number, y: number, title = 'New idea'): MindMapNode => ({
     id: createId('node'),
     x,
     y,
-    text,
+    title,
+    text: '',
     kind: 'idea',
     color: 'default',
   })
@@ -126,7 +176,7 @@ export function MindMapView({
   const addNode = () => {
     const id = createId('node')
     const node = {
-      ...createNode(viewport.x - NODE_WIDTH / 2, viewport.y - NODE_HEIGHT / 2),
+      ...createNode(viewport.x - NODE_WIDTH / 2, viewport.y - MIN_NODE_HEIGHT / 2),
       id,
     }
     updateMap({ ...map, nodes: [...map.nodes, node] })
@@ -137,7 +187,8 @@ export function MindMapView({
   const addConnectedChildNode = (parentId: string) => {
     const parent = nodeById.get(parentId)
     if (!parent) return
-    const child = createNode(parent.x + NODE_WIDTH + 90, parent.y + 18, 'New idea')
+    const parentLayout = getNodeLayout(parent)
+    const child = createNode(parent.x + NODE_WIDTH + 90, parent.y + Math.max(18, parentLayout.height / 2 - MIN_NODE_HEIGHT / 2))
     const edge: MindMapEdge = {
       id: createId('edge'),
       fromNodeId: parentId,
@@ -150,6 +201,22 @@ export function MindMapView({
     })
     setSelectedNodeId(child.id)
     setSelectedEdgeId(null)
+    setContextMenu(null)
+  }
+
+  const duplicateSelectedNode = () => {
+    if (!selectedNode) return
+    const duplicate: MindMapNode = {
+      ...selectedNode,
+      id: createId('node'),
+      x: selectedNode.x + 34,
+      y: selectedNode.y + 34,
+      title: selectedNode.title ? `${selectedNode.title} copy` : selectedNode.title,
+    }
+    updateMap({ ...map, nodes: [...map.nodes, duplicate] })
+    setSelectedNodeId(duplicate.id)
+    setSelectedEdgeId(null)
+    setConnectionStartId(null)
     setContextMenu(null)
   }
 
@@ -298,7 +365,7 @@ export function MindMapView({
       x: event.clientX,
       y: event.clientY,
       worldX: point.x - NODE_WIDTH / 2,
-      worldY: point.y - NODE_HEIGHT / 2,
+      worldY: point.y - MIN_NODE_HEIGHT / 2,
     })
     setSelectedNodeId(null)
     setSelectedEdgeId(null)
@@ -330,6 +397,9 @@ export function MindMapView({
           <button className="mindmap-tool-btn" onClick={deleteSelection} disabled={!selectedNodeId && !selectedEdgeId} title="Delete selected">
             <i className="ti ti-trash" aria-hidden="true" />
           </button>
+          <button className="mindmap-tool-btn" onClick={duplicateSelectedNode} disabled={!selectedNode} title="Duplicate selected node">
+            <i className="ti ti-copy" aria-hidden="true" />
+          </button>
           <button className="mindmap-tool-btn" onClick={() => updateViewport({ x: 0, y: 0, zoom: 1 })} title="Reset view">
             <i className="ti ti-focus-centered" aria-hidden="true" />
           </button>
@@ -353,8 +423,24 @@ export function MindMapView({
               <label className="mindmap-field mindmap-field-short">
                 <span>Color</span>
                 <select value={selectedNode.color} onChange={event => updateNode(selectedNode.id, { color: event.target.value as MindMapNodeColor })}>
-                  {NODE_COLORS.map(color => <option key={color.value} value={color.value}>{color.label}</option>)}
+                  {NODE_COLORS.map(color => <option key={color.value} value={color.value}>{getColorLabel(color.value)}</option>)}
                 </select>
+              </label>
+              <label className="mindmap-field mindmap-field-color-label">
+                <span>Label</span>
+                <input
+                  value={map.colorLabels?.[selectedNode.color] ?? ''}
+                  placeholder={getDefaultColorLabel(selectedNode.color)}
+                  onChange={event => updateColorLabel(selectedNode.color, event.target.value)}
+                />
+              </label>
+              <label className="mindmap-field mindmap-field-title">
+                <span>Title</span>
+                <input
+                  value={selectedNode.title ?? ''}
+                  placeholder="Node title"
+                  onChange={event => updateNode(selectedNode.id, { title: event.target.value })}
+                />
               </label>
               <label className="mindmap-field">
                 <span>Scene</span>
@@ -412,6 +498,14 @@ export function MindMapView({
             </button>
           </div>
         )}
+        <div className="mindmap-color-legend" aria-label="Canvas color legend">
+          {usedColors.map(color => (
+            <div key={color.value} className="mindmap-color-legend-item">
+              <span className={`mindmap-color-swatch mindmap-color-swatch-${color.value}`} aria-hidden="true" />
+              <span>{getColorLabel(color.value)}</span>
+            </div>
+          ))}
+        </div>
         <svg
           ref={svgRef}
           className="mindmap-canvas"
@@ -439,10 +533,12 @@ export function MindMapView({
               const from = nodeById.get(edge.fromNodeId)
               const to = nodeById.get(edge.toNodeId)
               if (!from || !to) return null
+              const fromLayout = getNodeLayout(from)
+              const toLayout = getNodeLayout(to)
               const x1 = from.x + NODE_WIDTH / 2
-              const y1 = from.y + NODE_HEIGHT / 2
+              const y1 = from.y + fromLayout.height / 2
               const x2 = to.x + NODE_WIDTH / 2
-              const y2 = to.y + NODE_HEIGHT / 2
+              const y2 = to.y + toLayout.height / 2
               const midX = (x1 + x2) / 2
               const midY = (y1 + y2) / 2
               return (
@@ -470,6 +566,7 @@ export function MindMapView({
             {map.nodes.map(node => {
               const kind = NODE_KINDS.find(item => item.value === node.kind) ?? NODE_KINDS[0]
               const linkedScene = node.linkedSceneId ? sceneById.get(node.linkedSceneId) : null
+              const layout = getNodeLayout(node)
               const className = [
                 'mindmap-node',
                 `mindmap-node-${node.color}`,
@@ -494,7 +591,7 @@ export function MindMapView({
                   <rect
                     className="mindmap-node-shape"
                     width={NODE_WIDTH}
-                    height={NODE_HEIGHT}
+                    height={layout.height}
                     rx="7"
                     onPointerDown={event => {
                       event.stopPropagation()
@@ -509,22 +606,33 @@ export function MindMapView({
                     rx="7"
                     onPointerDown={event => handleNodePointerDown(event, node)}
                   />
-                  <foreignObject x="12" y="18" width="166" height="40">
+                  <foreignObject x="12" y={NODE_TITLE_Y} width="166" height={NODE_TITLE_HEIGHT}>
+                    <input
+                      className="mindmap-node-title"
+                      value={node.title ?? ''}
+                      placeholder="Node title"
+                      aria-label="Mind map node title"
+                      onPointerDown={event => event.stopPropagation()}
+                      onChange={event => updateNode(node.id, { title: event.target.value })}
+                    />
+                  </foreignObject>
+                  <foreignObject x="12" y={NODE_TEXT_Y} width="166" height={layout.textHeight}>
                     <textarea
                       className="mindmap-node-text"
                       value={node.text}
-                      aria-label="Mind map node text"
+                      placeholder="Notes"
+                      aria-label="Mind map node notes"
                       onPointerDown={event => event.stopPropagation()}
                       onChange={event => updateNode(node.id, { text: event.target.value })}
                     />
                   </foreignObject>
-                  <foreignObject className="mindmap-node-meta-foreign" x="12" y="62" width="116" height="22">
+                  <foreignObject className="mindmap-node-meta-foreign" x="12" y={layout.metaY} width="116" height={NODE_META_HEIGHT}>
                     <div className="mindmap-node-meta">
                       <i className={`ti ${kind.icon}`} aria-hidden="true" />
                       <span>{kind.label}{linkedScene ? ` / ${linkedScene.title}` : ''}</span>
                     </div>
                   </foreignObject>
-                  <foreignObject className="mindmap-node-action-foreign" x="132" y="60" width="56" height="26">
+                  <foreignObject className="mindmap-node-action-foreign" x="132" y={layout.actionY} width="56" height="26">
                     <div className="mindmap-node-actions">
                       <button
                         className="mindmap-node-action"
@@ -572,6 +680,10 @@ export function MindMapView({
                 <button onClick={() => removeNodeConnections(contextMenu.nodeId)}>
                   <i className="ti ti-route-off" aria-hidden="true" />
                   <span>Remove connections</span>
+                </button>
+                <button onClick={duplicateSelectedNode}>
+                  <i className="ti ti-copy" aria-hidden="true" />
+                  <span>Duplicate node</span>
                 </button>
                 <button className="mindmap-context-danger" onClick={deleteSelection}>
                   <i className="ti ti-trash" aria-hidden="true" />

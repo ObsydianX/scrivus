@@ -2,6 +2,36 @@
 
 All notable Scrivus changes are tracked here.
 
+## 0.2.6
+
+- New Feature: Added a startup update check with a themed version/update status on the no-project welcome screen.
+- New Feature: Added Editor and Revision previous/next scene navigation buttons that follow manuscript order.
+- New Feature: Added writing goals with monthly, daily, session, and scene targets, progress meters, session tracking, and a default scene target preference.
+- New Feature: Added Editor focus mode with a tab-bar toggle and Escape-to-exit behavior.
+- New Feature: Added unresolved comment count badges to Revision draft tabs.
+- New Feature: Added pinned Lore Book entries with a horizontal pinned strip on the Lore Book home view.
+- New Feature: Added Lore Book backlinks that show scene mentions for expanded entries with incremental "show more" loading.
+- New Feature: Added quick Lore Book keyword linking from selected editor text through nested context menus.
+- New Feature: Added quick Lore Book entry creation from selected editor text through nested context menus.
+- New Feature: Added Lore Book subcategories with manual category-editor ordering and entry assignment.
+- New Feature: Added Canvas node titles, with scene creation using the title before falling back to node notes.
+- New Feature: Added Canvas nodes that expand vertically from their top anchor based on note text.
+- New Feature: Added Canvas color labels, a color legend, and additional node colors.
+- New Feature: Added Canvas node duplication from the toolbar and node context menu.
+- New Feature: Added expanded Atlas marker categories and an in-map marker legend with map-level category visibility toggles.
+- New Feature: Added an Atlas marker search list with alphabetical/type organization and marker centering controls.
+- New Feature: Added Atlas marker linking to existing Lore Book entries and quick Lore Book entry creation from markers.
+- New Feature: Added a confirmation warning before permanently deleting Atlas maps from the toolbar.
+- Changed: Moved the Atlas map selector and sampling controls into a top-left in-map overlay.
+- Changed: Moved Atlas map renaming into the map selector with double-click and right-click rename actions.
+- Changed: Changed Lore Book entries to open in a dedicated entry viewer and aligned Lore Book content width with the editor text width.
+- Changed: Prevented non-editable Lore Book, Canvas, and Atlas UI text from being selected accidentally.
+- Changed: Persisted compile include selections for acts, chapters, and scenes.
+- Fixes: Fixed Lore Book backlink expansion state resetting when entries are reopened.
+- Fixes: Fixed compile Act deselection so child chapters and scenes are deselected with it.
+- Fixes: Fixed compile selection changes jumping the scene list back to the top.
+- Fixes: Fixed project reload restoring the bookmarked scene but opening the wrong draft tab.
+
 ## 0.2.5
 
 - Fixed expanded About dialog sections overflowing past the modal window.

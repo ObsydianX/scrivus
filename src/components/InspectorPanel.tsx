@@ -384,6 +384,19 @@ function InspectorBody({
               />
             </label>
             <label className="metadata-field">
+              <span>Word target</span>
+              <input
+                inputMode="numeric"
+                value={metadataDraft.targetWordCount || ''}
+                onChange={e => {
+                  const targetWordCount = Number(e.target.value.replace(/\D/g, ''))
+                  scheduleMetadataChange({ ...metadataDraft, targetWordCount })
+                }}
+                onBlur={() => flushMetadataChange()}
+                placeholder="No target"
+              />
+            </label>
+            <label className="metadata-field">
               <span>Tags</span>
               <input
                 value={tagInput}

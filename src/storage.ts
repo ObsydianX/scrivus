@@ -11,6 +11,7 @@ import {
   normalizeMindMap,
   normalizeProjectSettings,
   normalizeProjectStyles,
+  normalizeWritingStats,
 } from './constants'
 import { getNextIdValue } from './idCounter'
 import { collectDocs } from './tree'
@@ -26,7 +27,7 @@ import type {
   TreeNode,
 } from './types'
 
-export async function saveProjectToDisk(project: Project, activeId?: number) {
+export async function saveProjectToDisk(project: Project, activeId?: number, activeTabIndex?: number) {
   const projectJson = {
     name: project.name,
     scrivusVersion: SCRIVUS_VERSION,
@@ -34,9 +35,12 @@ export async function saveProjectToDisk(project: Project, activeId?: number) {
     tree: project.tree,
     nextId: getNextIdValue(),
     lastActiveId: activeId ?? null,
+    lastActiveTabIndex: activeTabIndex ?? project.lastActiveTabIndex ?? 0,
     styles: project.styles,
     settings: normalizeProjectSettings(project.settings ?? DEFAULT_PROJECT_SETTINGS),
     compileSelections: project.compileSelections ?? {},
+    compileIncludes: project.compileIncludes ?? {},
+    writingStats: normalizeWritingStats(project.writingStats),
   }
   const projectFile = await join(project.path, 'project.json')
   await writeTextFile(projectFile, JSON.stringify(projectJson, null, 2))
