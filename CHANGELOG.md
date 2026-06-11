@@ -2,6 +2,13 @@
 
 All notable Scrivus changes are tracked here.
 
+## 0.2.7
+
+- New Feature: Added a ctrl-click chooser when an editor lore link matches multiple Lore Book entries.
+- Fixes: Prevented new scenes, folders, and duplicated binder items from reusing existing binder IDs when a project's saved ID counter is stale.
+- Fixes: Synced the Editor split-view reference pane with the main editor zoom level.
+- Fixes: Prevented the Session writing goal counter from dropping below zero after deleting words.
+
 ## 0.2.6
 
 - New Feature: Added a startup update check with a themed version/update status on the no-project welcome screen.

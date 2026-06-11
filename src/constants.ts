@@ -13,7 +13,7 @@ import type {
   WritingStats,
 } from './types'
 
-export const SCRIVUS_VERSION = '0.2.6'
+export const SCRIVUS_VERSION = '0.2.7'
 export const PROJECT_FORMAT_VERSION = 1
 
 export const DEFAULT_BACKUP_SETTINGS: BackupSettings = {

@@ -3107,6 +3107,72 @@ body,
   text-decoration-color: var(--accent);
 }
 
+.lore-link-choice-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  background: transparent;
+}
+
+.lore-link-choice-popover {
+  position: fixed;
+  width: 288px;
+  max-height: 220px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.48);
+}
+
+.lore-link-choice-title {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border-main);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lore-link-choice-list {
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.lore-link-choice-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-main);
+  cursor: pointer;
+  padding: 8px;
+  text-align: left;
+  font: inherit;
+}
+
+.lore-link-choice-item:hover,
+.lore-link-choice-item:focus-visible {
+  background: var(--panel-bg-2);
+  outline: none;
+}
+
+.lore-link-choice-item span,
+.lore-link-choice-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lore-link-choice-item small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 /* Read-only state used when previewing trashed scenes. */
 .tiptap-wrap .ProseMirror[contenteditable="false"] {
   opacity: 0.8;

@@ -155,6 +155,7 @@ import {
   collectDocs,
   findNode,
   findParentFolder,
+  getMaxTreeId,
 } from './tree'
 import type {
   Atlas,
@@ -191,6 +192,19 @@ type WelcomeUpdateStatus =
   | { status: 'available'; currentVersion: string; latestVersion: string; releaseUrl: string }
   | { status: 'current'; currentVersion: string; latestVersion: string }
   | { status: 'failed'; currentVersion: string }
+
+type LoreLinkChoiceTarget = {
+  entryId: string
+  categoryId: string
+  entryName: string
+  categoryName: string
+}
+
+type LoreLinkChoice = {
+  x: number
+  y: number
+  targets: LoreLinkChoiceTarget[]
+}
 
 // #region === APP COMPONENT ===
 // ─────────────────────────────────────────────────────────────────────────────
@@ -392,6 +406,7 @@ export default function App() {
   const [confirmDeleteLoreCategory, setConfirmDeleteLoreCategory] = useState<LoreCategory | null>(null)
   const [confirmDeleteLoreEntry, setConfirmDeleteLoreEntry] = useState<LoreEntry | null>(null)
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
+  const [loreLinkChoice, setLoreLinkChoice] = useState<LoreLinkChoice | null>(null)
 
   // ── Compile modal state ──
   const [showCompile, setShowCompile] = useState(false)
@@ -607,10 +622,40 @@ export default function App() {
           const categoryId = link.dataset.loreCategoryId
           if (!entryId || !categoryId) return false
           mouseEvent.preventDefault()
-          setWorkspace('lorebook')
-          setLoreView('entry')
-          setActiveLoreCategoryId(categoryId)
-          setExpandedEntryId(entryId)
+          const targets = (() => {
+            try {
+              const parsed = link.dataset.loreTargets ? JSON.parse(link.dataset.loreTargets) : null
+              if (!Array.isArray(parsed)) return []
+              return parsed.filter((target): target is LoreLinkChoiceTarget =>
+                typeof target?.entryId === 'string' &&
+                typeof target?.categoryId === 'string' &&
+                typeof target?.entryName === 'string' &&
+                typeof target?.categoryName === 'string'
+              )
+            } catch {
+              return []
+            }
+          })()
+          const fallbackTargets: LoreLinkChoiceTarget[] = targets.length > 0
+            ? targets
+            : [{ entryId, categoryId, entryName: 'Lore entry', categoryName: 'Lore Book' }]
+          const uniqueTargets = Array.from(
+            new Map(fallbackTargets.map(target => [`${target.categoryId}:${target.entryId}`, target])).values(),
+          )
+          if (uniqueTargets.length <= 1) {
+            const [target] = uniqueTargets
+            setWorkspace('lorebook')
+            setLoreView('entry')
+            setActiveLoreCategoryId(target.categoryId)
+            setExpandedEntryId(target.entryId)
+            setLoreLinkChoice(null)
+          } else {
+            setLoreLinkChoice({
+              x: mouseEvent.clientX,
+              y: mouseEvent.clientY,
+              targets: uniqueTargets,
+            })
+          }
           return true
         },
         contextmenu: (view, event) => {
@@ -881,13 +926,15 @@ export default function App() {
         keywords.forEach(keyword => {
           const normalized = keyword.trim()
           if (normalized.length < 2) return
-          const key = normalized.toLowerCase()
+          const key = `${category.id}:${entry.id}:${normalized.toLowerCase()}`
           if (seen.has(key)) return
           seen.add(key)
           matches.push({
             keyword: normalized,
             entryId: entry.id,
             categoryId: category.id,
+            entryName: entry.name,
+            categoryName: category.name,
           })
         })
       })
@@ -1289,7 +1336,7 @@ export default function App() {
     const delta = nextWordCount - previousWordCount
     if (delta === 0 || !projectRef.current) return
 
-    sessionWordDeltaRef.current += delta
+    sessionWordDeltaRef.current = Math.max(0, sessionWordDeltaRef.current + delta)
     setSessionWordDelta(sessionWordDeltaRef.current)
 
     const dayKey = localDateKey()
@@ -3415,7 +3462,7 @@ export default function App() {
     const visibleTree = restoredId !== null
       ? openAncestorFoldersForNode(loadedTree, restoredId).nodes
       : loadedTree
-    setNextIdValue((data.nextId as number) ?? 10)
+    setNextIdValue(Math.max(Number(data.nextId) || 10, getMaxTreeId(visibleTree) + 1, 10))
     const loadedSettings = normalizeProjectSettings(data.settings as Partial<ProjectSettings> | undefined)
     const loadedProject: Project = {
       name: data.name as string,
@@ -3855,6 +3902,11 @@ export default function App() {
     return folder?.type === 'folder' ? folder.children : treeRef.current
   }
 
+  const allocateNextBinderNodeId = () => {
+    setNextIdValue(Math.max(getNextIdValue(), getMaxTreeId(treeRef.current) + 1, 10))
+    return allocateNextId()
+  }
+
   const extractNumberedLabelValue = (label: string, prefix: 'Scene' | 'Chapter' | 'Act') => {
     const match = label.trim().match(new RegExp(`^${prefix}\\s+(\\d+)$`, 'i'))
     return match ? Number.parseInt(match[1], 10) : null
@@ -3890,14 +3942,14 @@ export default function App() {
   })
 
   const createNewDocNode = (targetFolderId?: number): DocNode => {
-    const id = allocateNextId()
+    const id = allocateNextBinderNodeId()
     const fileId = generateFileId()
     const label = getNextNumberedLabel(targetFolderId, 'Scene')
     return { id, type: 'doc', label, title: label, file: fileId, metadata: createDefaultSceneMetadata() }
   }
 
   const createNewFolderNode = (targetFolderId?: number): FolderNode => {
-    const id = allocateNextId()
+    const id = allocateNextBinderNodeId()
     const role = inferNewFolderRole(targetFolderId)
     const label = getNextNumberedLabel(targetFolderId, role === 'act' ? 'Act' : 'Chapter', role)
     return { id, type: 'folder', label, open: true, role, children: [] }
@@ -3940,7 +3992,7 @@ export default function App() {
     const title = mindMapNode.title?.trim() ||
       mindMapNode.text.trim().split(/\s+/).slice(0, 8).join(' ') ||
       'New scene'
-    const id = allocateNextId()
+    const id = allocateNextBinderNodeId()
     const fileId = generateFileId()
     const node: DocNode = { id, type: 'doc', label: title, title, file: fileId, metadata: createDefaultSceneMetadata() }
     const newTree = addDocToTree(treeRef.current, 1, node)
@@ -4265,8 +4317,8 @@ export default function App() {
     const actionIds = getTopLevelBinderActionIds(ids)
     if (actionIds.length === 0) return
     const newTree = actionIds.length === 1
-      ? await duplicateNodeInTree(treeRef.current, actionIds[0], allocateNextId, copySceneForDuplicate)
-      : await duplicateNodesInTree(treeRef.current, actionIds, allocateNextId, copySceneForDuplicate)
+      ? await duplicateNodeInTree(treeRef.current, actionIds[0], allocateNextBinderNodeId, copySceneForDuplicate)
+      : await duplicateNodesInTree(treeRef.current, actionIds, allocateNextBinderNodeId, copySceneForDuplicate)
     setTree(newTree)
     treeRef.current = newTree
     if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
@@ -4780,7 +4832,7 @@ export default function App() {
               label="Session"
               progress={sessionWordDelta}
               target={goals.sessionTargetWordCount}
-              detail={`Net words since ${sessionStartedLabel}${sessionElapsedLabel ? ` · ${sessionElapsedLabel}` : ''}`}
+              detail={`Words since ${sessionStartedLabel}${sessionElapsedLabel ? ` · ${sessionElapsedLabel}` : ''}`}
             />
             <GoalProgressRow
               label="Current scene"
@@ -4996,6 +5048,36 @@ export default function App() {
               >
                 Rename {bulkRenameTarget.ids.length} items
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {loreLinkChoice && (
+        <div className="lore-link-choice-layer" onMouseDown={() => setLoreLinkChoice(null)}>
+          <div
+            className="lore-link-choice-popover"
+            style={{
+              left: Math.min(loreLinkChoice.x + 12, window.innerWidth - 300),
+              top: Math.min(loreLinkChoice.y + 12, window.innerHeight - 220),
+            }}
+            onMouseDown={event => event.stopPropagation()}
+          >
+            <div className="lore-link-choice-title">Open lore entry</div>
+            <div className="lore-link-choice-list">
+              {loreLinkChoice.targets.map(target => (
+                <button
+                  key={`${target.categoryId}:${target.entryId}`}
+                  type="button"
+                  className="lore-link-choice-item"
+                  onClick={() => {
+                    openLoreEntryById(target.categoryId, target.entryId)
+                    setLoreLinkChoice(null)
+                  }}
+                >
+                  <span>{target.entryName}</span>
+                  <small>{target.categoryName}</small>
+                </button>
+              ))}
             </div>
           </div>
         </div>

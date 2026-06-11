@@ -5,7 +5,8 @@ import {
   normalizeProjectStyles,
   normalizeWritingStats,
 } from './constants'
-import type { ProjectSettings, ProjectStyles, WritingStats } from './types'
+import { getMaxTreeId } from './tree'
+import type { ProjectSettings, ProjectStyles, TreeNode, WritingStats } from './types'
 
 export type ProjectMigrationResult = {
   data: Record<string, unknown>
@@ -45,6 +46,13 @@ function migrateFormat0To1(data: Record<string, unknown>) {
 
   if (!Number.isFinite(Number(data.nextId))) {
     changed = setIfChanged(data, 'nextId', 10) || changed
+  }
+  if (Array.isArray(data.tree)) {
+    changed = setIfChanged(
+      data,
+      'nextId',
+      Math.max(Number(data.nextId) || 10, getMaxTreeId(data.tree as TreeNode[]) + 1, 10),
+    ) || changed
   }
 
   if (data.lastActiveId !== null && typeof data.lastActiveId !== 'number') {
@@ -92,6 +100,13 @@ export function migrateProjectData(rawData: Record<string, unknown>): ProjectMig
     changed = setIfChanged(data, 'projectFormatVersion', PROJECT_FORMAT_VERSION) || changed
     if (!data.compileIncludes || typeof data.compileIncludes !== 'object' || Array.isArray(data.compileIncludes)) {
       changed = setIfChanged(data, 'compileIncludes', {}) || changed
+    }
+    if (Array.isArray(data.tree)) {
+      changed = setIfChanged(
+        data,
+        'nextId',
+        Math.max(Number(data.nextId) || 10, getMaxTreeId(data.tree as TreeNode[]) + 1, 10),
+      ) || changed
     }
     changed = setIfChanged(data, 'writingStats', normalizeWritingStats(data.writingStats as Partial<WritingStats> | undefined)) || changed
   }

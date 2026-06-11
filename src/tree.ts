@@ -31,6 +31,18 @@ export function collectDocs(node: TreeNode): DocNode[] {
   return results
 }
 
+export function getMaxTreeId(nodes: TreeNode[]): number {
+  let maxId = 0
+  for (const node of nodes) {
+    if (node.id > maxId) maxId = node.id
+    if (node.type === 'folder') {
+      const childMax = getMaxTreeId(node.children)
+      if (childMax > maxId) maxId = childMax
+    }
+  }
+  return maxId
+}
+
 export function removeNode(nodes: TreeNode[], id: number): boolean {
   for (let i = 0; i < nodes.length; i++) {
     if (nodes[i].id === id) { nodes.splice(i, 1); return true }

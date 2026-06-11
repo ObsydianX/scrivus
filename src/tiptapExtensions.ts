@@ -70,6 +70,8 @@ export type LoreLinkMatch = {
   keyword: string
   entryId: string
   categoryId: string
+  entryName: string
+  categoryName: string
 }
 
 export const SpellcheckExtension = Extension.create<{
@@ -219,7 +221,11 @@ export const LoreLinkExtension = Extension.create<{
       const decorations: Decoration[] = []
       doc.descendants((node, pos) => {
         if (!node.isText || !node.text) return
-        const claimed: Array<[number, number]> = []
+        const linkedRanges: Array<{
+          from: number
+          to: number
+          targets: LoreLinkMatch[]
+        }> = []
         for (const match of matches) {
           const pattern = new RegExp(`(^|[^\\p{L}\\p{N}_])(${escapeRegExp(match.keyword)})(?=$|[^\\p{L}\\p{N}_])`, 'giu')
           let result: RegExpExecArray | null
@@ -227,16 +233,34 @@ export const LoreLinkExtension = Extension.create<{
             const prefixLength = result[1]?.length ?? 0
             const start = result.index + prefixLength
             const end = start + result[2].length
-            if (claimed.some(([from, to]) => start < to && end > from)) continue
-            claimed.push([start, end])
-            decorations.push(Decoration.inline(pos + start, pos + end, {
-              class: 'lore-link-highlight',
-              'data-lore-entry-id': match.entryId,
-              'data-lore-category-id': match.categoryId,
-              title: 'Ctrl-click to open lore entry',
-            }))
+            const exactRange = linkedRanges.find(range => range.from === start && range.to === end)
+            if (exactRange) {
+              const targetKey = `${match.categoryId}:${match.entryId}`
+              if (!exactRange.targets.some(target => `${target.categoryId}:${target.entryId}` === targetKey)) {
+                exactRange.targets.push(match)
+              }
+              continue
+            }
+            if (linkedRanges.some(range => start < range.to && end > range.from)) continue
+            linkedRanges.push({ from: start, to: end, targets: [match] })
           }
         }
+        linkedRanges.forEach(range => {
+          const [firstTarget] = range.targets
+          if (!firstTarget) return
+          decorations.push(Decoration.inline(pos + range.from, pos + range.to, {
+            class: 'lore-link-highlight',
+            'data-lore-entry-id': firstTarget.entryId,
+            'data-lore-category-id': firstTarget.categoryId,
+            'data-lore-targets': JSON.stringify(range.targets.map(target => ({
+              entryId: target.entryId,
+              categoryId: target.categoryId,
+              entryName: target.entryName,
+              categoryName: target.categoryName,
+            }))),
+            title: range.targets.length > 1 ? 'Ctrl-click to choose lore entry' : 'Ctrl-click to open lore entry',
+          }))
+        })
       })
       return DecorationSet.create(doc, decorations)
     }

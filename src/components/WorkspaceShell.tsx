@@ -182,6 +182,7 @@ function EditorSplitView({
   activeSceneId,
   splitTabIndex,
   comments,
+  zoom,
   onSelectTab,
   onClose,
 }: {
@@ -189,6 +190,7 @@ function EditorSplitView({
   activeSceneId: number | null
   splitTabIndex: number
   comments: RevisionComment[]
+  zoom: number
   onSelectTab: (index: number) => void
   onClose: () => void
 }) {
@@ -198,6 +200,7 @@ function EditorSplitView({
 
   const activeComments = getActiveComments(comments, activeSceneId, splitTabIndex, tabs)
   const hoverCommentText = hoverComment?.comment.text.trim()
+  const zoomScale = zoom / 100
 
   return (
     <div id="editor-split-view">
@@ -220,9 +223,15 @@ function EditorSplitView({
       </div>
       <div id="editor-split-scroll">
         <div id="editor-split-wrap">
-          <div id="editor-split-title">{splitTab.name}</div>
+          <div
+            id="editor-split-title"
+            style={{ fontSize: `calc(var(--editor-chapter-size, 24pt) * ${zoomScale})` }}
+          >
+            {splitTab.name}
+          </div>
           <div
             id="editor-split-body"
+            style={{ fontSize: `calc(var(--editor-body-size, 12pt) * ${zoomScale})` }}
             dangerouslySetInnerHTML={{ __html: renderRevisionAnnotatedHtml(splitTab.content, activeComments) }}
             onMouseMove={e => {
               const target = e.target as HTMLElement
@@ -590,6 +599,7 @@ export function WorkspaceShell({
                 activeSceneId={editorActiveSceneId}
                 splitTabIndex={splitTabIndex}
                 comments={editorRevisionComments}
+                zoom={zoom}
                 onSelectTab={onSelectSplitTab}
                 onClose={onCloseSplitTab}
               />

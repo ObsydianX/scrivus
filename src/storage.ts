@@ -14,7 +14,7 @@ import {
   normalizeWritingStats,
 } from './constants'
 import { getNextIdValue } from './idCounter'
-import { collectDocs } from './tree'
+import { collectDocs, getMaxTreeId } from './tree'
 import type {
   ChecklistItem,
   Atlas,
@@ -28,12 +28,13 @@ import type {
 } from './types'
 
 export async function saveProjectToDisk(project: Project, activeId?: number, activeTabIndex?: number) {
+  const nextId = Math.max(getNextIdValue(), getMaxTreeId(project.tree) + 1, 10)
   const projectJson = {
     name: project.name,
     scrivusVersion: SCRIVUS_VERSION,
     projectFormatVersion: PROJECT_FORMAT_VERSION,
     tree: project.tree,
-    nextId: getNextIdValue(),
+    nextId,
     lastActiveId: activeId ?? null,
     lastActiveTabIndex: activeTabIndex ?? project.lastActiveTabIndex ?? 0,
     styles: project.styles,
