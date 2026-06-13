@@ -5,12 +5,14 @@ import type {
   MindMapNode,
   MindMapNodeColor,
   MindMapNodeKind,
+  MindMapRoutePoint,
   MindMapSceneOption,
   MindMapViewport,
 } from '../types'
 
-const NODE_WIDTH = 190
-const MIN_NODE_HEIGHT = 88
+const GRID_SIZE = 64
+const NODE_WIDTH = GRID_SIZE * 3
+const MIN_NODE_HEIGHT = GRID_SIZE * 2
 const NODE_TITLE_Y = 18
 const NODE_TITLE_HEIGHT = 20
 const NODE_TEXT_Y = 40
@@ -50,13 +52,20 @@ type MindMapViewProps = {
 
 type DragState =
   | { type: 'node'; id: string; offsetX: number; offsetY: number }
+  | { type: 'route'; edgeId: string; pointId: string }
   | { type: 'pan'; startX: number; startY: number; viewport: MindMapViewport }
   | null
+
+type SelectedRoutePoint = {
+  edgeId: string
+  pointId: string
+} | null
 
 type ContextMenuState =
   | { type: 'canvas'; x: number; y: number; worldX: number; worldY: number }
   | { type: 'node'; x: number; y: number; nodeId: string }
   | { type: 'edge'; x: number; y: number; edgeId: string }
+  | { type: 'route'; x: number; y: number; edgeId: string; pointId: string }
   | null
 
 function createId(prefix: string) {
@@ -65,6 +74,14 @@ function createId(prefix: string) {
 
 function clampZoom(zoom: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
+}
+
+function snapToGrid(value: number) {
+  return Math.round(value / GRID_SIZE) * GRID_SIZE
+}
+
+function snapUpToGrid(value: number) {
+  return Math.ceil(value / GRID_SIZE) * GRID_SIZE
 }
 
 function getSceneLabel(scene: MindMapSceneOption) {
@@ -85,15 +102,78 @@ function countWrappedLines(text: string, charactersPerLine: number) {
 
 function getNodeLayout(node: MindMapNode) {
   const textLines = countWrappedLines(node.text, 28)
-  const textHeight = Math.max(22, textLines * 15)
-  const metaY = NODE_TEXT_Y + textHeight + 7
-  const height = Math.max(MIN_NODE_HEIGHT, metaY + NODE_META_HEIGHT + NODE_BOTTOM_PADDING)
+  const contentTextHeight = Math.max(22, textLines * 15)
+  const contentHeight = NODE_TEXT_Y + contentTextHeight + 7 + NODE_META_HEIGHT + NODE_BOTTOM_PADDING
+  const height = snapUpToGrid(Math.max(MIN_NODE_HEIGHT, contentHeight))
+  const metaY = height - NODE_META_HEIGHT - NODE_BOTTOM_PADDING
+  const textHeight = Math.max(22, metaY - NODE_TEXT_Y - 7)
   return {
     height,
     textHeight,
     metaY,
     actionY: metaY - 2,
   }
+}
+
+function isMindMapNode(target: { x: number; y: number } | MindMapNode): target is MindMapNode {
+  return 'title' in target
+}
+
+function getNodeTitlePort(node: MindMapNode, target: { x: number; y: number } | MindMapNode) {
+  const sourceCenterX = node.x + NODE_WIDTH / 2
+  const sourceCenterY = node.y + NODE_TITLE_Y + NODE_TITLE_HEIGHT / 2
+  const targetCenterX = isMindMapNode(target) ? target.x + NODE_WIDTH / 2 : target.x
+  const targetCenterY = isMindMapNode(target) ? target.y + NODE_TITLE_Y + NODE_TITLE_HEIGHT / 2 : target.y
+  const dx = targetCenterX - sourceCenterX
+  const dy = targetCenterY - sourceCenterY
+  const edgeX = node.x + (dx >= 0 ? NODE_WIDTH : 0)
+
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return {
+      x: edgeX,
+      y: node.y,
+    }
+  }
+
+  return {
+    x: edgeX,
+    y: node.y + (dy >= 0 ? getNodeLayout(node).height : 0),
+  }
+}
+
+function getPolylineLabelPoint(points: { x: number; y: number }[]) {
+  if (points.length <= 1) return points[0] ?? { x: 0, y: 0 }
+  const lengths = points.slice(1).map((point, index) => {
+    const previous = points[index]
+    return Math.hypot(point.x - previous.x, point.y - previous.y)
+  })
+  const totalLength = lengths.reduce((total, length) => total + length, 0)
+  if (totalLength === 0) return points[Math.floor(points.length / 2)]
+
+  let traversed = 0
+  const targetLength = totalLength / 2
+  for (let index = 1; index < points.length; index += 1) {
+    const segmentLength = lengths[index - 1]
+    if (traversed + segmentLength >= targetLength) {
+      const previous = points[index - 1]
+      const point = points[index]
+      const ratio = segmentLength === 0 ? 0 : (targetLength - traversed) / segmentLength
+      return {
+        x: previous.x + (point.x - previous.x) * ratio,
+        y: previous.y + (point.y - previous.y) * ratio,
+      }
+    }
+    traversed += segmentLength
+  }
+  return points[points.length - 1]
+}
+
+function distanceToSegment(point: { x: number; y: number }, start: { x: number; y: number }, end: { x: number; y: number }) {
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  if (dx === 0 && dy === 0) return Math.hypot(point.x - start.x, point.y - start.y)
+  const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)))
+  return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy))
 }
 
 export function MindMapView({
@@ -107,6 +187,7 @@ export function MindMapView({
   const dragRef = useRef<DragState>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(map.nodes[0]?.id ?? null)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
+  const [selectedRoutePoint, setSelectedRoutePoint] = useState<SelectedRoutePoint>(null)
   const [connectionStartId, setConnectionStartId] = useState<string | null>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 800 })
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
@@ -149,6 +230,12 @@ export function MindMapView({
       nodes: map.nodes.map(node => node.id === id ? { ...node, ...patch } : node),
     })
   }
+  const updateEdge = (id: string, patch: Partial<MindMapEdge>) => {
+    updateMap({
+      ...map,
+      edges: map.edges.map(edge => edge.id === id ? { ...edge, ...patch } : edge),
+    })
+  }
   const updateViewport = (nextViewport: MindMapViewport) => {
     updateMap({ ...map, viewport: { ...nextViewport, zoom: clampZoom(nextViewport.zoom) } })
   }
@@ -163,10 +250,20 @@ export function MindMapView({
     })
   }
 
+  useEffect(() => {
+    const snappedNodes = map.nodes.map(node => ({
+      ...node,
+      x: snapToGrid(node.x),
+      y: snapToGrid(node.y),
+    }))
+    const changed = snappedNodes.some((node, index) => node.x !== map.nodes[index].x || node.y !== map.nodes[index].y)
+    if (changed) updateMap({ ...map, nodes: snappedNodes })
+  }, [map.nodes])
+
   const createNode = (x: number, y: number, title = 'New idea'): MindMapNode => ({
     id: createId('node'),
-    x,
-    y,
+    x: snapToGrid(x),
+    y: snapToGrid(y),
     title,
     text: '',
     kind: 'idea',
@@ -182,13 +279,17 @@ export function MindMapView({
     updateMap({ ...map, nodes: [...map.nodes, node] })
     setSelectedNodeId(id)
     setSelectedEdgeId(null)
+    setSelectedRoutePoint(null)
   }
 
   const addConnectedChildNode = (parentId: string) => {
     const parent = nodeById.get(parentId)
     if (!parent) return
     const parentLayout = getNodeLayout(parent)
-    const child = createNode(parent.x + NODE_WIDTH + 90, parent.y + Math.max(18, parentLayout.height / 2 - MIN_NODE_HEIGHT / 2))
+    const child = createNode(
+      parent.x + NODE_WIDTH + GRID_SIZE,
+      parent.y + Math.max(0, parentLayout.height / 2 - MIN_NODE_HEIGHT / 2),
+    )
     const edge: MindMapEdge = {
       id: createId('edge'),
       fromNodeId: parentId,
@@ -201,6 +302,7 @@ export function MindMapView({
     })
     setSelectedNodeId(child.id)
     setSelectedEdgeId(null)
+    setSelectedRoutePoint(null)
     setContextMenu(null)
   }
 
@@ -209,18 +311,43 @@ export function MindMapView({
     const duplicate: MindMapNode = {
       ...selectedNode,
       id: createId('node'),
-      x: selectedNode.x + 34,
-      y: selectedNode.y + 34,
+      x: snapToGrid(selectedNode.x + GRID_SIZE),
+      y: snapToGrid(selectedNode.y + GRID_SIZE),
       title: selectedNode.title ? `${selectedNode.title} copy` : selectedNode.title,
     }
     updateMap({ ...map, nodes: [...map.nodes, duplicate] })
     setSelectedNodeId(duplicate.id)
     setSelectedEdgeId(null)
+    setSelectedRoutePoint(null)
     setConnectionStartId(null)
     setContextMenu(null)
   }
 
   const deleteSelection = () => {
+    if (selectedRoutePoint) {
+      removeRoutePoint(selectedRoutePoint.edgeId, selectedRoutePoint.pointId)
+      return
+    }
+    if (contextMenu?.type === 'route') {
+      removeRoutePoint(contextMenu.edgeId, contextMenu.pointId)
+      return
+    }
+    if (contextMenu?.type === 'edge') {
+      removeEdge(contextMenu.edgeId)
+      return
+    }
+    if (contextMenu?.type === 'node') {
+      updateMap({
+        ...map,
+        nodes: map.nodes.filter(node => node.id !== contextMenu.nodeId),
+        edges: map.edges.filter(edge => edge.fromNodeId !== contextMenu.nodeId && edge.toNodeId !== contextMenu.nodeId),
+      })
+      if (selectedNodeId === contextMenu.nodeId) setSelectedNodeId(null)
+      setSelectedEdgeId(null)
+      setSelectedRoutePoint(null)
+      setContextMenu(null)
+      return
+    }
     if (selectedNodeId) {
       updateMap({
         ...map,
@@ -229,6 +356,7 @@ export function MindMapView({
       })
       setSelectedNodeId(null)
       setSelectedEdgeId(null)
+      setSelectedRoutePoint(null)
       setConnectionStartId(null)
       setContextMenu(null)
       return
@@ -236,6 +364,7 @@ export function MindMapView({
     if (selectedEdgeId) {
       updateMap({ ...map, edges: map.edges.filter(edge => edge.id !== selectedEdgeId) })
       setSelectedEdgeId(null)
+      setSelectedRoutePoint(null)
       setContextMenu(null)
     }
   }
@@ -264,11 +393,67 @@ export function MindMapView({
   const removeEdge = (edgeId: string) => {
     updateMap({ ...map, edges: map.edges.filter(edge => edge.id !== edgeId) })
     if (selectedEdgeId === edgeId) setSelectedEdgeId(null)
+    if (selectedRoutePoint?.edgeId === edgeId) setSelectedRoutePoint(null)
+    setContextMenu(null)
+  }
+
+  const removeRoutePoint = (edgeId: string, pointId: string) => {
+    const edge = map.edges.find(item => item.id === edgeId)
+    if (!edge) {
+      setSelectedRoutePoint(null)
+      setContextMenu(null)
+      return
+    }
+    const routePoints = (edge.routePoints ?? []).filter(point => point.id !== pointId)
+    updateEdge(edgeId, { routePoints: routePoints.length > 0 ? routePoints : undefined })
+    if (selectedRoutePoint?.edgeId === edgeId && selectedRoutePoint.pointId === pointId) setSelectedRoutePoint(null)
+    setSelectedEdgeId(null)
     setContextMenu(null)
   }
 
   const removeNodeConnections = (nodeId: string) => {
     updateMap({ ...map, edges: map.edges.filter(edge => edge.fromNodeId !== nodeId && edge.toNodeId !== nodeId) })
+    setContextMenu(null)
+  }
+
+  const addRoutePoint = (edgeId: string, x: number, y: number) => {
+    const edge = map.edges.find(item => item.id === edgeId)
+    if (!edge) return
+    const from = nodeById.get(edge.fromNodeId)
+    const to = nodeById.get(edge.toNodeId)
+    if (!from || !to) return
+    const point: MindMapRoutePoint = {
+      id: createId('route'),
+      x: snapToGrid(x),
+      y: snapToGrid(y),
+    }
+    const routePoints = edge.routePoints ?? []
+    const firstTarget = routePoints[0] ?? to
+    const lastTarget = routePoints[routePoints.length - 1] ?? from
+    const points = [
+      getNodeTitlePort(from, firstTarget),
+      ...routePoints,
+      getNodeTitlePort(to, lastTarget),
+    ]
+    let insertIndex = routePoints.length
+    let closestDistance = Number.POSITIVE_INFINITY
+    for (let index = 0; index < points.length - 1; index += 1) {
+      const distance = distanceToSegment(point, points[index], points[index + 1])
+      if (distance < closestDistance) {
+        closestDistance = distance
+        insertIndex = index
+      }
+    }
+    updateEdge(edgeId, {
+      routePoints: [
+        ...routePoints.slice(0, insertIndex),
+        point,
+        ...routePoints.slice(insertIndex),
+      ],
+    })
+    setSelectedRoutePoint({ edgeId, pointId: point.id })
+    setSelectedNodeId(null)
+    setSelectedEdgeId(null)
     setContextMenu(null)
   }
 
@@ -305,6 +490,19 @@ export function MindMapView({
     }
     setSelectedNodeId(node.id)
     setSelectedEdgeId(null)
+    setSelectedRoutePoint(null)
+    startDrag()
+    svgRef.current?.setPointerCapture(event.pointerId)
+  }
+
+  const handleRoutePointPointerDown = (event: React.PointerEvent<SVGCircleElement>, edgeId: string, pointId: string) => {
+    event.stopPropagation()
+    if (event.button !== 0) return
+    dragRef.current = { type: 'route', edgeId, pointId }
+    setSelectedRoutePoint({ edgeId, pointId })
+    setSelectedNodeId(null)
+    setSelectedEdgeId(null)
+    setContextMenu(null)
     startDrag()
     svgRef.current?.setPointerCapture(event.pointerId)
   }
@@ -321,6 +519,7 @@ export function MindMapView({
     }
     setSelectedNodeId(null)
     setSelectedEdgeId(null)
+    setSelectedRoutePoint(null)
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
@@ -330,8 +529,21 @@ export function MindMapView({
     if (drag.type === 'node') {
       const point = getSvgPoint(event)
       updateNode(drag.id, {
-        x: Math.round(point.x - drag.offsetX),
-        y: Math.round(point.y - drag.offsetY),
+        x: snapToGrid(point.x - drag.offsetX),
+        y: snapToGrid(point.y - drag.offsetY),
+      })
+      return
+    }
+    if (drag.type === 'route') {
+      const point = getSvgPoint(event)
+      const edge = map.edges.find(item => item.id === drag.edgeId)
+      if (!edge) return
+      updateEdge(drag.edgeId, {
+        routePoints: (edge.routePoints ?? []).map(routePoint =>
+          routePoint.id === drag.pointId
+            ? { ...routePoint, x: snapToGrid(point.x), y: snapToGrid(point.y) }
+            : routePoint
+        ),
       })
       return
     }
@@ -364,11 +576,12 @@ export function MindMapView({
       type: 'canvas',
       x: event.clientX,
       y: event.clientY,
-      worldX: point.x - NODE_WIDTH / 2,
-      worldY: point.y - MIN_NODE_HEIGHT / 2,
+      worldX: snapToGrid(point.x - NODE_WIDTH / 2),
+      worldY: snapToGrid(point.y - MIN_NODE_HEIGHT / 2),
     })
     setSelectedNodeId(null)
     setSelectedEdgeId(null)
+    setSelectedRoutePoint(null)
   }
 
   const addNodeFromContext = () => {
@@ -394,7 +607,7 @@ export function MindMapView({
             <i className="ti ti-plus" aria-hidden="true" />
             <span>Node</span>
           </button>
-          <button className="mindmap-tool-btn" onClick={deleteSelection} disabled={!selectedNodeId && !selectedEdgeId} title="Delete selected">
+          <button className="mindmap-tool-btn" onClick={deleteSelection} disabled={!selectedNodeId && !selectedEdgeId && !selectedRoutePoint} title="Delete selected">
             <i className="ti ti-trash" aria-hidden="true" />
           </button>
           <button className="mindmap-tool-btn" onClick={duplicateSelectedNode} disabled={!selectedNode} title="Duplicate selected node">
@@ -517,14 +730,9 @@ export function MindMapView({
           onWheel={handleWheel}
           onContextMenu={handleCanvasContextMenu}
         >
-          <defs>
-            <marker id="mindmap-arrow" className="mindmap-arrow-marker" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-              <path d="M0,0 L0,6 L9,3 z" />
-            </marker>
-          </defs>
           <g className="mindmap-grid">
-            <pattern id="mindmap-grid-pattern" width="64" height="64" patternUnits="userSpaceOnUse">
-              <path d="M 64 0 L 0 0 0 64" />
+            <pattern id="mindmap-grid-pattern" width={GRID_SIZE} height={GRID_SIZE} patternUnits="userSpaceOnUse">
+              <path d={`M ${GRID_SIZE} 0 L 0 0 0 ${GRID_SIZE}`} />
             </pattern>
             <rect x={viewX} y={viewY} width={viewWidth} height={viewHeight} />
           </g>
@@ -533,31 +741,56 @@ export function MindMapView({
               const from = nodeById.get(edge.fromNodeId)
               const to = nodeById.get(edge.toNodeId)
               if (!from || !to) return null
-              const fromLayout = getNodeLayout(from)
-              const toLayout = getNodeLayout(to)
-              const x1 = from.x + NODE_WIDTH / 2
-              const y1 = from.y + fromLayout.height / 2
-              const x2 = to.x + NODE_WIDTH / 2
-              const y2 = to.y + toLayout.height / 2
-              const midX = (x1 + x2) / 2
-              const midY = (y1 + y2) / 2
+              const routePoints = edge.routePoints ?? []
+              const firstTarget = routePoints[0] ?? to
+              const lastTarget = routePoints[routePoints.length - 1] ?? from
+              const fromPort = getNodeTitlePort(from, firstTarget)
+              const toPort = getNodeTitlePort(to, lastTarget)
+              const points = [fromPort, ...routePoints, toPort]
+              const pointList = points.map(point => `${point.x},${point.y}`).join(' ')
+              const labelPoint = getPolylineLabelPoint(points)
               return (
                 <g key={edge.id} className={selectedEdgeId === edge.id ? 'mindmap-edge selected' : 'mindmap-edge'} onPointerDown={event => {
                   event.stopPropagation()
                   setContextMenu(null)
                   setSelectedEdgeId(edge.id)
                   setSelectedNodeId(null)
+                  setSelectedRoutePoint(null)
+                }} onDoubleClick={event => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  const point = getSvgPoint(event)
+                  addRoutePoint(edge.id, point.x, point.y)
                 }} onContextMenu={event => {
                   event.preventDefault()
                   event.stopPropagation()
                   setSelectedEdgeId(edge.id)
                   setSelectedNodeId(null)
+                  setSelectedRoutePoint(null)
                   setContextMenu({ type: 'edge', x: event.clientX, y: event.clientY, edgeId: edge.id })
                 }}>
-                  <line x1={x1} y1={y1} x2={x2} y2={y2} markerEnd="url(#mindmap-arrow)" />
+                  <polyline points={pointList} />
                   {edge.label && (
-                    <text x={midX} y={midY}>{edge.label}</text>
+                    <text x={labelPoint.x} y={labelPoint.y}>{edge.label}</text>
                   )}
+                  {routePoints.map(point => (
+                    <circle
+                      key={point.id}
+                      className={`mindmap-route-point${selectedRoutePoint?.edgeId === edge.id && selectedRoutePoint.pointId === point.id ? ' selected' : ''}`}
+                      cx={point.x}
+                      cy={point.y}
+                      r="6"
+                      onPointerDown={event => handleRoutePointPointerDown(event, edge.id, point.id)}
+                      onContextMenu={event => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        setSelectedRoutePoint({ edgeId: edge.id, pointId: point.id })
+                        setSelectedNodeId(null)
+                        setSelectedEdgeId(null)
+                        setContextMenu({ type: 'route', x: event.clientX, y: event.clientY, edgeId: edge.id, pointId: point.id })
+                      }}
+                    />
+                  ))}
                 </g>
               )
             })}
@@ -695,6 +928,12 @@ export function MindMapView({
               <button className="mindmap-context-danger" onClick={() => removeEdge(contextMenu.edgeId)}>
                 <i className="ti ti-route-off" aria-hidden="true" />
                 <span>Remove connection</span>
+              </button>
+            )}
+            {contextMenu.type === 'route' && (
+              <button className="mindmap-context-danger" onClick={() => removeRoutePoint(contextMenu.edgeId, contextMenu.pointId)}>
+                <i className="ti ti-route-off" aria-hidden="true" />
+                <span>Remove reroute point</span>
               </button>
             )}
           </div>

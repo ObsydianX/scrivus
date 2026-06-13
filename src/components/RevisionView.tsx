@@ -1,6 +1,7 @@
 import { useState, type ReactNode, type RefObject } from 'react'
 import { escapeAttr } from '../text'
 import type { RevisionComment, SceneTab } from '../types'
+import { DocumentTitleBar } from './EditorChrome'
 
 type RevisionPendingComment = {
   quote: string
@@ -17,6 +18,7 @@ type RevisionViewProps = {
   title: string
   tabs: SceneTab[]
   activeTabIndex: number
+  zoom: number
   canSelectPreviousScene: boolean
   canSelectNextScene: boolean
   footer?: ReactNode
@@ -152,6 +154,7 @@ export function RevisionView({
   title,
   tabs,
   activeTabIndex,
+  zoom,
   canSelectPreviousScene,
   canSelectNextScene,
   footer,
@@ -163,6 +166,9 @@ export function RevisionView({
 }: RevisionViewProps) {
   const activeComments = getActiveComments(comments, activeId, activeTabIndex, tabs)
   const tabCommentCounts = getRevisionTabCommentCounts(comments, activeId, tabs)
+  const activeTabName = tabs[activeTabIndex]?.name?.trim()
+  const titleBarText = activeTabName && tabs.length > 1 ? `${title} - ${activeTabName}` : title
+  const zoomScale = zoom / 100
 
   if (!activeId) {
     return (
@@ -221,11 +227,12 @@ export function RevisionView({
             })}
           </div>
         )}
+        <DocumentTitleBar title={titleBarText} />
         <div id="revision-scroll" ref={scrollRef}>
           <div id="revision-wrap">
-            <div id="revision-title">{title}</div>
             <div
               id="revision-body"
+              style={{ fontSize: `calc(var(--editor-body-size, 12pt) * ${zoomScale})` }}
               dangerouslySetInnerHTML={{ __html: renderRevisionAnnotatedHtml(content, activeComments, activeCommentId) }}
               onClick={e => {
                 const target = e.target as HTMLElement

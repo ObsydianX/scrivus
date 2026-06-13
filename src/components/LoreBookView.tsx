@@ -1,5 +1,6 @@
 import { convertFileSrc } from '@tauri-apps/api/core'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { DEFAULT_LORE_IMAGE_CROP, getLoreFieldText, getLoreImageCrop, getLoreImageFullWidth, getLoreImageIgnoreEntryCrop, getLoreImagePath } from '../loreImages'
 import type { LoreBook, LoreCategory, LoreEntry } from '../types'
 import type { LoreBacklink } from '../loreBacklinks'
 
@@ -45,6 +46,10 @@ export function LoreBookView({
   onOpenScene,
 }: LoreBookViewProps) {
   const [visibleBacklinkCounts, setVisibleBacklinkCounts] = useState<Record<string, number>>({})
+  const [imageViewer, setImageViewer] = useState<{ src: string; alt: string } | null>(null)
+  const [viewerZoom, setViewerZoom] = useState(1)
+  const [viewerPan, setViewerPan] = useState({ x: 0, y: 0 })
+  const viewerDragRef = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null)
   const sortedCategories = [...loreBook.categories].sort((a, b) => a.name.localeCompare(b.name))
   const pinnedEntries = sortedCategories
     .flatMap(category => category.entries
@@ -80,6 +85,83 @@ export function LoreBookView({
     onLoreViewChange('entry')
   }
 
+  const getProjectImageSrc = (relativePath: string) =>
+    projectPath ? convertFileSrc(`${projectPath}/${relativePath}`.replace(/\\/g, '/')) : ''
+
+  const openImageViewer = (src: string, alt: string) => {
+    setImageViewer({ src, alt })
+    setViewerZoom(1)
+    setViewerPan({ x: 0, y: 0 })
+  }
+
+  const imageViewerModal = imageViewer && (
+    <div className="modal-overlay lore-image-viewer-overlay" style={{ zIndex: 180 }} onClick={() => setImageViewer(null)}>
+      <div className="lore-image-viewer" onClick={event => event.stopPropagation()}>
+        <div className="lore-image-viewer-toolbar">
+          <button type="button" className="lorebook-edit-btn" onClick={() => setViewerZoom(zoom => Math.max(0.25, zoom - 0.25))}>
+            <i className="ti ti-minus" aria-hidden="true" />
+          </button>
+          <input
+            type="range"
+            min="0.25"
+            max="4"
+            step="0.05"
+            value={viewerZoom}
+            onChange={event => setViewerZoom(Number(event.target.value))}
+          />
+          <button type="button" className="lorebook-edit-btn" onClick={() => setViewerZoom(zoom => Math.min(4, zoom + 0.25))}>
+            <i className="ti ti-plus" aria-hidden="true" />
+          </button>
+          <button type="button" className="lorebook-edit-btn" onClick={() => { setViewerZoom(1); setViewerPan({ x: 0, y: 0 }) }}>
+            <i className="ti ti-restore" aria-hidden="true" />
+          </button>
+          <button type="button" className="lorebook-delete-btn" onClick={() => setImageViewer(null)}>
+            <i className="ti ti-x" aria-hidden="true" />
+          </button>
+        </div>
+        <div
+          className="lore-image-viewer-stage"
+          onPointerDown={event => {
+            event.preventDefault()
+            viewerDragRef.current = {
+              startX: event.clientX,
+              startY: event.clientY,
+              panX: viewerPan.x,
+              panY: viewerPan.y,
+            }
+            event.currentTarget.setPointerCapture(event.pointerId)
+          }}
+          onPointerMove={event => {
+            const drag = viewerDragRef.current
+            if (!drag) return
+            setViewerPan({
+              x: drag.panX + event.clientX - drag.startX,
+              y: drag.panY + event.clientY - drag.startY,
+            })
+          }}
+          onPointerUp={() => { viewerDragRef.current = null }}
+          onPointerCancel={() => { viewerDragRef.current = null }}
+          onWheel={event => {
+            event.preventDefault()
+            setViewerZoom(zoom => Math.min(4, Math.max(0.25, zoom + (event.deltaY < 0 ? 0.1 : -0.1))))
+          }}
+        >
+          <img
+            src={imageViewer.src}
+            alt={imageViewer.alt}
+            draggable={false}
+            onDragStart={event => event.preventDefault()}
+            style={{
+              '--lore-viewer-zoom': viewerZoom,
+              '--lore-viewer-pan-x': `${viewerPan.x}px`,
+              '--lore-viewer-pan-y': `${viewerPan.y}px`,
+            } as CSSProperties}
+          />
+        </div>
+      </div>
+    </div>
+  )
+
   if (loreView === 'category' || loreView === 'entry') {
     const cat = loreBook.categories.find(c => c.id === activeCategoryId)
     if (!cat) return null
@@ -90,16 +172,19 @@ export function LoreBookView({
       ...subcategories.map(subcategory => ({
         id: subcategory.id,
         name: subcategory.name || 'Unnamed subcategory',
+        color: subcategory.color ?? 'default',
         entries: sortedEntries.filter(entry => entry.subcategoryId === subcategory.id),
       })),
       {
         id: '__uncategorized__',
         name: 'Uncategorized',
+        color: 'default',
         entries: sortedEntries.filter(entry => !entry.subcategoryId || !subcategoryIds.has(entry.subcategoryId)),
       },
     ].filter(group => group.entries.length > 0)
     const activeFields = cat.template.filter(f => !f.removed)
     const activeEntry = expandedEntryId ? cat.entries.find(entry => entry.id === expandedEntryId) ?? null : null
+    const categoryEntryOrder = entryGroups.flatMap(group => group.entries)
 
     if (loreView === 'entry') {
       if (!activeEntry) {
@@ -123,14 +208,46 @@ export function LoreBookView({
       )
       const visibleBacklinks = entryBacklinks.slice(0, visibleBacklinkCount)
       const hiddenBacklinkCount = entryBacklinks.length - visibleBacklinkCount
+      const activeEntryIndex = categoryEntryOrder.findIndex(entry => entry.id === activeEntry.id)
+      const previousEntry = activeEntryIndex >= 0 && categoryEntryOrder.length > 1
+        ? categoryEntryOrder[(activeEntryIndex - 1 + categoryEntryOrder.length) % categoryEntryOrder.length]
+        : null
+      const nextEntry = activeEntryIndex >= 0 && categoryEntryOrder.length > 1
+        ? categoryEntryOrder[(activeEntryIndex + 1) % categoryEntryOrder.length]
+        : null
 
       return (
+        <>
         <div id="lorebook-view">
           <div id="lorebook-category-header">
             <button className="lorebook-back-btn" onClick={() => onLoreViewChange('category')}>
               <i className="ti ti-arrow-left" aria-hidden="true" />
             </button>
             <span id="lorebook-category-title">{cat.name}</span>
+            <div className="lorebook-entry-nav" aria-label="Entry navigation">
+              <button
+                type="button"
+                className="lorebook-entry-nav-btn"
+                disabled={!previousEntry}
+                onClick={() => previousEntry && openEntry(previousEntry.id)}
+                title={previousEntry ? `Previous entry: ${previousEntry.name || 'Unnamed entry'}` : 'Previous entry'}
+                aria-label={previousEntry ? `Previous entry: ${previousEntry.name || 'Unnamed entry'}` : 'Previous entry'}
+              >
+                <i className="ti ti-chevron-left" aria-hidden="true" />
+                <span>{previousEntry?.name || 'Previous'}</span>
+              </button>
+              <button
+                type="button"
+                className="lorebook-entry-nav-btn"
+                disabled={!nextEntry}
+                onClick={() => nextEntry && openEntry(nextEntry.id)}
+                title={nextEntry ? `Next entry: ${nextEntry.name || 'Unnamed entry'}` : 'Next entry'}
+                aria-label={nextEntry ? `Next entry: ${nextEntry.name || 'Unnamed entry'}` : 'Next entry'}
+              >
+                <span>{nextEntry?.name || 'Next'}</span>
+                <i className="ti ti-chevron-right" aria-hidden="true" />
+              </button>
+            </div>
             <button
               className={`lorebook-edit-btn${activeEntry.pinned ? ' active' : ''}`}
               title={activeEntry.pinned ? 'Unpin entry' : 'Pin entry'}
@@ -171,21 +288,39 @@ export function LoreBookView({
                 const value = activeEntry.fields[field.id] ?? ''
                 if (!value) return null
                 if (field.type === 'image') {
+                  const path = getLoreImagePath(value)
+                  if (!path) return null
+                  const crop = getLoreImageIgnoreEntryCrop(value) ? DEFAULT_LORE_IMAGE_CROP : getLoreImageCrop(value)
+                  const fullWidth = getLoreImageFullWidth(value)
+                  const src = getProjectImageSrc(path)
                   return (
                     <div key={field.id} className="lorebook-entry-field">
                       {field.label && <span className="lorebook-field-label">{field.label}</span>}
-                      <img
-                        src={projectPath ? convertFileSrc(`${projectPath}/${value}`.replace(/\\/g, '/')) : ''}
-                        className="lorebook-entry-image"
-                        alt={field.label ?? 'image'}
-                      />
+                      <button
+                        type="button"
+                        className={`lorebook-entry-image-button${fullWidth ? ' full-width' : ''}`}
+                        onClick={() => openImageViewer(src, field.label ?? activeEntry.name ?? 'image')}
+                      >
+                        <img
+                          src={src}
+                          className="lorebook-entry-image"
+                          alt={field.label ?? 'image'}
+                          style={{
+                            '--lore-image-zoom': crop.zoom,
+                            '--lore-image-pan-x': `${crop.x}px`,
+                            '--lore-image-pan-y': `${crop.y}px`,
+                          } as CSSProperties}
+                        />
+                      </button>
                     </div>
                   )
                 }
+                const textValue = getLoreFieldText(value)
+                if (!textValue) return null
                 return (
                   <div key={field.id} className="lorebook-entry-field">
                     <span className="lorebook-field-label">{field.label}</span>
-                    <span className="lorebook-field-value">{value}</span>
+                    <span className="lorebook-field-value">{textValue}</span>
                   </div>
                 )
               })}
@@ -235,6 +370,8 @@ export function LoreBookView({
             </div>
           </div>
         </div>
+        {imageViewerModal}
+        </>
       )
     }
 
@@ -254,49 +391,70 @@ export function LoreBookView({
         </div>
         <div id="lorebook-entries">
           {entryGroups.map(group => (
-            <div key={group.id} className="lorebook-entry-group">
+            <div key={group.id} className={`lorebook-entry-group lorebook-entry-group-${group.color}`}>
               <div className="lorebook-entry-group-heading">{group.name}</div>
-              {group.entries.map(entry => (
-              <div
-                key={entry.id}
-                className="lorebook-entry-card lorebook-entry-list-item"
-                role="button"
-                tabIndex={0}
-                onClick={() => openEntry(entry.id)}
-                onKeyDown={event => {
-                  if (event.key !== 'Enter' && event.key !== ' ') return
-                  event.preventDefault()
-                  openEntry(entry.id)
-                }}
-              >
-                <div className="lorebook-entry-card-header">
-                  <i className="ti ti-chevron-right lorebook-entry-chevron" aria-hidden="true" />
-                  <span className="lorebook-entry-name">{entry.name}</span>
-                  <span
-                    className={`lorebook-entry-actions${entry.pinned ? ' has-pinned' : ''}`}
-                    onClick={e => e.stopPropagation()}
-                    onKeyDown={e => e.stopPropagation()}
+              {group.entries.map(entry => {
+                const previewImage = activeFields
+                  .filter(field => field.type === 'image')
+                  .map(field => entry.fields[field.id])
+                  .find(value => Boolean(getLoreImagePath(value)))
+                const previewPath = getLoreImagePath(previewImage)
+                const previewCrop = getLoreImageCrop(previewImage)
+                return (
+                  <div
+                    key={entry.id}
+                    className="lorebook-entry-card lorebook-entry-list-item"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openEntry(entry.id)}
+                    onKeyDown={event => {
+                      if (event.key !== 'Enter' && event.key !== ' ') return
+                      event.preventDefault()
+                      openEntry(entry.id)
+                    }}
                   >
-                    <button
-                      type="button"
-                      className={entry.pinned ? 'active' : ''}
-                      title={entry.pinned ? 'Unpin entry' : 'Pin entry'}
-                      aria-label={entry.pinned ? 'Unpin entry' : 'Pin entry'}
-                      aria-pressed={entry.pinned === true}
-                      onClick={() => onToggleEntryPinned(cat.id, entry.id, !entry.pinned)}
-                    >
-                      <i className={`ti ${entry.pinned ? 'ti-star-filled' : 'ti-star'}`} aria-hidden="true" />
-                    </button>
-                    <button type="button" onClick={() => onEditEntry(entry)}>
-                      <i className="ti ti-pencil" aria-hidden="true" />
-                    </button>
-                    <button type="button" onClick={() => onDeleteEntryRequest(entry)}>
-                      <i className="ti ti-trash" aria-hidden="true" />
-                    </button>
-                  </span>
-                </div>
-              </div>
-              ))}
+                    <div className="lorebook-entry-card-header">
+                      <span className={`lorebook-entry-thumbnail${previewPath ? ' has-image' : ''}`} aria-hidden="true">
+                        {previewPath && (
+                          <img
+                            src={getProjectImageSrc(previewPath)}
+                            alt=""
+                            draggable={false}
+                            style={{
+                              '--lore-image-zoom': previewCrop.zoom,
+                              '--lore-image-pan-x': `${previewCrop.x}px`,
+                              '--lore-image-pan-y': `${previewCrop.y}px`,
+                            } as CSSProperties}
+                          />
+                        )}
+                      </span>
+                      <span className="lorebook-entry-name">{entry.name}</span>
+                      <span
+                        className={`lorebook-entry-actions${entry.pinned ? ' has-pinned' : ''}`}
+                        onClick={e => e.stopPropagation()}
+                        onKeyDown={e => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          className={entry.pinned ? 'active' : ''}
+                          title={entry.pinned ? 'Unpin entry' : 'Pin entry'}
+                          aria-label={entry.pinned ? 'Unpin entry' : 'Pin entry'}
+                          aria-pressed={entry.pinned === true}
+                          onClick={() => onToggleEntryPinned(cat.id, entry.id, !entry.pinned)}
+                        >
+                          <i className={`ti ${entry.pinned ? 'ti-star-filled' : 'ti-star'}`} aria-hidden="true" />
+                        </button>
+                        <button type="button" onClick={() => onEditEntry(entry)}>
+                          <i className="ti ti-pencil" aria-hidden="true" />
+                        </button>
+                        <button type="button" onClick={() => onDeleteEntryRequest(entry)}>
+                          <i className="ti ti-trash" aria-hidden="true" />
+                        </button>
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           ))}
           <button className="lorebook-add-entry-btn" onClick={onNewEntry}>
@@ -320,6 +478,12 @@ export function LoreBookView({
               <div className="lorebook-pinned-strip">
                 {pinnedEntries.map(({ category, entry }) => {
                   const keywords = entry.keywords?.slice(0, 3) ?? []
+                  const pinnedImage = category.template
+                    .filter(field => !field.removed && field.type === 'image')
+                    .map(field => entry.fields[field.id])
+                    .find(value => Boolean(getLoreImagePath(value)))
+                  const pinnedImagePath = getLoreImagePath(pinnedImage)
+                  const pinnedImageCrop = getLoreImageCrop(pinnedImage)
                   return (
                     <div
                       key={`${category.id}:${entry.id}`}
@@ -338,6 +502,20 @@ export function LoreBookView({
                       }}
                       title={`${entry.name || 'Unnamed entry'} - ${category.name}`}
                     >
+                      <span className={`lorebook-pinned-image${pinnedImagePath ? ' has-image' : ''}`} aria-hidden="true">
+                        {pinnedImagePath && (
+                          <img
+                            src={getProjectImageSrc(pinnedImagePath)}
+                            alt=""
+                            draggable={false}
+                            style={{
+                              '--lore-image-zoom': pinnedImageCrop.zoom,
+                              '--lore-image-pan-x': `${pinnedImageCrop.x}px`,
+                              '--lore-image-pan-y': `${pinnedImageCrop.y}px`,
+                            } as CSSProperties}
+                          />
+                        )}
+                      </span>
                       <span className="lorebook-pinned-name">{entry.name || 'Unnamed entry'}</span>
                       <span className="lorebook-pinned-category">{category.name}</span>
                       {keywords.length > 0 && (

@@ -6,6 +6,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
+import { TextSelection } from '@tiptap/pm/state'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { exists, readFile, readTextFile, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { join } from '@tauri-apps/api/path'
@@ -407,6 +408,8 @@ export default function App() {
   const [confirmDeleteLoreEntry, setConfirmDeleteLoreEntry] = useState<LoreEntry | null>(null)
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
   const [loreLinkChoice, setLoreLinkChoice] = useState<LoreLinkChoice | null>(null)
+  const lastLoreMouseBackRef = useRef(0)
+  const loreMouseBackArmedRef = useRef(false)
 
   // ── Compile modal state ──
   const [showCompile, setShowCompile] = useState(false)
@@ -866,6 +869,17 @@ export default function App() {
   useEffect(() => { atlasRef.current = atlas }, [atlas])
 
   useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      window.getSelection()?.removeAllRanges()
+      if (!editor || editor.isDestroyed) return
+      const { view } = editor
+      const selection = TextSelection.atStart(view.state.doc)
+      view.dispatch(view.state.tr.setSelection(selection))
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [activeId, activeTabIndex, editor])
+
+  useEffect(() => {
     refreshOutlineRows()
   }, [project?.path, tree, refreshOutlineRows])
 
@@ -997,6 +1011,52 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    const handleLoreMouseBack = (event: MouseEvent) => {
+      if (event.button !== 3) return
+      const canNavigateLoreBack = workspace === 'lorebook'
+        && loreView !== 'home'
+        && !loreEntryEditor
+        && !loreTemplateEditor
+        && !confirmDeleteLoreCategory
+        && !confirmDeleteLoreEntry
+
+      const target = event.target as HTMLElement | null
+      const isEditingTarget = Boolean(target?.closest('input, textarea, select, [contenteditable="true"], .modal-overlay'))
+      if (!canNavigateLoreBack || isEditingTarget) {
+        loreMouseBackArmedRef.current = false
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      if (event.type === 'mousedown') {
+        loreMouseBackArmedRef.current = true
+        return
+      }
+
+      if (event.type === 'auxclick') return
+      if (!loreMouseBackArmedRef.current) return
+      loreMouseBackArmedRef.current = false
+
+      const now = performance.now()
+      if (now - lastLoreMouseBackRef.current < 650) return
+      lastLoreMouseBackRef.current = now
+
+      setLoreView(loreView === 'entry' ? 'category' : 'home')
+    }
+
+    window.addEventListener('mousedown', handleLoreMouseBack, true)
+    window.addEventListener('mouseup', handleLoreMouseBack, true)
+    window.addEventListener('auxclick', handleLoreMouseBack, true)
+    return () => {
+      window.removeEventListener('mousedown', handleLoreMouseBack, true)
+      window.removeEventListener('mouseup', handleLoreMouseBack, true)
+      window.removeEventListener('auxclick', handleLoreMouseBack, true)
+    }
+  }, [workspace, loreView, loreEntryEditor, loreTemplateEditor, confirmDeleteLoreCategory, confirmDeleteLoreEntry])
+
+  useEffect(() => {
     if (!themeMenuOpen) return
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
@@ -1108,8 +1168,6 @@ export default function App() {
 
       const scale = zoom / 100;
       proseMirror.style.fontSize = `calc(var(--editor-body-size, 12pt) * ${scale})`;
-      const title = document.getElementById('editor-title') as HTMLElement | null;
-      if (title) title.style.fontSize = `calc(var(--editor-chapter-size, 24pt) * ${scale})`;
       return true;
     };
 

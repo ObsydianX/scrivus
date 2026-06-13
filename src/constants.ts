@@ -13,7 +13,7 @@ import type {
   WritingStats,
 } from './types'
 
-export const SCRIVUS_VERSION = '0.2.7'
+export const SCRIVUS_VERSION = '0.2.8'
 export const PROJECT_FORMAT_VERSION = 1
 
 export const DEFAULT_BACKUP_SETTINGS: BackupSettings = {
@@ -148,6 +148,15 @@ export function normalizeMindMap(data?: Partial<MindMap> | null): MindMap {
         fromNodeId: String(edge.fromNodeId),
         toNodeId: String(edge.toNodeId),
         label: typeof edge.label === 'string' ? edge.label : undefined,
+        routePoints: Array.isArray(edge.routePoints)
+          ? edge.routePoints
+            .filter(point => point && typeof point.id === 'string')
+            .map(point => ({
+              id: String(point.id),
+              x: Number.isFinite(Number(point.x)) ? Number(point.x) : 0,
+              y: Number.isFinite(Number(point.y)) ? Number(point.y) : 0,
+            }))
+          : undefined,
       }))
     : DEFAULT_MIND_MAP.edges
   const colorLabels: Partial<Record<MindMapNodeColor, string>> = {}

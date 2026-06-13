@@ -15,6 +15,7 @@ import type {
   SceneStatus,
 } from '../types'
 import {
+  DocumentTitleBar,
   EditorToolbar,
   SceneTabBar,
   StatusBar,
@@ -179,6 +180,8 @@ type WorkspaceShellProps = {
 
 function EditorSplitView({
   tabs,
+  title,
+  activeTabIndex,
   activeSceneId,
   splitTabIndex,
   comments,
@@ -187,6 +190,8 @@ function EditorSplitView({
   onClose,
 }: {
   tabs: SceneTab[]
+  title: string
+  activeTabIndex: number
   activeSceneId: number | null
   splitTabIndex: number
   comments: RevisionComment[]
@@ -201,6 +206,12 @@ function EditorSplitView({
   const activeComments = getActiveComments(comments, activeSceneId, splitTabIndex, tabs)
   const hoverCommentText = hoverComment?.comment.text.trim()
   const zoomScale = zoom / 100
+  const activeTabName = tabs[activeTabIndex]?.name?.trim()
+  const splitTitle = activeTabName && tabs.length > 1 && title.endsWith(` - ${activeTabName}`)
+    ? `${title.slice(0, -` - ${activeTabName}`.length)} - ${splitTab.name}`
+    : tabs.length > 1
+      ? `${title} - ${splitTab.name}`
+      : title
 
   return (
     <div id="editor-split-view">
@@ -221,14 +232,9 @@ function EditorSplitView({
           <i className="ti ti-x" aria-hidden="true" />
         </button>
       </div>
+      <DocumentTitleBar title={splitTitle} />
       <div id="editor-split-scroll">
         <div id="editor-split-wrap">
-          <div
-            id="editor-split-title"
-            style={{ fontSize: `calc(var(--editor-chapter-size, 24pt) * ${zoomScale})` }}
-          >
-            {splitTab.name}
-          </div>
           <div
             id="editor-split-body"
             style={{ fontSize: `calc(var(--editor-body-size, 12pt) * ${zoomScale})` }}
@@ -467,6 +473,9 @@ export function WorkspaceShell({
           onLoreLinksEnabledChange={onLoreLinksEnabledChange}
         />
       )}
+      {workspace === 'editor' && showEditor && (
+        <DocumentTitleBar title={titleValue} bookmarked={titleBookmarked} />
+      )}
       {workspace === 'lorebook' && (
         <LoreBookView
           loreBook={loreBook}
@@ -508,6 +517,7 @@ export function WorkspaceShell({
             title={revisionTitle}
             tabs={revisionTabs}
             activeTabIndex={revisionActiveTabIndex}
+            zoom={zoom}
             canSelectPreviousScene={canSelectPreviousScene}
             canSelectNextScene={canSelectNextScene}
             footer={!isNarrow && revisionActiveId !== null ? (
@@ -580,14 +590,6 @@ export function WorkspaceShell({
                     This scene is in the trash - read only. Restore it to edit.
                   </div>
                 )}
-                <div id="editor-title">
-                  <span>{titleValue}</span>
-                  {titleBookmarked && (
-                    <span className="editor-title-bookmark" title="Last opened scene" aria-label="Last opened scene">
-                      <i className="ti ti-bookmark" aria-hidden="true" />
-                    </span>
-                  )}
-                </div>
                 <div className="tiptap-wrap">
                   <EditorContent editor={editor} />
                 </div>
@@ -596,6 +598,8 @@ export function WorkspaceShell({
             {splitTabIndex !== null && (
               <EditorSplitView
                 tabs={sceneTabs}
+                title={titleValue}
+                activeTabIndex={activeTabIndex}
                 activeSceneId={editorActiveSceneId}
                 splitTabIndex={splitTabIndex}
                 comments={editorRevisionComments}

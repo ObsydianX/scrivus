@@ -1,6 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
-import type { LoreCategory, LoreEntry, LoreFieldType, LoreTemplateElement } from '../types'
+import { createLoreImageValue, getLoreFieldText, getLoreImageCrop, getLoreImageFullWidth, getLoreImageIgnoreEntryCrop, getLoreImagePath } from '../loreImages'
+import type { LoreCategory, LoreEntry, LoreFieldType, LoreImageCrop, LoreSubcategoryColor, LoreTemplateElement } from '../types'
+
+const LORE_SUBCATEGORY_COLORS: { value: LoreSubcategoryColor; label: string }[] = [
+  { value: 'default', label: 'Default' },
+  { value: 'blue', label: 'Blue' },
+  { value: 'green', label: 'Green' },
+  { value: 'rose', label: 'Rose' },
+  { value: 'gold', label: 'Gold' },
+  { value: 'violet', label: 'Violet' },
+  { value: 'cyan', label: 'Cyan' },
+  { value: 'orange', label: 'Orange' },
+  { value: 'red', label: 'Red' },
+  { value: 'slate', label: 'Slate' },
+]
 
 export function LoreTemplateEditorModal({
   category,
@@ -124,6 +138,15 @@ export function LoreTemplateEditorModal({
     } : prev)
   }
 
+  const updateSubcategoryColor = (id: string, color: LoreSubcategoryColor) => {
+    setLocal(prev => prev ? {
+      ...prev,
+      subcategories: (prev.subcategories ?? []).map(subcategory =>
+        subcategory.id === id ? { ...subcategory, color } : subcategory
+      ),
+    } : prev)
+  }
+
   const removeSubcategory = (id: string) => {
     setLocal(prev => prev ? {
       ...prev,
@@ -204,13 +227,29 @@ export function LoreTemplateEditorModal({
                       <span className="lore-template-drag-handle">
                         <i className="ti ti-grip-vertical" aria-hidden="true" />
                       </span>
-                      <input
-                        className="lore-template-label-input"
-                        value={subcategory.name}
-                        onChange={e => updateSubcategory(subcategory.id, e.target.value)}
-                        onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-                        placeholder="Subcategory name..."
-                      />
+                      <div className="lore-template-subcategory-fields">
+                        <input
+                          className="lore-template-label-input"
+                          value={subcategory.name}
+                          onChange={e => updateSubcategory(subcategory.id, e.target.value)}
+                          onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
+                          placeholder="Subcategory name..."
+                        />
+                        <label className="lore-template-subcategory-color">
+                          <span>Color</span>
+                          <span className={`lore-subcategory-color-swatch lore-subcategory-color-${subcategory.color ?? 'default'}`} />
+                          <select
+                            className="modal-input"
+                            value={subcategory.color ?? 'default'}
+                            onChange={e => updateSubcategoryColor(subcategory.id, e.target.value as LoreSubcategoryColor)}
+                            onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
+                          >
+                            {LORE_SUBCATEGORY_COLORS.map(color => (
+                              <option key={color.value} value={color.value}>{color.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
                       <button
                         className="lore-template-remove-btn"
                         title="Remove"
@@ -395,9 +434,61 @@ export function LoreEntryEditorModal({
   const activeFields = category.template.filter(f => !f.removed)
 
   const handleImagePick = async (fieldId: string) => {
-    const rel = await onPickImage(local.id, fieldId, local.fields[fieldId])
+    const current = local.fields[fieldId]
+    const rel = await onPickImage(local.id, fieldId, getLoreImagePath(current))
     if (!rel) return
-    setLocal(prev => prev ? { ...prev, fields: { ...prev.fields, [fieldId]: rel } } : prev)
+    setLocal(prev => prev ? {
+      ...prev,
+      fields: { ...prev.fields, [fieldId]: createLoreImageValue(rel, getLoreImageCrop(current), getLoreImageFullWidth(current), getLoreImageIgnoreEntryCrop(current)) },
+    } : prev)
+  }
+
+  const updateImageCrop = (fieldId: string, patch: Partial<LoreImageCrop>) => {
+    setLocal(prev => {
+      if (!prev) return prev
+      const current = prev.fields[fieldId]
+      const path = getLoreImagePath(current)
+      if (!path) return prev
+      return {
+        ...prev,
+        fields: {
+          ...prev.fields,
+          [fieldId]: createLoreImageValue(path, { ...getLoreImageCrop(current), ...patch }, getLoreImageFullWidth(current), getLoreImageIgnoreEntryCrop(current)),
+        },
+      }
+    })
+  }
+
+  const updateImageFullWidth = (fieldId: string, fullWidth: boolean) => {
+    setLocal(prev => {
+      if (!prev) return prev
+      const current = prev.fields[fieldId]
+      const path = getLoreImagePath(current)
+      if (!path) return prev
+      return {
+        ...prev,
+        fields: {
+          ...prev.fields,
+          [fieldId]: createLoreImageValue(path, getLoreImageCrop(current), fullWidth, getLoreImageIgnoreEntryCrop(current)),
+        },
+      }
+    })
+  }
+
+  const updateImageIgnoreEntryCrop = (fieldId: string, ignoreEntryCrop: boolean) => {
+    setLocal(prev => {
+      if (!prev) return prev
+      const current = prev.fields[fieldId]
+      const path = getLoreImagePath(current)
+      if (!path) return prev
+      return {
+        ...prev,
+        fields: {
+          ...prev.fields,
+          [fieldId]: createLoreImageValue(path, getLoreImageCrop(current), getLoreImageFullWidth(current), ignoreEntryCrop),
+        },
+      }
+    })
   }
 
   return (
@@ -450,21 +541,85 @@ export function LoreEntryEditorModal({
             return <div key={field.id} className="lore-entry-divider" />
           }
           if (field.type === 'image') {
-            const val = local.fields[field.id] ?? ''
+            const value = local.fields[field.id]
+            const path = getLoreImagePath(value)
+            const crop = getLoreImageCrop(value)
+            const fullWidth = getLoreImageFullWidth(value)
+            const ignoreEntryCrop = getLoreImageIgnoreEntryCrop(value)
             return (
               <div key={field.id} className="lore-entry-field-wrap">
                 {field.label && <label className="lore-entry-label">{field.label}</label>}
                 <div className="lore-entry-image-wrap">
-                  {val && (
-                    <img
-                      src={projectPath ? convertFileSrc(`${projectPath}/${val}`.replace(/\\/g, '/')) : ''}
-                      className="lore-entry-image-preview"
-                      alt={field.label ?? 'image'}
-                    />
+                  {path && (
+                    <div className="lore-entry-image-crop-preview">
+                      <img
+                        src={projectPath ? convertFileSrc(`${projectPath}/${path}`.replace(/\\/g, '/')) : ''}
+                        className="lore-entry-image-preview"
+                        alt={field.label ?? 'image'}
+                        style={{
+                          '--lore-image-zoom': crop.zoom,
+                          '--lore-image-pan-x': `${crop.x}px`,
+                          '--lore-image-pan-y': `${crop.y}px`,
+                        } as CSSProperties}
+                      />
+                    </div>
                   )}
-                  <button className="welcome-btn" onClick={() => handleImagePick(field.id)}>
-                    {val ? 'Change image' : 'Select image'}
+                  <button type="button" className="welcome-btn" onClick={() => handleImagePick(field.id)}>
+                    {path ? 'Change image' : 'Select image'}
                   </button>
+                  {path && (
+                    <div className="lore-entry-image-crop-controls">
+                      <label>
+                        <span>Zoom</span>
+                        <input
+                          type="range"
+                          min="1"
+                          max="4"
+                          step="0.05"
+                          value={crop.zoom}
+                          onChange={event => updateImageCrop(field.id, { zoom: Number(event.target.value) })}
+                        />
+                      </label>
+                      <label>
+                        <span>Pan X</span>
+                        <input
+                          type="range"
+                          min="-180"
+                          max="180"
+                          step="1"
+                          value={crop.x}
+                          onChange={event => updateImageCrop(field.id, { x: Number(event.target.value) })}
+                        />
+                      </label>
+                      <label>
+                        <span>Pan Y</span>
+                        <input
+                          type="range"
+                          min="-180"
+                          max="180"
+                          step="1"
+                          value={crop.y}
+                          onChange={event => updateImageCrop(field.id, { y: Number(event.target.value) })}
+                        />
+                      </label>
+                      <label className="lore-entry-image-full-width-toggle">
+                        <span>Full width</span>
+                        <input
+                          type="checkbox"
+                          checked={fullWidth}
+                          onChange={event => updateImageFullWidth(field.id, event.target.checked)}
+                        />
+                      </label>
+                      <label className="lore-entry-image-full-width-toggle">
+                        <span>Ignore crop in entry</span>
+                        <input
+                          type="checkbox"
+                          checked={ignoreEntryCrop}
+                          onChange={event => updateImageIgnoreEntryCrop(field.id, event.target.checked)}
+                        />
+                      </label>
+                    </div>
+                  )}
                 </div>
               </div>
             )
@@ -475,7 +630,7 @@ export function LoreEntryEditorModal({
                 {field.label && <label className="lore-entry-label">{field.label}</label>}
                 <textarea
                   className="modal-input lore-entry-textarea"
-                  value={local.fields[field.id] ?? ''}
+                  value={getLoreFieldText(local.fields[field.id])}
                   onChange={e => setLocal(prev => prev ? {
                     ...prev,
                     fields: { ...prev.fields, [field.id]: e.target.value },
@@ -491,7 +646,7 @@ export function LoreEntryEditorModal({
               {field.label && <label className="lore-entry-label">{field.label}</label>}
               <input
                 className="modal-input"
-                value={local.fields[field.id] ?? ''}
+                value={getLoreFieldText(local.fields[field.id])}
                 onChange={e => setLocal(prev => prev ? {
                   ...prev,
                   fields: { ...prev.fields, [field.id]: e.target.value },

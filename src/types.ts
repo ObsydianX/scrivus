@@ -108,7 +108,10 @@ export type LoreTemplateElement = {
 export type LoreSubcategory = {
   id: string
   name: string
+  color?: LoreSubcategoryColor
 }
+
+export type LoreSubcategoryColor = 'default' | 'blue' | 'green' | 'rose' | 'gold' | 'violet' | 'cyan' | 'orange' | 'red' | 'slate'
 
 export type LoreEntry = {
   id: string
@@ -116,7 +119,22 @@ export type LoreEntry = {
   pinned?: boolean
   subcategoryId?: string
   keywords?: string[]
-  fields: Record<string, string>
+  fields: Record<string, LoreFieldValue>
+}
+
+export type LoreFieldValue = string | LoreImageValue
+
+export type LoreImageValue = {
+  path: string
+  crop?: LoreImageCrop
+  fullWidth?: boolean
+  ignoreEntryCrop?: boolean
+}
+
+export type LoreImageCrop = {
+  zoom: number
+  x: number
+  y: number
 }
 
 export type LoreCategory = {
@@ -228,6 +246,13 @@ export type MindMapEdge = {
   fromNodeId: string
   toNodeId: string
   label?: string
+  routePoints?: MindMapRoutePoint[]
+}
+
+export type MindMapRoutePoint = {
+  id: string
+  x: number
+  y: number
 }
 
 export type MindMapViewport = {

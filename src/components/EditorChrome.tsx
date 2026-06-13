@@ -6,6 +6,25 @@ type MutableRef<T> = {
   current: T
 }
 
+export function DocumentTitleBar({
+  title,
+  bookmarked = false,
+}: {
+  title: string
+  bookmarked?: boolean
+}) {
+  return (
+    <div className="document-title-bar">
+      <span>{title}</span>
+      {bookmarked && (
+        <span className="document-title-bookmark" title="Last opened scene" aria-label="Last opened scene">
+          <i className="ti ti-bookmark" aria-hidden="true" />
+        </span>
+      )}
+    </div>
+  )
+}
+
 export function SceneTabBar({
   tabs,
   activeIndex,

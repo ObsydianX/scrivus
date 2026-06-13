@@ -2,6 +2,25 @@
 
 All notable Scrivus changes are tracked here.
 
+## 0.2.8
+
+- New Feature: Added Canvas connection reroute points by double-clicking a connection, with draggable reroute handles and deletion that restores the previous connection path.
+- New Feature: Added Lore Book image fields with cropped previews, pan/zoom controls, a clickable full-image pan/zoom viewer, optional full-width entry display, and an option to ignore crop settings in the full entry view.
+- New Feature: Added predefined Lore Book subcategory colors that tint entries in the category view.
+- New Feature: Added first-image thumbnails to Lore Book category entry buttons and pinned entry cards.
+- New Feature: Added themed previous/next buttons to Lore Book entry views, labeled with the destination entry names.
+- New Feature: Added mouse back-button navigation inside the Lore Book, moving from entry to category and category to home.
+- Changed: Moved the active scene/draft title into a dedicated bar below the editor, revision, and split-view controls instead of rendering it inside the document text area.
+- Changed: Made Canvas nodes snap to the visible grid, including node creation, dragging, duplication, connected child placement, and automatic height growth.
+- Changed: Anchored Canvas connections to nearest title-area ports instead of variable node centers, removed arrowheads, and aligned vertical reroutes to node top/bottom edges.
+- Changed: Removed bottom divider lines from collapsed Quick Tools drawers.
+- Changed: Retuned the default Light theme to a cleaner neutral white/gray palette with stronger separation from the warm Soft Paper theme.
+- Fixes: Synced Revision workspace body text with the shared editor zoom level.
+- Fixes: Matched the Revision workspace text width to the Editor workspace content width.
+- Fixes: Cleared lingering editor text selections when loading a different scene or revision tab.
+- Fixes: Made Lore Book entry button thumbnails line up with the entry editor pan/zoom preview.
+- Fixes: Reduced accidental multi-step Lore Book mouse-back navigation from held mouse buttons.
+
 ## 0.2.7
 
 - New Feature: Added a ctrl-click chooser when an editor lore link matches multiple Lore Book entries.

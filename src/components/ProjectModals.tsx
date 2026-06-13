@@ -383,7 +383,7 @@ export function ProjectSettingsModal({
 
 export const THEME_OPTIONS: { id: ThemeId; name: string; swatches: string[] }[] = [
   { id: 'dark', name: 'Dark', swatches: ['#1e1e1e', '#252526', '#d4d4d4'] },
-  { id: 'light', name: 'Light', swatches: ['#f4f1ea', '#ffffff', '#2f2a24'] },
+  { id: 'light', name: 'Light', swatches: ['#f6f7f8', '#ffffff', '#46515f'] },
   { id: 'contrastLight', name: 'High Contrast Light', swatches: ['#ffffff', '#000000', '#005fcc'] },
   { id: 'contrastDark', name: 'High Contrast Dark', swatches: ['#000000', '#ffffff', '#ffd400'] },
   { id: 'lavenderLight', name: 'Lavender Light', swatches: ['#f8f3ff', '#eee5fa', '#8a6fc9'] },
