@@ -1,11 +1,11 @@
+import { parseHtmlFragment } from './html'
 import type { SceneTab } from './types'
 
 const TAB_DELIMITER = (name: string) => `<!--TAB:${name}-->`
 const DELETED_DELIMITER = (name: string, ts: number) => `<!--DELETED:${name}:${ts}-->`
 
 function formatSceneHtmlForStorage(html: string): string {
-  const root = document.createElement('div')
-  root.innerHTML = html
+  const root = parseHtmlFragment(html)
 
   root.querySelectorAll('p').forEach(paragraph => {
     const isEmpty = !paragraph.textContent?.trim() && paragraph.children.length === 0

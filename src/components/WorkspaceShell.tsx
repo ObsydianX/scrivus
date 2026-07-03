@@ -13,6 +13,7 @@ import type {
   RevisionComment,
   SceneTab,
   SceneStatus,
+  SprintTimerState,
 } from '../types'
 import {
   DocumentTitleBar,
@@ -41,12 +42,14 @@ type EditorWorkspaceState = {
   showEditor: boolean
   editor: Editor | null
   focusMode: boolean
+  typewriterScrolling: boolean
   isNarrow: boolean
   isTrashPreview: boolean
   titleValue: string
   titleBookmarked: boolean
   loreLinksEnabled: boolean
   onFocusModeChange: (focusMode: boolean) => void
+  onTypewriterScrollingChange: (enabled: boolean) => void
   onLoreLinksEnabledChange: (enabled: boolean) => void
 }
 
@@ -83,6 +86,10 @@ type StatusWorkspaceState = {
   chapterWordCount: number
   manuscriptWordCount: number
   readingWpm: number
+  sprint: SprintTimerState | null
+  sprintWords: number
+  onSprintStart: (minutes: number) => void
+  onSprintStop: () => void
   zoom: number
   zoomOpen: boolean
   zoomPresets: number[]
@@ -108,11 +115,13 @@ type LoreWorkspaceState = {
   onDeleteEntryRequest: (entry: LoreEntry) => void
   onToggleEntryPinned: (categoryId: string, entryId: string, pinned: boolean) => void
   onOpenScene: (id: number) => void
+  onOpenPresence: () => void
 }
 
 type OutlineWorkspaceState = {
   rows: OutlineRow[]
   manuscriptWordCount: number
+  readingWpm: number
   collapsedFolderIds: Set<number>
   onCollapsedFolderIdsChange: (ids: Set<number>) => void
   onOpenScene: (id: number) => void
@@ -281,12 +290,14 @@ export function WorkspaceShell({
   showEditor,
   editor,
   focusMode,
+  typewriterScrolling,
   isNarrow,
   isTrashPreview,
   titleValue,
   titleBookmarked,
   loreLinksEnabled,
   onFocusModeChange,
+  onTypewriterScrollingChange,
   onLoreLinksEnabledChange,
   } = editorState
   const {
@@ -321,6 +332,10 @@ export function WorkspaceShell({
   chapterWordCount,
   manuscriptWordCount,
   readingWpm,
+  sprint,
+  sprintWords,
+  onSprintStart,
+  onSprintStop,
   zoom,
   zoomOpen,
   zoomPresets,
@@ -330,6 +345,7 @@ export function WorkspaceShell({
   const {
   rows,
   manuscriptWordCount: outlineManuscriptWordCount,
+  readingWpm: outlineReadingWpm,
   collapsedFolderIds: outlineCollapsedFolderIds,
   onCollapsedFolderIdsChange: onOutlineCollapsedFolderIdsChange,
   onOpenScene,
@@ -372,6 +388,7 @@ export function WorkspaceShell({
   onDeleteEntryRequest,
   onToggleEntryPinned,
   onOpenScene: onLoreOpenScene,
+  onOpenPresence,
   } = loreState
   const {
   revisionActiveId,
@@ -464,6 +481,8 @@ export function WorkspaceShell({
           onTabDrop={onTabDrop}
           focusMode={focusMode}
           onFocusModeChange={onFocusModeChange}
+          typewriterScrolling={typewriterScrolling}
+          onTypewriterScrollingChange={onTypewriterScrollingChange}
         />
       )}
       {workspace === 'editor' && (
@@ -495,12 +514,14 @@ export function WorkspaceShell({
           onDeleteEntryRequest={onDeleteEntryRequest}
           onToggleEntryPinned={onToggleEntryPinned}
           onOpenScene={onLoreOpenScene}
+          onOpenPresence={onOpenPresence}
         />
       )}
       {workspace === 'outline' && (
         <OutlineView
           rows={rows}
           manuscriptWordCount={outlineManuscriptWordCount}
+          readingWpm={outlineReadingWpm}
           collapsedFolderIds={outlineCollapsedFolderIds}
           onCollapsedFolderIdsChange={onOutlineCollapsedFolderIdsChange}
           onOpenScene={onOpenScene}
@@ -526,6 +547,10 @@ export function WorkspaceShell({
                 chapterWordCount={chapterWordCount}
                 manuscriptWordCount={manuscriptWordCount}
                 readingWpm={readingWpm}
+                sprint={sprint}
+                sprintWords={sprintWords}
+                onSprintStart={onSprintStart}
+                onSprintStop={onSprintStop}
                 zoom={zoom}
                 zoomOpen={zoomOpen}
                 zoomPresets={zoomPresets}
@@ -582,7 +607,7 @@ export function WorkspaceShell({
       {workspace === 'editor' && (showEditor
         ? <>
           <div id="editor-split-stack" className={splitTabIndex !== null ? 'has-split' : ''}>
-            <div id="editor-scroll">
+            <div id="editor-scroll" className={typewriterScrolling ? 'typewriter-mode' : undefined}>
               <div id="editor-wrap">
                 {isTrashPreview && (
                   <div className="trash-preview-banner">
@@ -617,6 +642,10 @@ export function WorkspaceShell({
               chapterWordCount={chapterWordCount}
               manuscriptWordCount={manuscriptWordCount}
               readingWpm={readingWpm}
+              sprint={sprint}
+              sprintWords={sprintWords}
+              onSprintStart={onSprintStart}
+              onSprintStop={onSprintStop}
               zoom={zoom}
               zoomOpen={zoomOpen}
               zoomPresets={zoomPresets}

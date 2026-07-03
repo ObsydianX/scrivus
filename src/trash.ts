@@ -110,9 +110,10 @@ export async function restoreTrashItem({
     if (existingFolder && existingFolder.type === 'folder') {
       existingFolder.children.push(node)
       existingFolder.children.sort((a, b) => {
+        // Children not in the recorded order (added after deletion) sort last.
         const ai = originalChildOrder.indexOf(a.id)
         const bi = originalChildOrder.indexOf(b.id)
-        return ai - bi
+        return (ai === -1 ? Number.MAX_SAFE_INTEGER : ai) - (bi === -1 ? Number.MAX_SAFE_INTEGER : bi)
       })
     } else {
       const restoredFolder: FolderNode = {

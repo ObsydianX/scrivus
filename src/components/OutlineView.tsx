@@ -1,3 +1,4 @@
+import { useState, type CSSProperties } from 'react'
 import type { OutlineRow, SceneStatus } from '../types'
 
 const STATUS_LABELS: Record<SceneStatus | 'inProgress', string> = {
@@ -12,9 +13,124 @@ function getFolderLabel(row: OutlineRow) {
   return row.role === 'act' ? 'Act' : 'Chapter'
 }
 
+const PACING_COLLAPSED_KEY = 'scrivus-outline-pacing-collapsed'
+const PACING_LEGEND: SceneStatus[] = ['draft', 'revised', 'needsWork', 'complete']
+
+function formatReadingTime(words: number, wpm: number) {
+  const minutes = words / Math.max(1, wpm)
+  return minutes < 1 ? '<1 min read' : `~${Math.round(minutes)} min read`
+}
+
+// One bar per scene in manuscript order, grouped by chapter. Bar height is
+// relative to the longest scene, color follows the scene status.
+function PacingStrip({
+  sceneRows,
+  readingWpm,
+  onOpenScene,
+}: {
+  sceneRows: OutlineRow[]
+  readingWpm: number
+  onOpenScene: (id: number) => void
+}) {
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(PACING_COLLAPSED_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+
+  const toggleCollapsed = () => {
+    setCollapsed(prev => {
+      const next = !prev
+      try {
+        localStorage.setItem(PACING_COLLAPSED_KEY, next ? '1' : '0')
+      } catch {
+        // preference just won't persist
+      }
+      return next
+    })
+  }
+
+  const groups: { chapter: string; scenes: OutlineRow[] }[] = []
+  for (const row of sceneRows) {
+    const lastGroup = groups[groups.length - 1]
+    if (lastGroup && lastGroup.chapter === row.chapter) lastGroup.scenes.push(row)
+    else groups.push({ chapter: row.chapter, scenes: [row] })
+  }
+
+  const maxWords = Math.max(1, ...sceneRows.map(row => row.wordCount))
+  const totalWords = sceneRows.reduce((sum, row) => sum + row.wordCount, 0)
+  const averageWords = Math.round(totalWords / sceneRows.length)
+  const averagePercent = Math.min(100, (averageWords / maxWords) * 100)
+
+  return (
+    <div className="pacing-strip">
+      <div className="pacing-strip-header">
+        <span className="pacing-strip-title">Pacing</span>
+        {!collapsed && (
+          <span className="pacing-strip-average-label">
+            avg {averageWords.toLocaleString()} words / scene
+          </span>
+        )}
+        {!collapsed && (
+          <span className="pacing-strip-legend">
+            {PACING_LEGEND.map(status => (
+              <span key={status} className={`pacing-legend-item pacing-status-${status}`}>
+                {STATUS_LABELS[status]}
+              </span>
+            ))}
+          </span>
+        )}
+        <button
+          className="outline-tool-btn"
+          onClick={toggleCollapsed}
+          title={collapsed ? 'Show pacing strip' : 'Hide pacing strip'}
+          aria-label={collapsed ? 'Show pacing strip' : 'Hide pacing strip'}
+        >
+          <i className={`ti ti-chevron-${collapsed ? 'up' : 'down'}`} aria-hidden="true" />
+        </button>
+      </div>
+      {!collapsed && (
+        <div className="pacing-strip-scroll">
+          <div className="pacing-strip-track">
+            <div
+              className="pacing-average-line"
+              style={{ '--pacing-average': averagePercent } as CSSProperties}
+              title={`Average scene length: ${averageWords.toLocaleString()} words`}
+            />
+            {groups.map((group, groupIndex) => (
+              <div
+                key={`${group.chapter}-${groupIndex}`}
+                className="pacing-group"
+                style={{ flexGrow: group.scenes.length }}
+              >
+                <div className="pacing-group-bars">
+                  {group.scenes.map(scene => (
+                    <button
+                      key={scene.id}
+                      type="button"
+                      className={`pacing-bar pacing-status-${scene.status}`}
+                      style={{ height: `${Math.max(6, (scene.wordCount / maxWords) * 100)}%` }}
+                      title={`${scene.title} — ${group.chapter}\n${scene.wordCount.toLocaleString()} words · ${formatReadingTime(scene.wordCount, readingWpm)} · ${STATUS_LABELS[scene.status]}`}
+                      onClick={() => onOpenScene(scene.id)}
+                    />
+                  ))}
+                </div>
+                <div className="pacing-group-label" title={group.chapter}>{group.chapter}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function OutlineView({
   rows,
   manuscriptWordCount,
+  readingWpm,
   collapsedFolderIds,
   onCollapsedFolderIdsChange,
   onOpenScene,
@@ -22,6 +138,7 @@ export function OutlineView({
 }: {
   rows: OutlineRow[]
   manuscriptWordCount: number
+  readingWpm: number
   collapsedFolderIds: Set<number>
   onCollapsedFolderIdsChange: (ids: Set<number>) => void
   onOpenScene: (id: number) => void
@@ -173,6 +290,10 @@ export function OutlineView({
             </tbody>
           </table>
         </div>
+      )}
+
+      {sceneRows.length > 0 && (
+        <PacingStrip sceneRows={sceneRows} readingWpm={readingWpm} onOpenScene={onOpenScene} />
       )}
     </div>
   )

@@ -24,6 +24,7 @@ type LoreBookViewProps = {
   onDeleteEntryRequest: (entry: LoreEntry) => void
   onToggleEntryPinned: (categoryId: string, entryId: string, pinned: boolean) => void
   onOpenScene: (id: number) => void
+  onOpenPresence: () => void
 }
 
 export function LoreBookView({
@@ -44,6 +45,7 @@ export function LoreBookView({
   onDeleteEntryRequest,
   onToggleEntryPinned,
   onOpenScene,
+  onOpenPresence,
 }: LoreBookViewProps) {
   const [visibleBacklinkCounts, setVisibleBacklinkCounts] = useState<Record<string, number>>({})
   const [imageViewer, setImageViewer] = useState<{ src: string; alt: string } | null>(null)
@@ -469,6 +471,17 @@ export function LoreBookView({
     <div id="lorebook-view">
       <div id="lorebook-home">
         <div id="lorebook-home-inner">
+          <div className="lorebook-home-tools">
+            <button
+              type="button"
+              className="lorebook-presence-btn"
+              onClick={onOpenPresence}
+              title="See which chapters mention each entry"
+            >
+              <i className="ti ti-chart-dots" aria-hidden="true" />
+              <span>Presence Chart</span>
+            </button>
+          </div>
           {pinnedEntries.length > 0 && (
             <div className="lorebook-pinned-section">
               <div className="lorebook-pinned-heading">

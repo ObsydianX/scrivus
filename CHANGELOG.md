@@ -2,6 +2,31 @@
 
 All notable Scrivus changes are tracked here.
 
+## 0.2.9
+
+- New Feature: Added a pacing strip to the bottom of the Outline workspace - one bar per scene in manuscript order, grouped by chapter, sized by word count, and colored by scene status, with an average-length guide line, hover details, click-to-open, and a collapsible header.
+- New Feature: Added typewriter scrolling - a tab-bar toggle that keeps the caret line vertically centered while typing, with extra space below the document so the last line can stay centered. The preference persists across sessions.
+- New Feature: Added writing sprints to the editor status bar - pick a duration (5 to 60 minutes), watch the countdown and live word count while writing, and get a completion chip with the final word total when time is up.
+- New Feature: Added a draft comparison view - right-click a draft tab and choose Compare Drafts to see word-level differences between any two drafts of a scene, with added/removed highlighting, word change totals, and a swap control.
+- New Feature: Added a Lore Book presence chart - a button on the Lore Book home opens a chapter-by-chapter chart showing where each entry in a category is mentioned, with dots sized by mention count, a line spanning first to last appearance, and click-to-open scenes.
+- New Feature: Added EPUB export to the compile screen - chapters become e-reader sections with a table of contents, optional title page, and book metadata from Project Settings. The chosen format is remembered.
+- New Feature: Added a cover image option to Project Settings > Book Info - choose an image, see a preview, and EPUB exports include it as the book cover.
+- New Feature: Added a "Manuscript (Shunn)" compile style preset for submissions - Times New Roman 12, double-spaced, left-aligned, a Surname / TITLE / page running header, a first-page block with author and rounded word count, centered chapter openings, "#" scene breaks, and an END marker.
+- Added compile scene selection expand/collapse controls for acts and chapters, with remembered collapsed state.
+- Added Select All and Select None controls to the compile scene selection list.
+- Added a Styles shortcut to the compile footer for opening the manuscript styles editor from the compile screen.
+- Changed search to debounce typing and cache parsed scene text for faster repeated searches in large manuscripts.
+- Changed release builds to block browser reload/devtools shortcuts and disable browser autocomplete on text inputs.
+- Changed project files (project.json, scenes, lore book, notes, canvas, atlas, revision) to write atomically via a temp file and rename, so a crash mid-save can never leave a truncated file.
+- Changed icon fonts to be bundled with the app instead of loaded from a CDN, so icons work offline.
+- Changed release builds to enforce a Content Security Policy and restrict the asset protocol to image files.
+- Fixes: Kept the compile scene selection list at its current scroll position when selecting scenes, folders, or draft tabs.
+- Fixes: Prevented dragging a binder folder onto or beside one of its own nested items from making the folder and its scenes disappear.
+- Fixes: Prevented restoring the oldest backup at the retention limit from deleting that backup before it could be restored.
+- Fixes: Deleting scenes to the trash now reports failures and keeps items in the binder instead of silently hiding them when files cannot be moved.
+- Fixes: Word import no longer splits chapters or scenes on prose sentences that merely start with "Act", "Chapter", or "Scene".
+- Fixes: Project names with characters Windows does not allow in folder names (such as ? or :) are now sanitized when creating the project folder.
+
 ## 0.2.8
 
 - New Feature: Added Canvas connection reroute points by double-clicking a connection, with draggable reroute handles and deletion that restores the previous connection path.

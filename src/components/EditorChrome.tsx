@@ -1,6 +1,6 @@
-import { useEffect, useState, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { Editor } from '@tiptap/react'
-import type { SceneTab } from '../types'
+import type { SceneTab, SprintTimerState } from '../types'
 
 type MutableRef<T> = {
   current: T
@@ -46,6 +46,8 @@ export function SceneTabBar({
   onTabDrop,
   focusMode,
   onFocusModeChange,
+  typewriterScrolling,
+  onTypewriterScrollingChange,
 }: {
   tabs: SceneTab[]
   activeIndex: number
@@ -67,6 +69,8 @@ export function SceneTabBar({
   onTabDrop: (targetIndex: number) => void
   focusMode: boolean
   onFocusModeChange: (focusMode: boolean) => void
+  typewriterScrolling: boolean
+  onTypewriterScrollingChange: (enabled: boolean) => void
 }) {
   return (
     <div
@@ -169,6 +173,16 @@ export function SceneTabBar({
         onClick={onAddTab}
       >
         <i className="ti ti-plus" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className={`scene-focus-btn scene-typewriter-btn${typewriterScrolling ? ' active' : ''}`}
+        title={typewriterScrolling ? 'Disable typewriter scrolling' : 'Typewriter scrolling — keep the caret line centered while typing'}
+        aria-label={typewriterScrolling ? 'Disable typewriter scrolling' : 'Enable typewriter scrolling'}
+        aria-pressed={typewriterScrolling}
+        onClick={() => onTypewriterScrollingChange(!typewriterScrolling)}
+      >
+        <i className="ti ti-keyboard" aria-hidden="true" />
       </button>
       <button
         type="button"
@@ -328,6 +342,99 @@ export function EditorToolbar({
   )
 }
 
+const SPRINT_DURATIONS = [5, 10, 15, 20, 30, 45, 60]
+
+function formatSprintCountdown(remainingMs: number) {
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
+function SprintControl({
+  sprint,
+  sprintWords,
+  onSprintStart,
+  onSprintStop,
+}: {
+  sprint: SprintTimerState | null
+  sprintWords: number
+  onSprintStart: (minutes: number) => void
+  onSprintStop: () => void
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const controlRef = useRef<HTMLDivElement | null>(null)
+  const running = sprint !== null && !sprint.finished
+  const [, setTick] = useState(0)
+
+  // Re-render every half second while a sprint is counting down.
+  useEffect(() => {
+    if (!running) return
+    const interval = window.setInterval(() => setTick(tick => tick + 1), 500)
+    return () => window.clearInterval(interval)
+  }, [running])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const handler = (event: globalThis.MouseEvent) => {
+      if (controlRef.current && !controlRef.current.contains(event.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    window.addEventListener('mousedown', handler)
+    return () => window.removeEventListener('mousedown', handler)
+  }, [menuOpen])
+
+  return (
+    <div className="sprint-control" ref={controlRef}>
+      {sprint === null ? (
+        <>
+          <button
+            type="button"
+            className="sprint-btn"
+            onClick={() => setMenuOpen(open => !open)}
+            title="Start a writing sprint"
+          >
+            <i className="ti ti-alarm" aria-hidden="true" /> Sprint
+          </button>
+          {menuOpen && (
+            <div className="sprint-dropdown">
+              {SPRINT_DURATIONS.map(minutes => (
+                <button
+                  key={minutes}
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onSprintStart(minutes)
+                  }}
+                >
+                  {minutes} min
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      ) : sprint.finished ? (
+        <span className="sprint-chip sprint-done" title={`${sprint.durationMinutes}-minute sprint finished`}>
+          <i className="ti ti-confetti" aria-hidden="true" />
+          Sprint done · +{sprint.finalWords.toLocaleString()} {sprint.finalWords === 1 ? 'word' : 'words'}
+          <button type="button" className="sprint-dismiss" onClick={onSprintStop} title="Dismiss">
+            <i className="ti ti-x" aria-hidden="true" />
+          </button>
+        </span>
+      ) : (
+        <span className="sprint-chip sprint-running" title={`${sprint.durationMinutes}-minute sprint · words written so far`}>
+          <i className="ti ti-alarm" aria-hidden="true" />
+          {formatSprintCountdown(sprint.endsAt - Date.now())} · +{sprintWords.toLocaleString()}
+          <button type="button" className="sprint-dismiss" onClick={onSprintStop} title="Stop sprint">
+            <i className="ti ti-x" aria-hidden="true" />
+          </button>
+        </span>
+      )}
+    </div>
+  )
+}
+
 export function StatusBar({
   wordCount,
   targetWordCount,
@@ -335,6 +442,10 @@ export function StatusBar({
   chapterWordCount,
   manuscriptWordCount,
   readingWpm,
+  sprint,
+  sprintWords,
+  onSprintStart,
+  onSprintStop,
   zoom,
   zoomOpen,
   zoomPresets,
@@ -347,6 +458,10 @@ export function StatusBar({
   chapterWordCount: number
   manuscriptWordCount: number
   readingWpm: number
+  sprint?: SprintTimerState | null
+  sprintWords?: number
+  onSprintStart?: (minutes: number) => void
+  onSprintStop?: () => void
   zoom: number
   zoomOpen: boolean
   zoomPresets: number[]
@@ -396,6 +511,14 @@ export function StatusBar({
       <span title={`Estimated reading time for full manuscript at ${safeReadingWpm} wpm`}>
         {manuscriptReadTime}
       </span>
+      {onSprintStart && onSprintStop && (
+        <SprintControl
+          sprint={sprint ?? null}
+          sprintWords={sprintWords ?? 0}
+          onSprintStart={onSprintStart}
+          onSprintStop={onSprintStop}
+        />
+      )}
       {onGoalClick && (
         <button
           type="button"

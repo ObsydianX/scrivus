@@ -68,7 +68,7 @@ async function copyDirectoryContents(source: string, target: string) {
   }
 }
 
-async function pruneBackups(root: string, retentionCount: number) {
+async function pruneBackups(root: string, retentionCount: number, preserveName?: string) {
   const entries = await readDir(root)
   const backups = entries
     .filter(entry => entry.isDirectory)
@@ -77,6 +77,7 @@ async function pruneBackups(root: string, retentionCount: number) {
     .reverse()
 
   for (const stale of backups.slice(retentionCount)) {
+    if (stale === preserveName) continue
     await remove(await join(root, stale), { recursive: true })
   }
 }
@@ -106,6 +107,7 @@ export async function createProjectBackup(
   projectName: string,
   reason: BackupReason,
   retentionCount = 20,
+  preserveBackupName?: string,
 ): Promise<ProjectBackup> {
   const root = await backupRoot(projectPath, projectName)
   const name = `${timestampName()}__${reason}`
@@ -118,7 +120,7 @@ export async function createProjectBackup(
     createdAt: new Date().toISOString(),
     reason,
   }, null, 2))
-  await pruneBackups(root, retentionCount)
+  await pruneBackups(root, retentionCount, preserveBackupName)
 
   return {
     name,
@@ -146,7 +148,9 @@ export async function restoreProjectBackup(
   backup: ProjectBackup,
   retentionCount = 20,
 ): Promise<ProjectBackup> {
-  await createProjectBackup(projectPath, projectName, 'pre-restore', retentionCount)
+  // Keep the backup being restored out of the retention prune: if it is the
+  // oldest one at the limit, pruning would delete it before it can be copied.
+  await createProjectBackup(projectPath, projectName, 'pre-restore', retentionCount, backup.name)
   const destinationExists = await exists(projectPath)
   if (!destinationExists) await mkdir(projectPath, { recursive: true })
   await copyDirectoryContents(backup.path, projectPath)

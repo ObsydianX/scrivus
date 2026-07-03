@@ -14,6 +14,7 @@ import {
   normalizeWritingStats,
 } from './constants'
 import { getNextIdValue } from './idCounter'
+import { invalidateSceneSearchCache } from './search'
 import { collectDocs, getMaxTreeId } from './tree'
 import type {
   ChecklistItem,
@@ -26,6 +27,14 @@ import type {
   RevisionComment,
   TreeNode,
 } from './types'
+
+// Writes to a temp file in the same directory, then renames it over the target,
+// so a crash or power loss mid-write can never leave a truncated file behind.
+async function atomicWriteTextFile(filePath: string, content: string) {
+  const tempPath = `${filePath}.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}.tmp`
+  await writeTextFile(tempPath, content)
+  await rename(tempPath, filePath)
+}
 
 export async function saveProjectToDisk(project: Project, activeId?: number, activeTabIndex?: number) {
   const nextId = Math.max(getNextIdValue(), getMaxTreeId(project.tree) + 1, 10)
@@ -41,10 +50,11 @@ export async function saveProjectToDisk(project: Project, activeId?: number, act
     settings: normalizeProjectSettings(project.settings ?? DEFAULT_PROJECT_SETTINGS),
     compileSelections: project.compileSelections ?? {},
     compileIncludes: project.compileIncludes ?? {},
+    compileCollapsed: project.compileCollapsed ?? {},
     writingStats: normalizeWritingStats(project.writingStats),
   }
   const projectFile = await join(project.path, 'project.json')
-  await writeTextFile(projectFile, JSON.stringify(projectJson, null, 2))
+  await atomicWriteTextFile(projectFile, JSON.stringify(projectJson, null, 2))
 }
 
 export async function loadRecentProjects(): Promise<{ name: string; path: string }[]> {
@@ -68,7 +78,7 @@ export async function saveRecentProjects(recents: { name: string; path: string }
     await mkdir(appData, { recursive: true })
     const recentFile = await join(appData, 'recent.json')
     const existing = await loadRecentData()
-    await writeTextFile(recentFile, JSON.stringify({ ...existing, recents }, null, 2))
+    await atomicWriteTextFile(recentFile, JSON.stringify({ ...existing, recents }, null, 2))
   } catch {
     // silently fail
   }
@@ -97,7 +107,7 @@ export async function saveDefaultStyles(styles: ProjectStyles) {
     await mkdir(appData, { recursive: true })
     const recentFile = await join(appData, 'recent.json')
     const existing = await loadRecentData()
-    await writeTextFile(recentFile, JSON.stringify({ ...existing, defaultStyles: styles }, null, 2))
+    await atomicWriteTextFile(recentFile, JSON.stringify({ ...existing, defaultStyles: styles }, null, 2))
   } catch {
     // silently fail
   }
@@ -110,16 +120,26 @@ export async function addToRecentProjects(name: string, path: string) {
   await saveRecentProjects(updated)
 }
 
+// Tracks ids handed out this session so bulk operations (imports, duplicates)
+// can never collide with each other, however unlikely.
+const issuedFileIds = new Set<string>()
+
 export function generateFileId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
-  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+  let id: string
+  do {
+    id = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+  } while (issuedFileIds.has(id))
+  issuedFileIds.add(id)
+  return id
 }
 
 export async function writeSceneFile(projectPath: string, fileId: string, content: string) {
   const scenesDir = await join(projectPath, 'scenes')
   await mkdir(scenesDir, { recursive: true })
   const filePath = await join(scenesDir, `${fileId}.md`)
-  await writeTextFile(filePath, content)
+  await atomicWriteTextFile(filePath, content)
+  invalidateSceneSearchCache(projectPath, fileId)
 }
 
 export async function readSceneFile(projectPath: string, fileId: string): Promise<string> {
@@ -154,7 +174,7 @@ export async function writeNotesFile(projectPath: string, data: {
 }) {
   try {
     const filePath = await join(projectPath, 'notes.json')
-    await writeTextFile(filePath, JSON.stringify(data, null, 2))
+    await atomicWriteTextFile(filePath, JSON.stringify(data, null, 2))
   } catch {
     // silently fail
   }
@@ -180,7 +200,7 @@ export async function writeProjectDictionary(projectPath: string, words: string[
     const filePath = await join(projectPath, 'dictionary.json')
     const uniqueWords = Array.from(new Set(words.map(word => word.trim()).filter(Boolean)))
       .sort((a, b) => a.localeCompare(b))
-    await writeTextFile(filePath, JSON.stringify({ words: uniqueWords }, null, 2))
+    await atomicWriteTextFile(filePath, JSON.stringify({ words: uniqueWords }, null, 2))
   } catch {
     // silently fail
   }
@@ -201,7 +221,7 @@ export async function readLoreBookFile(projectPath: string): Promise<LoreBook> {
 export async function writeLoreBookFile(projectPath: string, data: LoreBook) {
   try {
     const filePath = await join(projectPath, 'lorebook.json')
-    await writeTextFile(filePath, JSON.stringify(data, null, 2))
+    await atomicWriteTextFile(filePath, JSON.stringify(data, null, 2))
   } catch {
     // silently fail
   }
@@ -222,7 +242,7 @@ export async function readRevisionFile(projectPath: string): Promise<RevisionCom
 export async function writeRevisionFile(projectPath: string, comments: RevisionComment[]) {
   try {
     const filePath = await join(projectPath, 'revision.json')
-    await writeTextFile(filePath, JSON.stringify(comments, null, 2))
+    await atomicWriteTextFile(filePath, JSON.stringify(comments, null, 2))
   } catch {
     // silently fail
   }
@@ -243,7 +263,7 @@ export async function readCanvasFile(projectPath: string): Promise<MindMap> {
 export async function writeCanvasFile(projectPath: string, data: MindMap) {
   try {
     const filePath = await join(projectPath, 'canvas.json')
-    await writeTextFile(filePath, JSON.stringify(normalizeMindMap(data), null, 2))
+    await atomicWriteTextFile(filePath, JSON.stringify(normalizeMindMap(data), null, 2))
   } catch {
     // silently fail
   }
@@ -264,7 +284,7 @@ export async function readAtlasFile(projectPath: string): Promise<Atlas> {
 export async function writeAtlasFile(projectPath: string, data: Atlas) {
   try {
     const filePath = await join(projectPath, 'atlas.json')
-    await writeTextFile(filePath, JSON.stringify(normalizeAtlas(data), null, 2))
+    await atomicWriteTextFile(filePath, JSON.stringify(normalizeAtlas(data), null, 2))
   } catch {
     // silently fail
   }
@@ -294,6 +314,31 @@ export async function deleteAtlasImage(projectPath: string, imagePath: string) {
   }
 }
 
+// Copies a book cover into the project under cover/. A unique filename avoids
+// stale-cache issues and orphaned files when the extension changes.
+export async function copyCoverImage(projectPath: string, sourcePath: string): Promise<string> {
+  const ext = sourcePath.split('.').pop() ?? 'jpg'
+  const cleanExt = ext.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
+  const coverDir = await join(projectPath, 'cover')
+  await mkdir(coverDir, { recursive: true })
+  const destName = `cover-${Date.now().toString(36)}.${cleanExt}`
+  const destPath = await join(coverDir, destName)
+  const bytes = await readFile(sourcePath)
+  await writeFile(destPath, bytes)
+  return `cover/${destName}`
+}
+
+export async function deleteCoverImage(projectPath: string, imagePath: string) {
+  try {
+    if (!imagePath.startsWith('cover/')) return
+    const filePath = await join(projectPath, imagePath)
+    const fileExists = await exists(filePath)
+    if (fileExists) await remove(filePath)
+  } catch {
+    // an orphaned cover file is harmless
+  }
+}
+
 export async function copyLoreImage(projectPath: string, sourcePath: string, entryId: string, fieldId: string): Promise<string> {
   const ext = sourcePath.split('.').pop() ?? 'png'
   const cleanExt = ext.toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
@@ -320,17 +365,22 @@ export async function deleteLoreImage(projectPath: string, imagePath: string) {
   }
 }
 
+// Throws on failure. Callers must only remove the node from the binder tree
+// after this resolves, otherwise the scenes become unreachable from the UI.
 export async function trashNode(projectPath: string, node: TreeNode, originalFolderId: number) {
-  try {
-    const trashDir = await join(projectPath, 'trash')
-    await mkdir(trashDir, { recursive: true })
+  const trashDir = await join(projectPath, 'trash')
+  await mkdir(trashDir, { recursive: true })
 
-    const docs = collectDocs(node)
+  const docs = collectDocs(node)
+  const moved: { from: string; to: string }[] = []
+  try {
     for (const doc of docs) {
       const from = await join(projectPath, 'scenes', `${doc.file}.md`)
       const to = await join(trashDir, `${doc.file}.md`)
       const fileExists = await exists(from)
-      if (fileExists) await rename(from, to)
+      if (!fileExists) continue
+      await rename(from, to)
+      moved.push({ from, to })
     }
 
     const sidecarId = node.type === 'doc' ? node.file : `folder_${node.id}`
@@ -343,7 +393,15 @@ export async function trashNode(projectPath: string, node: TreeNode, originalFol
         ? (node as FolderNode).children.map(c => c.id)
         : [],
     }))
-  } catch {
-    // silently fail
+  } catch (error) {
+    // Best-effort rollback so scenes are not stranded in trash/ without a sidecar.
+    for (const { from, to } of moved.reverse()) {
+      try {
+        await rename(to, from)
+      } catch {
+        // leave for manual recovery; the binder node is kept either way
+      }
+    }
+    throw error
   }
 }

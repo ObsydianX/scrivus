@@ -20,9 +20,23 @@ export function normalizeProjectDisplayName(name: string) {
     : trimmed || 'Untitled Project'
 }
 
+// Windows reserved device names cannot be used as folder names.
+const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i
+
+// The display name stays as the user typed it; only the on-disk folder name
+// is sanitized (invalid characters, trailing dots/spaces, reserved names).
+function sanitizeFolderBaseName(name: string) {
+  const cleaned = name
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+    .replace(/[. ]+$/, '')
+    .trim()
+  const base = cleaned || 'Untitled Project'
+  return WINDOWS_RESERVED_NAME.test(base) ? `${base}_` : base
+}
+
 export function projectPackageFolderName(name: string) {
   const displayName = normalizeProjectDisplayName(name)
-  return `${displayName}${PROJECT_PACKAGE_EXTENSION}`
+  return `${sanitizeFolderBaseName(displayName)}${PROJECT_PACKAGE_EXTENSION}`
 }
 
 function cloneDefault<T>(value: T): T {
@@ -109,6 +123,7 @@ export async function createProjectOnDisk({
     lastActiveTabIndex: 0,
     compileSelections: {},
     compileIncludes: {},
+    compileCollapsed: {},
     writingStats: DEFAULT_WRITING_STATS,
   }
 
@@ -151,6 +166,7 @@ export async function createImportedProjectOnDisk({
     lastActiveTabIndex: 0,
     compileSelections: {},
     compileIncludes: {},
+    compileCollapsed: {},
     writingStats: DEFAULT_WRITING_STATS,
   }
 

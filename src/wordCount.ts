@@ -1,9 +1,8 @@
+import { htmlFragmentText } from './html'
 import type { SceneTab } from './types'
 
 export function htmlToPlainText(html: string) {
-  const div = document.createElement('div')
-  div.innerHTML = html
-  return (div.textContent ?? '').replace(/\u00a0/g, ' ')
+  return htmlFragmentText(html).replace(/\u00a0/g, ' ')
 }
 
 export function countTextWords(text: string) {

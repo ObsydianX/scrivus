@@ -220,11 +220,12 @@ export function BinderSidebar({
     )
   }
 
-  const renderNodes = (nodes: TreeNode[], depth: number): React.ReactNode => {
+  const renderNodes = (nodes: TreeNode[], depth: number, inDraggedSubtree = false): React.ReactNode => {
     return nodes.map(n => {
       const isProtected = n.id === 1 || n.id === 2
       const isDragging = dragId === n.id
       const isSelected = selectedIds.has(n.id)
+      const isDragSource = inDraggedSubtree || isDragging || (dragId !== null && isSelected)
       const isDropFolder = dropTarget?.type === 'inside' && dropTarget.id === n.id
       const isDropBefore = dropTarget?.type === 'before' && dropTarget.id === n.id
       const isDropAfter = dropTarget?.type === 'after' && dropTarget.id === n.id
@@ -248,7 +249,7 @@ export function BinderSidebar({
       }
 
       return (
-        <div key={n.id} style={{ opacity: isDragging || (dragId !== null && isSelected) ? 0.4 : 1 }}>
+        <div key={n.id} style={{ opacity: isDragSource ? 0.4 : 1 }}>
           {isDropBefore && !isProtected && <div className="drop-line" />}
           <div
             className={`tree-item${activeId === n.id ? ' active' : ''}${isSelected ? ' selected' : ''}${isDropFolder ? ' drag-over-folder' : ''}`}
@@ -270,8 +271,15 @@ export function BinderSidebar({
               dropTargetRef.current = null
             } : undefined}
             onDragOver={e => {
-              e.preventDefault()
               e.stopPropagation()
+              // Rows inside the dragged selection are not valid drop targets;
+              // skipping preventDefault keeps the browser from allowing a drop here.
+              if (isDragSource) {
+                dropTargetRef.current = null
+                onDropTargetChange(null)
+                return
+              }
+              e.preventDefault()
               if (dragIdRef.current === n.id) return
               if (isProtected && n.type === 'folder') {
                 dropTargetRef.current = { type: 'inside', id: n.id }
@@ -394,7 +402,7 @@ export function BinderSidebar({
               </span>
             )}
           </div>
-          {n.type === 'folder' && n.open && renderNodes(n.children, depth + 1)}
+          {n.type === 'folder' && n.open && renderNodes(n.children, depth + 1, isDragSource)}
           {isDropAfter && !isProtected && <div className="drop-line" />}
         </div>
       )

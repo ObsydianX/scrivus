@@ -149,11 +149,22 @@ function parseParagraph(paragraph: Element, numbering: NumberingInfo): ParsedPar
   }
 }
 
+// Words that may follow a heading keyword ("Chapter One", "Act II") without
+// making the paragraph read as prose ("Chapter after chapter, she rewrote it.").
+const HEADING_NUMBER_WORD = /^(?:\d+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty(?:-\w+)?|thirty(?:-\w+)?|forty(?:-\w+)?|fifty(?:-\w+)?|sixty(?:-\w+)?|seventy(?:-\w+)?|eighty(?:-\w+)?|ninety(?:-\w+)?|hundred)$/i
+
 function headingKind(text: string): 'act' | 'chapter' | 'scene' | null {
-  if (/^act\b/i.test(text)) return 'act'
-  if (/^chapter\b/i.test(text)) return 'chapter'
-  if (/^scene\b/i.test(text)) return 'scene'
-  return null
+  // Headings are short: a keyword alone, keyword + separator + title,
+  // or keyword + number ("Chapter 3", "Act II", "Scene Twelve: The Fall").
+  if (text.length > 80) return null
+  const match = text.match(/^(act|chapter|scene)\b\s*(.*)$/i)
+  if (!match) return null
+  const kind = match[1].toLowerCase() as 'act' | 'chapter' | 'scene'
+  const rest = match[2].trim()
+  if (!rest) return kind
+  if (/^[:.\-–—]/.test(rest)) return kind
+  const nextWord = rest.split(/\s+/)[0].replace(/[:.\-–—,]+$/, '')
+  return HEADING_NUMBER_WORD.test(nextWord) ? kind : null
 }
 
 export async function parseWordDocxProject(

@@ -1,5 +1,6 @@
 import { exists, readDir, readTextFile } from '@tauri-apps/plugin-fs'
 import { join } from '@tauri-apps/api/path'
+import { htmlFragmentText } from './html'
 import { collectDocs, findNode } from './tree'
 import { parseSceneTabs } from './sceneTabs'
 import type { DocNode, TreeNode } from './types'
@@ -19,6 +20,64 @@ export type SearchResult = {
   trashFolderId?: number
 }
 
+type SearchTabCacheEntry = {
+  name: string
+  text: string
+  lowerText: string
+}
+
+const sceneSearchCache = new Map<string, SearchTabCacheEntry[]>()
+
+function cacheKey(projectPath: string, fileId: string) {
+  return `${projectPath}\u0000${fileId}`
+}
+
+function sceneTextFromHtml(html: string) {
+  return htmlFragmentText(html)
+}
+
+async function getSearchTabs(projectPath: string, doc: DocNode, dir: 'scenes' | 'trash') {
+  const filePath = await join(projectPath, dir, `${doc.file}.md`)
+  const fileExists = await exists(filePath)
+  if (!fileExists) return []
+
+  const key = cacheKey(projectPath, doc.file)
+  if (dir === 'scenes') {
+    const cached = sceneSearchCache.get(key)
+    if (cached) return cached
+  }
+
+  const raw = await readTextFile(filePath)
+  const searchTabs = parseSceneTabs(raw).map(tab => {
+    const text = sceneTextFromHtml(tab.content)
+    return {
+      name: tab.name,
+      text,
+      lowerText: text.toLowerCase(),
+    }
+  })
+
+  if (dir === 'scenes') sceneSearchCache.set(key, searchTabs)
+  return searchTabs
+}
+
+export function invalidateSceneSearchCache(projectPath: string, fileId: string) {
+  sceneSearchCache.delete(cacheKey(projectPath, fileId))
+}
+
+// With no argument, drops the entire cache (used when switching projects, so
+// entries from previously opened projects don't accumulate for the session).
+export function clearProjectSearchCache(projectPath?: string) {
+  if (projectPath === undefined) {
+    sceneSearchCache.clear()
+    return
+  }
+  const prefix = `${projectPath}\u0000`
+  for (const key of sceneSearchCache.keys()) {
+    if (key.startsWith(prefix)) sceneSearchCache.delete(key)
+  }
+}
+
 export async function searchProject(projectPath: string, tree: TreeNode[], query: string): Promise<SearchResult[]> {
   if (!query.trim()) return []
 
@@ -34,20 +93,13 @@ export async function searchProject(projectPath: string, tree: TreeNode[], query
   ) => {
     for (const doc of docs) {
       const dir = isTrash ? 'trash' : 'scenes'
-      const filePath = await join(projectPath, dir, `${doc.file}.md`)
-      const fileExists = await exists(filePath)
-      if (!fileExists) continue
-      const raw = await readTextFile(filePath)
-      const tabs = parseSceneTabs(raw)
+      const tabs = await getSearchTabs(projectPath, doc, dir)
       for (const [tabIndex, tab] of tabs.entries()) {
-        const div = document.createElement('div')
-        div.innerHTML = tab.content
-        const text = div.textContent ?? ''
-        const idx = text.toLowerCase().indexOf(q)
+        const idx = tab.lowerText.indexOf(q)
         if (idx === -1) continue
         const start = Math.max(0, idx - 60)
-        const end = Math.min(text.length, idx + query.length + 60)
-        const excerpt = (start > 0 ? '...' : '') + text.slice(start, end) + (end < text.length ? '...' : '')
+        const end = Math.min(tab.text.length, idx + query.length + 60)
+        const excerpt = (start > 0 ? '...' : '') + tab.text.slice(start, end) + (end < tab.text.length ? '...' : '')
         results.push({
           docId: doc.id,
           title: doc.title,

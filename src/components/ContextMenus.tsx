@@ -62,20 +62,24 @@ function FloatingContextMenu({
 export function TabContextMenu({
   menu,
   canDelete,
+  canCompare,
   canOpenSplit,
   splitOpen,
   onRename,
   onDuplicate,
+  onCompare,
   onDelete,
   onOpenSplit,
   onCloseSplit,
 }: {
   menu: { x: number; y: number; index: number } | null
   canDelete: boolean
+  canCompare: boolean
   canOpenSplit: boolean
   splitOpen: boolean
   onRename: (index: number) => void
   onDuplicate: (index: number) => void
+  onCompare: (index: number) => void
   onDelete: (index: number) => void
   onOpenSplit: (index: number) => void
   onCloseSplit: () => void
@@ -104,6 +108,11 @@ export function TabContextMenu({
       <button className="ctx-menu-item" onClick={() => onDuplicate(menu.index)}>
         <i className="ti ti-copy" /> Duplicate Tab
       </button>
+      {canCompare && (
+        <button className="ctx-menu-item" onClick={() => onCompare(menu.index)}>
+          <i className="ti ti-file-diff" /> Compare Drafts
+        </button>
+      )}
       {canOpenSplit && (
         <button className="ctx-menu-item" onClick={() => onOpenSplit(menu.index)}>
           <i className="ti ti-layout-bottombar" /> Open in Split View

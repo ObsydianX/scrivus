@@ -1,7 +1,6 @@
-import { useRef } from 'react'
-import type { Dispatch, SetStateAction } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { COMPILE_STYLE_PRESETS, LOREM_PREVIEW } from '../constants'
-import type { CompileChapterEntry, ProjectStyles } from '../types'
+import type { CompileChapterEntry, CompileFormat, ProjectStyles } from '../types'
 
 type CompileStylePreset = typeof COMPILE_STYLE_PRESETS[number]
 
@@ -23,21 +22,24 @@ function isRowInFolderRange(chapters: CompileChapterEntry[], parentIndex: number
 type CompileModalProps = {
   loading: boolean
   chapters: CompileChapterEntry[]
-  format: 'docx'
+  format: CompileFormat
   frontMatter: boolean
   includeActHeadings: boolean
   includeSceneTitles: boolean
+  collapsed: Record<string, boolean>
   style: CompileStylePreset
   projectStyles: ProjectStyles
   onClose: () => void
+  onFormatChange: (format: CompileFormat) => void
   onStyleChange: (style: CompileStylePreset) => void
   onFrontMatterChange: (value: boolean) => void
   onIncludeActHeadingsChange: (value: boolean) => void
   onIncludeSceneTitlesChange: (value: boolean) => void
-  onChaptersChange: Dispatch<SetStateAction<CompileChapterEntry[]>>
   onSelectionChange: (fileId: string, value: string) => void
   onIncludeChange: (updates: Record<string, boolean>) => void
-  onExport: () => void
+  onCollapsedChange: (updates: Record<string, boolean>) => void
+  onOpenStyles: () => void
+  onExport: (chapters: CompileChapterEntry[]) => void
 }
 
 export function CompileModal({
@@ -47,27 +49,128 @@ export function CompileModal({
   frontMatter,
   includeActHeadings,
   includeSceneTitles,
+  collapsed,
   style,
   projectStyles,
   onClose,
+  onFormatChange,
   onStyleChange,
   onFrontMatterChange,
   onIncludeActHeadingsChange,
   onIncludeSceneTitlesChange,
-  onChaptersChange,
   onSelectionChange,
   onIncludeChange,
+  onCollapsedChange,
+  onOpenStyles,
   onExport,
 }: CompileModalProps) {
+  const [draftChapters, setDraftChapters] = useState(chapters)
+  const [draftCollapsed, setDraftCollapsed] = useState(collapsed)
   const sceneListRef = useRef<HTMLDivElement | null>(null)
+  const pendingSceneListScrollRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    setDraftChapters(chapters)
+  }, [chapters])
+
+  useEffect(() => {
+    setDraftCollapsed(collapsed)
+  }, [collapsed])
 
   const preserveSceneListScroll = () => {
     const list = sceneListRef.current
     if (!list) return
     const scrollTop = list.scrollTop
+    pendingSceneListScrollRef.current = scrollTop
     requestAnimationFrame(() => {
       if (sceneListRef.current) sceneListRef.current.scrollTop = scrollTop
     })
+  }
+
+  useLayoutEffect(() => {
+    const scrollTop = pendingSceneListScrollRef.current
+    if (scrollTop === null || !sceneListRef.current) return
+    sceneListRef.current.scrollTop = scrollTop
+    requestAnimationFrame(() => {
+      if (sceneListRef.current) sceneListRef.current.scrollTop = scrollTop
+      if (pendingSceneListScrollRef.current === scrollTop) pendingSceneListScrollRef.current = null
+    })
+  }, [draftChapters])
+
+  const collapsedKey = (folderId: number) => `folder:${folderId}`
+  const isChapterCollapsed = (chapter: CompileChapterEntry) => draftCollapsed[collapsedKey(chapter.folderId)] === true
+  const chapterHasChildren = (chapter: CompileChapterEntry, index: number) => (
+    chapter.scenes.length > 0
+    || draftChapters.some((_, candidateIndex) => isRowInFolderRange(draftChapters, index, candidateIndex) && candidateIndex !== index)
+  )
+  const isChapterHidden = (index: number) => {
+    let childDepth = draftChapters[index]?.depth ?? 0
+    for (let i = index - 1; i >= 0; i--) {
+      const candidateDepth = draftChapters[i]?.depth ?? 0
+      if (candidateDepth >= childDepth) continue
+      if (isChapterCollapsed(draftChapters[i])) return true
+      childDepth = candidateDepth
+      if (childDepth === 0) break
+    }
+    return false
+  }
+  const toggleChapterCollapsed = (chapter: CompileChapterEntry) => {
+    const key = collapsedKey(chapter.folderId)
+    const nextValue = !draftCollapsed[key]
+    setDraftCollapsed(prev => ({ ...prev, [key]: nextValue }))
+    onCollapsedChange({ [key]: nextValue })
+  }
+  const setAllCollapsed = (collapsed: boolean) => {
+    const updates: Record<string, boolean> = {}
+    draftChapters.forEach((chapter, index) => {
+      if (chapterHasChildren(chapter, index)) updates[collapsedKey(chapter.folderId)] = collapsed
+    })
+    setDraftCollapsed(prev => ({ ...prev, ...updates }))
+    onCollapsedChange(updates)
+  }
+  const setAllIncluded = (included: boolean) => {
+    const updates: Record<string, boolean> = {}
+    draftChapters.forEach(chapter => {
+      updates[`folder:${chapter.folderId}`] = included
+      chapter.scenes.forEach(scene => {
+        updates[`scene:${scene.fileId}`] = included
+      })
+    })
+    preserveSceneListScroll()
+    setDraftChapters(prev => prev.map(chapter => ({
+      ...chapter,
+      included,
+      scenes: chapter.scenes.map(scene => ({ ...scene, included })),
+    })))
+    onIncludeChange(updates)
+  }
+
+  // Derived preview styling for the current format + style preset.
+  const isProofPreview = format === 'docx' && style === 'Proof Copy'
+  const isShunnPreview = format === 'docx' && style === 'Manuscript (Shunn)'
+  const isEpubPreview = format === 'epub'
+  const preview = {
+    headingFont: isProofPreview ? 'Courier New, Courier, monospace'
+      : isShunnPreview ? '"Times New Roman", Times, serif'
+        : isEpubPreview ? 'Georgia, serif' : projectStyles.chapter.font,
+    headingSize: isProofPreview || isShunnPreview ? '12pt' : isEpubPreview ? '18pt' : `${projectStyles.chapter.size}pt`,
+    headingWeight: isProofPreview || isEpubPreview ? 700 : isShunnPreview ? 400 : projectStyles.chapter.bold ? 700 : 400,
+    headingStyle: (isProofPreview || isShunnPreview || isEpubPreview ? 'normal' : projectStyles.chapter.italic ? 'italic' : 'normal') as 'normal' | 'italic',
+    headingAlign: (isProofPreview || isShunnPreview || isEpubPreview ? 'center' : 'left') as 'center' | 'left',
+    chapterText: isProofPreview ? '## CHAPTER ONE ##' : 'Chapter One',
+    sceneText: isProofPreview ? '# SCENE ONE #' : 'Scene One',
+    bodyFont: isProofPreview ? 'Courier New, Courier, monospace'
+      : isShunnPreview ? '"Times New Roman", Times, serif'
+        : isEpubPreview ? 'Georgia, serif' : projectStyles.body.font,
+    bodySize: isProofPreview || isShunnPreview || isEpubPreview ? '12pt' : `${projectStyles.body.size}pt`,
+    bodyAlign: (isProofPreview ? 'justify'
+      : isShunnPreview || isEpubPreview ? 'left'
+        : projectStyles.body.justification === 'both' ? 'justify'
+          : projectStyles.body.justification) as 'left' | 'center' | 'right' | 'justify',
+    bodyIndent: isProofPreview || isShunnPreview ? '2em'
+      : isEpubPreview ? '1.25em'
+        : projectStyles.body.firstLineIndent ? '2em' : '0',
+    lineHeight: isProofPreview || isShunnPreview ? 2 : isEpubPreview ? 1.5 : projectStyles.body.lineSpacing,
   }
 
   return (
@@ -110,6 +213,8 @@ export function CompileModal({
             {!loading && (
               <select
                 value={style}
+                disabled={format === 'epub'}
+                title={format === 'epub' ? 'Style presets apply to DOCX exports; e-readers control EPUB styling' : undefined}
                 onChange={event => onStyleChange(event.target.value as CompileStylePreset)}
                 style={{
                   background: 'var(--input-bg)',
@@ -119,6 +224,8 @@ export function CompileModal({
                   borderRadius: 4,
                   padding: '4px 26px 4px 8px',
                   outline: 'none',
+                  opacity: format === 'epub' ? 0.45 : 1,
+                  cursor: format === 'epub' ? 'not-allowed' : 'pointer',
                 }}
               >
                 {COMPILE_STYLE_PRESETS.map(preset => (
@@ -167,22 +274,23 @@ export function CompileModal({
                     type="radio"
                     name="compile-format"
                     checked={format === 'docx'}
-                    readOnly
+                    onChange={() => onFormatChange('docx')}
                     style={{ accentColor: 'var(--accent)' }}
                   />
                   docx
                 </label>
                 <label style={{
                   display: 'flex', alignItems: 'center', gap: 8,
-                  color: 'var(--text-muted)', opacity: 0.45, fontSize: 12, cursor: 'not-allowed',
+                  color: 'var(--text-soft)', fontSize: 12, cursor: 'pointer',
                 }}>
                   <input
                     type="radio"
                     name="compile-format"
-                    disabled
+                    checked={format === 'epub'}
+                    onChange={() => onFormatChange('epub')}
                     style={{ accentColor: 'var(--accent)' }}
                   />
-                  pdf
+                  epub
                 </label>
 
                 <div style={{ color: 'var(--text-muted)', fontSize: 10, letterSpacing: '0.08em', marginTop: 20, marginBottom: 8 }}>
@@ -249,37 +357,36 @@ export function CompileModal({
                   overflowY: 'auto',
                 }}>
                   <div style={{
-                    fontFamily: style === 'Proof Copy' ? 'Courier New, Courier, monospace' : projectStyles.chapter.font,
-                    fontSize: style === 'Proof Copy' ? '12pt' : `${projectStyles.chapter.size}pt`,
-                    fontWeight: style === 'Proof Copy' ? 700 : projectStyles.chapter.bold ? 700 : 400,
-                    fontStyle: style === 'Proof Copy' ? 'normal' : projectStyles.chapter.italic ? 'italic' : 'normal',
+                    fontFamily: preview.headingFont,
+                    fontSize: preview.headingSize,
+                    fontWeight: preview.headingWeight,
+                    fontStyle: preview.headingStyle,
                     color: '#111',
                     marginBottom: 16,
-                    textAlign: style === 'Proof Copy' ? 'center' : 'left',
+                    textAlign: preview.headingAlign,
                   }}>
-                    {style === 'Proof Copy' ? '## CHAPTER ONE ##' : 'Chapter One'}
+                    {preview.chapterText}
                   </div>
                   {includeSceneTitles && (
                     <div style={{
-                      fontFamily: style === 'Proof Copy' ? 'Courier New, Courier, monospace' : projectStyles.chapter.font,
-                      fontSize: style === 'Proof Copy' ? '12pt' : `${projectStyles.chapter.size}pt`,
-                      fontWeight: style === 'Proof Copy' ? 700 : projectStyles.chapter.bold ? 700 : 400,
-                      fontStyle: style === 'Proof Copy' ? 'normal' : projectStyles.chapter.italic ? 'italic' : 'normal',
+                      fontFamily: preview.headingFont,
+                      fontSize: preview.headingSize,
+                      fontWeight: preview.headingWeight,
+                      fontStyle: preview.headingStyle,
                       color: '#111',
                       marginBottom: 16,
                       textAlign: 'center',
                     }}>
-                      {style === 'Proof Copy' ? '# SCENE ONE #' : 'Scene One'}
+                      {preview.sceneText}
                     </div>
                   )}
                   {LOREM_PREVIEW.split('\n\n').map((para, i) => (
                     <p key={i} style={{
-                      fontFamily: style === 'Proof Copy' ? 'Courier New, Courier, monospace' : projectStyles.body.font,
-                      fontSize: style === 'Proof Copy' ? '12pt' : `${projectStyles.body.size}pt`,
-                      textAlign: style === 'Proof Copy' ? 'justify' : projectStyles.body.justification === 'both' ? 'justify'
-                        : projectStyles.body.justification as 'left' | 'center' | 'right',
-                      textIndent: style === 'Proof Copy' ? '2em' : projectStyles.body.firstLineIndent ? '2em' : '0',
-                      lineHeight: style === 'Proof Copy' ? 2 : projectStyles.body.lineSpacing,
+                      fontFamily: preview.bodyFont,
+                      fontSize: preview.bodySize,
+                      textAlign: preview.bodyAlign,
+                      textIndent: preview.bodyIndent,
+                      lineHeight: preview.lineHeight,
                       margin: '0 0 8px 0',
                       color: '#111',
                     }}>
@@ -298,18 +405,120 @@ export function CompileModal({
                   color: 'var(--text-muted)', fontSize: 10, letterSpacing: '0.08em',
                   padding: '16px 12px 8px',
                   flexShrink: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
                 }}>
-                  SCENE SELECTION
+                  <span>SCENE SELECTION</span>
+                  <span style={{ display: 'flex', gap: 4, letterSpacing: 0 }}>
+                    <button
+                      type="button"
+                      title="Expand all"
+                      onClick={() => setAllCollapsed(false)}
+                      style={{
+                        background: 'var(--button-bg)',
+                        border: '1px solid var(--border-soft)',
+                        borderRadius: 3,
+                        color: 'var(--text-soft)',
+                        cursor: 'pointer',
+                        fontSize: 11,
+                        lineHeight: 1,
+                        padding: '3px 5px',
+                      }}
+                    >
+                      <i className="ti ti-chevrons-down" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Collapse all"
+                      onClick={() => setAllCollapsed(true)}
+                      style={{
+                        background: 'var(--button-bg)',
+                        border: '1px solid var(--border-soft)',
+                        borderRadius: 3,
+                        color: 'var(--text-soft)',
+                        cursor: 'pointer',
+                        fontSize: 11,
+                        lineHeight: 1,
+                        padding: '3px 5px',
+                      }}
+                    >
+                      <i className="ti ti-chevrons-up" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      title="Select all"
+                      onClick={() => setAllIncluded(true)}
+                      style={{
+                        background: 'var(--button-bg)',
+                        border: '1px solid var(--border-soft)',
+                        borderRadius: 3,
+                        color: 'var(--text-soft)',
+                        cursor: 'pointer',
+                        fontSize: 10,
+                        padding: '2px 6px',
+                      }}
+                    >
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      title="Select none"
+                      onClick={() => setAllIncluded(false)}
+                      style={{
+                        background: 'var(--button-bg)',
+                        border: '1px solid var(--border-soft)',
+                        borderRadius: 3,
+                        color: 'var(--text-soft)',
+                        cursor: 'pointer',
+                        fontSize: 10,
+                        padding: '2px 6px',
+                      }}
+                    >
+                      None
+                    </button>
+                  </span>
                 </div>
                 <div ref={sceneListRef} className="compile-scene-list" style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px' }}>
-                  {chapters.map((chapter, ci) => (
+                  {draftChapters.map((chapter, ci) => {
+                    if (isChapterHidden(ci)) return null
+                    const canCollapse = chapterHasChildren(chapter, ci)
+                    const chapterCollapsed = isChapterCollapsed(chapter)
+                    return (
                     <div key={chapter.folderId} style={{ marginBottom: 8 }}>
-                      <label style={{
+                      <div style={{
                         display: 'flex', alignItems: 'center', gap: 6,
                         color: 'var(--text-soft)', fontSize: 12, cursor: 'pointer',
                         padding: '3px 0',
                         paddingLeft: (chapter.depth ?? 0) * 12,
                       }}>
+                        {canCollapse
+                          ? (
+                            <button
+                              type="button"
+                              title={chapterCollapsed ? 'Expand' : 'Collapse'}
+                              onClick={() => toggleChapterCollapsed(chapter)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: 'var(--text-muted)',
+                                cursor: 'pointer',
+                                fontSize: 10,
+                                lineHeight: 1,
+                                padding: 0,
+                                width: 16,
+                                flexShrink: 0,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <i className={`ti ti-chevron-${chapterCollapsed ? 'right' : 'down'}`} aria-hidden="true" />
+                            </button>
+                          )
+                          : <span style={{ width: 16, flexShrink: 0 }} />
+                        }
                         <input
                           type="checkbox"
                           className="compile-checkbox"
@@ -317,13 +526,13 @@ export function CompileModal({
                           onChange={e => {
                             const checked = e.target.checked
                             const updates: Record<string, boolean> = {}
-                            chapters.forEach((ch, i) => {
-                              if (!isRowInFolderRange(chapters, ci, i)) return
+                            draftChapters.forEach((ch, i) => {
+                              if (!isRowInFolderRange(draftChapters, ci, i)) return
                               updates[`folder:${ch.folderId}`] = checked
                               for (const scene of ch.scenes) updates[`scene:${scene.fileId}`] = checked
                             })
                             preserveSceneListScroll()
-                            onChaptersChange(prev => (
+                            setDraftChapters(prev => (
                               prev.map((ch, i) => {
                                 if (!isRowInFolderRange(prev, ci, i)) return ch
                                 return {
@@ -342,12 +551,12 @@ export function CompileModal({
                         <span style={{ color: 'var(--text-muted)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                           {folderLabel(chapter)}
                         </span>
-                      </label>
+                      </div>
 
-                      {chapter.scenes.map((scene, si) => (
+                      {!chapterCollapsed && chapter.scenes.map((scene, si) => (
                         <div key={scene.docId} style={{
                           display: 'flex', alignItems: 'center', gap: 6,
-                          paddingLeft: 20 + (chapter.depth ?? 0) * 12, paddingTop: 2, paddingBottom: 2,
+                          paddingLeft: 36 + (chapter.depth ?? 0) * 12, paddingTop: 2, paddingBottom: 2,
                         }}>
                           <input
                             type="checkbox"
@@ -356,7 +565,7 @@ export function CompileModal({
                             onChange={e => {
                               const checked = e.target.checked
                               preserveSceneListScroll()
-                              onChaptersChange(prev => prev.map((ch, ci2) => {
+                              setDraftChapters(prev => prev.map((ch, ci2) => {
                                 if (ci2 !== ci) return ch
                                 const newScenes = ch.scenes.map((s, si2) =>
                                   si2 !== si ? s : { ...s, included: checked }
@@ -383,7 +592,8 @@ export function CompileModal({
                             disabled={!scene.included}
                             onChange={e => {
                               const val = e.target.value
-                              onChaptersChange(prev => prev.map((ch, ci2) =>
+                              preserveSceneListScroll()
+                              setDraftChapters(prev => prev.map((ch, ci2) =>
                                 ci2 !== ci ? ch : {
                                   ...ch,
                                   scenes: ch.scenes.map((s, si2) =>
@@ -417,7 +627,8 @@ export function CompileModal({
                         </div>
                       ))}
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             </div>
@@ -427,19 +638,24 @@ export function CompileModal({
         <div style={{
           padding: '10px 16px',
           borderTop: '1px solid var(--border-main)',
-          display: 'flex', justifyContent: 'flex-end', gap: 8,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
           flexShrink: 0,
         }}>
-          <button className="modal-btn" onClick={onClose}>
-            Cancel
+          <button className="modal-btn" onClick={onOpenStyles}>
+            <i className="ti ti-palette" aria-hidden="true" /> Styles
           </button>
-          <button
-            className="modal-btn modal-btn-primary"
-            onClick={onExport}
-            disabled={loading || chapters.every(ch => !ch.included)}
-          >
-            Export
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button className="modal-btn" onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              className="modal-btn modal-btn-primary"
+              onClick={() => onExport(draftChapters)}
+              disabled={loading || draftChapters.every(ch => !ch.included)}
+            >
+              Export
+            </button>
+          </div>
         </div>
       </div>
     </div>

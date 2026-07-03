@@ -70,6 +70,9 @@ export function moveNodeInTree(tree: TreeNode[], draggedId: number, dropTarget: 
   const newTree = cloneTree(tree)
   const dragged = findNode(newTree, draggedId)
   if (!dragged) return null
+  // Dropping a node onto or next to its own descendant would orphan it:
+  // the node is removed first, so the insert target no longer exists.
+  if (containsNode(dragged, dropTarget.id)) return null
   removeNode(newTree, draggedId)
   return insertNode(newTree, dragged, dropTarget)
 }
@@ -129,7 +132,7 @@ export function moveNodesInTree(tree: TreeNode[], draggedIds: number[], dropTarg
   const newTree = cloneTree(tree)
   const moving = collectTopLevelMoveNodes(newTree, ids)
   if (moving.length === 0) return null
-  if (moving.some(node => dropTarget.type === 'inside' && containsNode(node, dropTarget.id))) return null
+  if (moving.some(node => containsNode(node, dropTarget.id))) return null
 
   const movingIds = new Set(moving.map(node => node.id))
   const withoutMoving = removeNodes(newTree, movingIds)

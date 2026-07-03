@@ -13,7 +13,7 @@ import { join } from '@tauri-apps/api/path'
 import { isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { exit } from '@tauri-apps/plugin-process'
-import { Packer, Document, Paragraph, HeadingLevel, AlignmentType, PageBreak, TextRun } from 'docx'
+import { Packer, Document, Paragraph, HeadingLevel, AlignmentType, Header, PageBreak, PageNumber, TextRun } from 'docx'
 import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener'
 import changelog from '../CHANGELOG.md?raw'
 import projectFormatCompatibility from '../PROJECT_FORMAT.md?raw'
@@ -45,6 +45,8 @@ import {
 import { BinderSidebar } from './components/BinderSidebar'
 import { CompileModal } from './components/CompileModal'
 import { BinderContextMenu, EditorContextMenu, SpellcheckContextMenu, TabContextMenu } from './components/ContextMenus'
+import { DraftDiffModal } from './components/DraftDiffModal'
+import { LorePresenceModal } from './components/LorePresenceModal'
 import { InspectorPanel } from './components/InspectorPanel'
 import {
   LoreEntryEditorModal,
@@ -56,6 +58,7 @@ import {
   ProjectSettingsModal,
   StylesModal,
   THEME_OPTIONS,
+  type CoverImageAction,
 } from './components/ProjectModals'
 import {
   addDocToTree,
@@ -94,19 +97,22 @@ import {
   normalizeProjectStyles,
   normalizeWritingStats,
 } from './constants'
+import { htmlFragmentText, parseHtmlFragment } from './html'
 import { allocateNextId, getNextIdValue, setNextIdValue } from './idCounter'
 import { buildLoreBacklinks, type LoreBacklink } from './loreBacklinks'
 import { createImportedProjectOnDisk, createProjectOnDisk, projectPackageFolderName, readProjectJson } from './projectFiles'
 import { migrateProjectData } from './projectMigrations'
-import { searchProject, type SearchResult } from './search'
+import { clearProjectSearchCache, searchProject, type SearchResult } from './search'
 import { parseSceneTabs, serializeSceneTabs, softDeleteTab } from './sceneTabs'
 import { createSpellchecker, findWordAt, type Spellchecker } from './spellcheck'
 import { SCRIVUS_GITHUB_URL, checkForScrivusUpdate } from './updates'
 import {
   addToRecentProjects,
   copyAtlasImage,
+  copyCoverImage,
   copyLoreImage,
   deleteAtlasImage,
+  deleteCoverImage,
   deleteLoreImage,
   generateFileId,
   loadRecentData,
@@ -131,7 +137,8 @@ import {
   writeSceneFile,
 } from './storage'
 import { parseWordDocxProject } from './wordImport'
-import { countLatestRevisionWords } from './wordCount'
+import { countHtmlWords, countLatestRevisionWords } from './wordCount'
+import { buildEpub, type EpubCoverImage } from './epubCompile'
 import {
   emptyTrashFolder,
   loadTrashItems,
@@ -179,8 +186,10 @@ import type {
   ProjectStyles,
   RevisionComment,
   SceneMetadata,
+  CompileFormat,
   SceneStatus,
   SceneTab,
+  SprintTimerState,
   ThemeId,
   TreeNode,
 } from './types'
@@ -328,6 +337,8 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const searchDebounceRef = useRef<number | null>(null)
+  const searchRequestIdRef = useRef(0)
 
 
   // ── Find-and-replace panel state ──
@@ -415,7 +426,7 @@ export default function App() {
   const [showCompile, setShowCompile] = useState(false)
   const [compileChapters, setCompileChapters] = useState<CompileChapterEntry[]>([])
   const [compileLoading, setCompileLoading] = useState(false)
-  const [compileFormat] = useState<'docx'>('docx')
+  // compileFormat lives with the other settings-backed states below.
   const [compileStyle, setCompileStyle] = useState<typeof COMPILE_STYLE_PRESETS[number]>(COMPILE_STYLE_PRESETS[0])
 
   // ── Revision workspace state ──
@@ -472,6 +483,7 @@ export default function App() {
     theme: 'dark' as ThemeId,
     incrementNewNodeNumbers: false,
     loreLinksEnabled: true,
+    typewriterScrolling: false,
     readingWpm: 240,
     defaultSceneTargetWordCount: 0,
     goals: {
@@ -483,6 +495,7 @@ export default function App() {
       frontMatter: false,
       includeActHeadings: true,
       includeSceneTitles: false,
+      format: 'docx' as CompileFormat,
     },
     window: {
       fullscreen: false,
@@ -502,6 +515,7 @@ export default function App() {
         theme: normalizeTheme(parsed.theme),
         incrementNewNodeNumbers: parsed.incrementNewNodeNumbers === true,
         loreLinksEnabled: parsed.loreLinksEnabled !== false,
+        typewriterScrolling: parsed.typewriterScrolling === true,
         readingWpm: Number.isFinite(Number(parsed.readingWpm))
           ? Math.min(1000, Math.max(50, Math.round(Number(parsed.readingWpm))))
           : DEFAULT_SETTINGS.readingWpm,
@@ -524,6 +538,7 @@ export default function App() {
         compile: {
           ...DEFAULT_SETTINGS.compile,
           ...(typeof parsed.compile === 'object' && parsed.compile ? parsed.compile : {}),
+          format: parsed.compile?.format === 'epub' ? 'epub' as const : 'docx' as const,
         },
         window: {
           ...DEFAULT_SETTINGS.window,
@@ -543,6 +558,7 @@ export default function App() {
   const ZOOM_PRESETS = [50, 75, 90, 100, 110, 125, 150, 175, 200, 300];
   const initialSettings = loadSettings()
   const [compileFrontMatter, setCompileFrontMatter] = useState(() => initialSettings.compile.frontMatter)
+  const [compileFormat, setCompileFormat] = useState<CompileFormat>(() => initialSettings.compile.format)
   const [compileIncludeActHeadings, setCompileIncludeActHeadings] = useState(() => initialSettings.compile.includeActHeadings)
   const [compileIncludeSceneTitles, setCompileIncludeSceneTitles] = useState(() => initialSettings.compile.includeSceneTitles)
   const [zoom, setZoom] = useState(() => initialSettings.zoom);
@@ -550,6 +566,11 @@ export default function App() {
   const [incrementNewNodeNumbers, setIncrementNewNodeNumbers] = useState(() => initialSettings.incrementNewNodeNumbers)
   const [loreLinksEnabled, setLoreLinksEnabled] = useState(() => initialSettings.loreLinksEnabled)
   const loreLinksEnabledRef = useRef(initialSettings.loreLinksEnabled)
+  const [typewriterScrolling, setTypewriterScrolling] = useState(() => initialSettings.typewriterScrolling)
+  const typewriterScrollingRef = useRef(initialSettings.typewriterScrolling)
+  const [sprint, setSprint] = useState<SprintTimerState | null>(null)
+  const [draftDiff, setDraftDiff] = useState<{ left: number; right: number } | null>(null)
+  const [showLorePresence, setShowLorePresence] = useState(false)
   const [readingWpm, setReadingWpm] = useState(() => initialSettings.readingWpm)
   const [defaultSceneTargetWordCount, setDefaultSceneTargetWordCount] = useState(() => initialSettings.defaultSceneTargetWordCount)
   const [goals, setGoals] = useState(() => initialSettings.goals)
@@ -736,10 +757,23 @@ export default function App() {
       const tabs = sceneTabsRef.current.map((tab, index) =>
         index === activeTabIndexRef.current ? { ...tab, content: html } : tab)
       setWordCount(countLatestRevisionWords(tabs))
-      const div = document.createElement('div')
-      div.innerHTML = html
-      setCharCount((div.textContent ?? '').length)
+      setCharCount(htmlFragmentText(html).length)
       triggerSave()
+
+      // Typewriter scrolling: keep the caret line vertically centered while typing.
+      if (typewriterScrollingRef.current) {
+        window.requestAnimationFrame(() => {
+          if (editor.isDestroyed) return
+          const scroll = document.getElementById('editor-scroll')
+          if (!scroll) return
+          const caret = editor.view.coordsAtPos(editor.state.selection.head)
+          const rect = scroll.getBoundingClientRect()
+          const delta = caret.top - (rect.top + rect.height / 2)
+          if (Math.abs(delta) > 1) {
+            scroll.scrollTo({ top: scroll.scrollTop + delta, behavior: 'instant' })
+          }
+        })
+      }
     },
   })
 
@@ -865,6 +899,7 @@ export default function App() {
   useEffect(() => { selectedBinderIdsRef.current = selectedBinderIds }, [selectedBinderIds])
   useEffect(() => { activeTabIndexRef.current = activeTabIndex }, [activeTabIndex])
   useEffect(() => { loreLinksEnabledRef.current = loreLinksEnabled }, [loreLinksEnabled])
+  useEffect(() => { typewriterScrollingRef.current = typewriterScrolling }, [typewriterScrolling])
   useEffect(() => { mindMapRef.current = mindMap }, [mindMap])
   useEffect(() => { atlasRef.current = atlas }, [atlas])
 
@@ -1085,6 +1120,7 @@ export default function App() {
     setHelpMenuOpen(false)
     setThemeMenuOpen(false)
     setPreviewTheme(null)
+    cancelPendingSearch()
     setShowSearch(false)
     setShowFnR(false)
     setContextMenu(null)
@@ -1138,6 +1174,53 @@ export default function App() {
     view.dispatch(addTr)
 
   }, [fnrFind, showFnR, editor, fnrVersion])
+
+  useEffect(() => {
+    if (!import.meta.env.PROD) return
+
+    const handler = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase()
+      const isReloadShortcut = e.key === 'F5' || ((e.ctrlKey || e.metaKey) && key === 'r')
+      const isDevtoolsShortcut = e.key === 'F12' || (e.ctrlKey && e.shiftKey && ['i', 'j', 'c'].includes(key))
+      if (!isReloadShortcut && !isDevtoolsShortcut) return
+      e.preventDefault()
+      e.stopPropagation()
+    }
+
+    window.addEventListener('keydown', handler, true)
+    return () => window.removeEventListener('keydown', handler, true)
+  }, [])
+
+  useEffect(() => {
+    const ignoredInputTypes = new Set(['button', 'checkbox', 'color', 'file', 'hidden', 'radio', 'range', 'reset', 'submit'])
+    const hardenInputs = (root: globalThis.Document | globalThis.Element) => {
+      root.querySelectorAll('form').forEach(form => {
+        form.setAttribute('autocomplete', 'off')
+      })
+      root.querySelectorAll('input, textarea').forEach(control => {
+        if (control instanceof HTMLInputElement) {
+          const type = (control.getAttribute('type') ?? 'text').toLowerCase()
+          if (ignoredInputTypes.has(type)) return
+        }
+        control.setAttribute('autocomplete', 'off')
+        control.setAttribute('autocorrect', 'off')
+        control.setAttribute('autocapitalize', 'off')
+      })
+    }
+
+    hardenInputs(document)
+    const observer = new MutationObserver(mutations => {
+      for (const mutation of mutations) {
+        mutation.addedNodes.forEach(node => {
+          if (node instanceof globalThis.Element) hardenInputs(node)
+        })
+      }
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => {
+      observer.disconnect()
+    }
+  }, [])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1194,15 +1277,20 @@ export default function App() {
   }, [loreLinksEnabled])
 
   useEffect(() => {
+    saveSettings({ ...loadSettings(), typewriterScrolling })
+  }, [typewriterScrolling])
+
+  useEffect(() => {
     saveSettings({
       ...loadSettings(),
       compile: {
         frontMatter: compileFrontMatter,
         includeActHeadings: compileIncludeActHeadings,
         includeSceneTitles: compileIncludeSceneTitles,
+        format: compileFormat,
       },
     })
-  }, [compileFrontMatter, compileIncludeActHeadings, compileIncludeSceneTitles])
+  }, [compileFrontMatter, compileIncludeActHeadings, compileIncludeSceneTitles, compileFormat])
 
   useEffect(() => {
     if (!isTauri()) return
@@ -1463,6 +1551,52 @@ export default function App() {
     }, 900)
   }, [saveActive, refreshOutlineRows])
 
+  // #region === WRITING SPRINTS ===
+
+  const startSprint = (minutes: number) => {
+    setSprint({
+      endsAt: Date.now() + minutes * 60_000,
+      durationMinutes: minutes,
+      baselineWords: sessionWordDeltaRef.current,
+      finished: false,
+      finalWords: 0,
+    })
+  }
+
+  const stopSprint = () => setSprint(null)
+
+  const sprintWords = sprint && !sprint.finished
+    ? Math.max(0, sessionWordDelta - sprint.baselineWords)
+    : 0
+
+  useEffect(() => {
+    if (!sprint || sprint.finished) return
+    const timeout = window.setTimeout(() => {
+      // Flush the debounced autosave so words typed in the last second count.
+      saveActive()
+      setSprint(prev => prev && !prev.finished
+        ? { ...prev, finished: true, finalWords: Math.max(0, sessionWordDeltaRef.current - prev.baselineWords) }
+        : prev)
+    }, Math.max(0, sprint.endsAt - Date.now()))
+    return () => window.clearTimeout(timeout)
+  }, [sprint, saveActive])
+
+  // The session word baseline resets with the project, so the sprint goes with it.
+  useEffect(() => {
+    setSprint(null)
+  }, [project?.path])
+
+  // #endregion
+
+  // The draft comparison is scoped to the scene it was opened from.
+  useEffect(() => {
+    setDraftDiff(null)
+  }, [activeId, project?.path])
+
+  useEffect(() => {
+    setShowLorePresence(false)
+  }, [project?.path])
+
   // Opens a scene from the binder and loads its content into TipTap.
   const selectDoc = async (id: number) => {
     clearSaveTimers()
@@ -1503,9 +1637,7 @@ export default function App() {
       const content = tabs[safeIndex]?.content ?? ''
       bodyHtmlRef.current = content
       editor?.commands.setContent(content, { emitUpdate: false })
-      const div = document.createElement('div')
-      div.innerHTML = content
-      const text = div.textContent ?? ''
+      const text = htmlFragmentText(content)
       setWordCount(sceneWordCountsRef.current[node.file])
       setCharCount(text.length)
       setTitleValue(formatSceneTabTitle(node.title, tabs, safeIndex))
@@ -1828,9 +1960,7 @@ export default function App() {
     const content = updatedTabs[index]?.content ?? ''
     bodyHtmlRef.current = content
     editor?.commands.setContent(content, { emitUpdate: false })
-    const div = document.createElement('div')
-    div.innerHTML = content
-    const text = div.textContent ?? ''
+    const text = htmlFragmentText(content)
     setWordCount(countLatestRevisionWords(updatedTabs))
     setCharCount(text.length)
   }
@@ -1898,9 +2028,7 @@ export default function App() {
     }
     bodyHtmlRef.current = newTab.content
     editor?.commands.setContent(newTab.content, { emitUpdate: false })
-    const div = document.createElement('div')
-    div.innerHTML = newTab.content
-    const text = div.textContent ?? ''
+    const text = htmlFragmentText(newTab.content)
     setWordCount(countLatestRevisionWords(newTabs))
     setCharCount(text.length)
     if (activeIdRef.current !== null && projectRef.current) {
@@ -2509,18 +2637,48 @@ export default function App() {
   // #endregion
   // #region === HANDLERS: SEARCH ===
 
-  // Searches manuscript, notes, and trash for a text query.
-  const runSearch = async (query: string) => {
+  const cancelPendingSearch = () => {
+    if (searchDebounceRef.current !== null) {
+      window.clearTimeout(searchDebounceRef.current)
+      searchDebounceRef.current = null
+    }
+    searchRequestIdRef.current += 1
+    setSearchLoading(false)
+  }
+
+  // Searches manuscript, notes, and trash for a text query after typing settles.
+  const runSearch = (query: string) => {
+    if (searchDebounceRef.current !== null) {
+      window.clearTimeout(searchDebounceRef.current)
+      searchDebounceRef.current = null
+    }
+
+    const requestId = searchRequestIdRef.current + 1
+    searchRequestIdRef.current = requestId
+
     if (!projectRef.current || !query.trim()) {
       setSearchResults([])
+      setSearchLoading(false)
       return
     }
+
     setSearchLoading(true)
-    try {
-      setSearchResults(await searchProject(projectRef.current.path, treeRef.current, query))
-    } finally {
-      setSearchLoading(false)
-    }
+    searchDebounceRef.current = window.setTimeout(async () => {
+      searchDebounceRef.current = null
+      try {
+        const activeProject = projectRef.current
+        if (!activeProject) return
+        const results = await searchProject(activeProject.path, treeRef.current, query)
+        if (searchRequestIdRef.current === requestId) setSearchResults(results)
+      } catch (e) {
+        if (searchRequestIdRef.current === requestId) {
+          setSearchResults([])
+          showMessage('Search failed: ' + String(e), 'Search Error', 'error')
+        }
+      } finally {
+        if (searchRequestIdRef.current === requestId) setSearchLoading(false)
+      }
+    }, 300)
   }
 
   const textOffsetToEditorPosition = (textOffset: number) => {
@@ -2584,9 +2742,7 @@ export default function App() {
     const content = tabs[result.tabIndex]?.content ?? ''
     bodyHtmlRef.current = content
     editor?.commands.setContent(content, { emitUpdate: false })
-    const div = document.createElement('div')
-    div.innerHTML = content
-    setCharCount((div.textContent ?? '').length)
+    setCharCount(htmlFragmentText(content).length)
     setTitleValue(formatSceneTabTitle(node.title, tabs, result.tabIndex))
   }
 
@@ -2637,8 +2793,7 @@ export default function App() {
 
   // Local cleanup helper for temporary find-and-replace highlight marks.
   const stripFnrHighlights = (html: string): string => {
-    const div = document.createElement('div')
-    div.innerHTML = html
+    const div = parseHtmlFragment(html)
     div.querySelectorAll('mark.fnr-highlight').forEach(mark => {
       mark.replaceWith(mark.textContent ?? '')
     })
@@ -2653,8 +2808,7 @@ export default function App() {
     replaceWith: string,
     onlyFirst = false
   ): { result: string; count: number } => {
-    const root = document.createElement('div')
-    root.innerHTML = html
+    const root = parseHtmlFragment(html)
 
     const needle = find.toLowerCase()
     if (!needle) return { result: root.innerHTML, count: 0 }
@@ -3062,6 +3216,18 @@ export default function App() {
     saveCompileProjectMetadata(updated)
   }
 
+  const updateCompileCollapsed = (updates: Record<string, boolean>) => {
+    if (!projectRef.current) return
+    const updated: Project = {
+      ...projectRef.current,
+      compileCollapsed: {
+        ...(projectRef.current.compileCollapsed ?? {}),
+        ...updates,
+      },
+    }
+    saveCompileProjectMetadata(updated)
+  }
+
   type CompileMarks = {
     bold?: boolean
     italics?: boolean
@@ -3069,10 +3235,12 @@ export default function App() {
   }
 
   const isProofCompileStyle = () => compileStyle === 'Proof Copy'
-  const compileBodyFont = () => isProofCompileStyle() ? 'Courier New' : styles.body.font
-  const compileChapterFont = () => isProofCompileStyle() ? 'Courier New' : styles.chapter.font
-  const compileBodySize = () => isProofCompileStyle() ? 12 : styles.body.size
-  const compileChapterSize = () => isProofCompileStyle() ? 12 : styles.chapter.size
+  const isShunnCompileStyle = () => compileStyle === 'Manuscript (Shunn)'
+  const compileBodyFont = () => isProofCompileStyle() ? 'Courier New' : isShunnCompileStyle() ? 'Times New Roman' : styles.body.font
+  const compileChapterFont = () => isProofCompileStyle() ? 'Courier New' : isShunnCompileStyle() ? 'Times New Roman' : styles.chapter.font
+  const compileBodySize = () => isProofCompileStyle() || isShunnCompileStyle() ? 12 : styles.body.size
+  const compileChapterSize = () => isProofCompileStyle() || isShunnCompileStyle() ? 12 : styles.chapter.size
+  const compileLineSpacing = () => isProofCompileStyle() || isShunnCompileStyle() ? 2 : styles.body.lineSpacing
 
   const createCompileRun = (text: string, marks: CompileMarks) => new TextRun({
     text,
@@ -3121,17 +3289,39 @@ export default function App() {
   const bodyParagraphOptions = () => ({
     spacing: {
       after: 0,
-      line: (isProofCompileStyle() ? 2 : styles.body.lineSpacing) * 240,
+      line: compileLineSpacing() * 240,
       lineRule: 'auto' as const,
     },
-    alignment: isProofCompileStyle() ? AlignmentType.JUSTIFIED : styles.body.justification === 'both' ? AlignmentType.JUSTIFIED
-      : styles.body.justification === 'center' ? AlignmentType.CENTER
-        : styles.body.justification === 'right' ? AlignmentType.RIGHT
-          : AlignmentType.LEFT,
-    indent: isProofCompileStyle() ? { firstLine: 720 } : styles.body.firstLineIndent ? { firstLine: 720 } : undefined,
+    // Shunn manuscript format is left-aligned (ragged right).
+    alignment: isShunnCompileStyle() ? AlignmentType.LEFT
+      : isProofCompileStyle() ? AlignmentType.JUSTIFIED : styles.body.justification === 'both' ? AlignmentType.JUSTIFIED
+        : styles.body.justification === 'center' ? AlignmentType.CENTER
+          : styles.body.justification === 'right' ? AlignmentType.RIGHT
+            : AlignmentType.LEFT,
+    indent: isProofCompileStyle() || isShunnCompileStyle() ? { firstLine: 720 } : styles.body.firstLineIndent ? { firstLine: 720 } : undefined,
   })
 
   const createCompileHeadingParagraph = (label: string, kind: 'folder' | 'scene', pageBreakBefore = false) => {
+    if (isShunnCompileStyle()) {
+      // Chapters start a third of the way down a fresh page, centered, in the
+      // same plain 12pt type as the body — no bold in manuscript format.
+      return new Paragraph({
+        pageBreakBefore,
+        children: [new TextRun({
+          text: label,
+          font: 'Times New Roman',
+          size: 12 * 2,
+        })],
+        alignment: AlignmentType.CENTER,
+        spacing: {
+          before: kind === 'folder' ? 3200 : 480,
+          after: 480,
+          line: 480,
+          lineRule: 'auto' as const,
+        },
+      })
+    }
+
     if (isProofCompileStyle()) {
       const marker = kind === 'folder' ? '##' : '#'
       return new Paragraph({
@@ -3163,8 +3353,7 @@ export default function App() {
   })
 
   const compileHtmlToParagraphs = (html: string): Paragraph[] => {
-    const root = document.createElement('div')
-    root.innerHTML = html
+    const root = parseHtmlFragment(html)
     const paragraphs: Paragraph[] = []
 
     const addTextParagraph = (runs: TextRun[], extra: Record<string, unknown> = {}) => {
@@ -3208,8 +3397,9 @@ export default function App() {
         ))
       } else if (element.tagName === 'HR') {
         paragraphs.push(new Paragraph({
-          children: [createCompileRun('* * *', {})],
-          spacing: { before: 200, after: 200 },
+          // Shunn scene breaks are a centered hash mark.
+          children: [createCompileRun(isShunnCompileStyle() ? '#' : '* * *', {})],
+          spacing: { before: 200, after: 200, ...(isShunnCompileStyle() ? { line: 480, lineRule: 'auto' as const } : {}) },
           alignment: AlignmentType.CENTER,
         }))
       } else if (element.hasAttribute('data-page-break') || element.classList.contains('page-break-node')) {
@@ -3220,7 +3410,7 @@ export default function App() {
         targets.forEach(target => {
           addTextParagraph(collectTextRuns(target, { italics: true }), {
             indent: { left: 1440, right: 720, firstLine: 0 },
-            spacing: { before: 120, after: 120, line: (isProofCompileStyle() ? 2 : styles.body.lineSpacing) * 240, lineRule: 'auto' as const },
+            spacing: { before: 120, after: 120, line: compileLineSpacing() * 240, lineRule: 'auto' as const },
           })
         })
       } else if (element.tagName === 'UL' || element.tagName === 'OL') {
@@ -3235,11 +3425,25 @@ export default function App() {
     return paragraphs
   }
 
-  // Exports the manuscript to DOCX using the current compile selection.
-  const compileProject = async () => {
+  // Reports a finished export and offers to reveal the file.
+  const reportExportComplete = (outputPath: string) => {
+    setShowCompile(false)
+    showMessage(
+      `Exported to ${outputPath}`,
+      'Export Complete',
+      'info',
+      {
+        label: 'Show in Folder',
+        onClick: () => revealItemInDir(outputPath)
+      }
+    )
+  }
+
+  // Exports the manuscript using the current compile selection and format.
+  const compileProject = async (chaptersToCompile = compileChapters) => {
     if (!project) return
 
-    const nodes = await collectCompileNodesFromSelection(compileChapters, project.path, {
+    const nodes = await collectCompileNodesFromSelection(chaptersToCompile, project.path, {
       includeActHeadings: compileIncludeActHeadings,
     })
     if (nodes.length === 0) {
@@ -3247,13 +3451,96 @@ export default function App() {
       return
     }
 
-    const paragraphs = []
+    const settings = normalizeProjectSettings(project.settings)
+    const bookTitle = (settings.title || project.name).trim()
+    const bookSubtitle = settings.subtitle.trim()
+    const bookAuthor = settings.author.trim()
 
-    if (compileFrontMatter) {
-      const settings = normalizeProjectSettings(project.settings)
-      const coverTitle = (settings.title || project.name).trim()
-      const coverSubtitle = settings.subtitle.trim()
-      const coverAuthor = settings.author.trim()
+    if (compileFormat === 'epub') {
+      try {
+        // The cover set in Project Settings ships inside the EPUB.
+        let cover: EpubCoverImage | undefined
+        if (settings.coverImage) {
+          try {
+            const coverPath = await join(project.path, settings.coverImage)
+            if (await exists(coverPath)) {
+              const extension = settings.coverImage.split('.').pop()?.toLowerCase() ?? 'jpg'
+              cover = {
+                bytes: await readFile(coverPath),
+                extension: extension === 'jpeg' ? 'jpg' : extension,
+                mediaType: extension === 'png' ? 'image/png' : extension === 'gif' ? 'image/gif' : 'image/jpeg',
+              }
+            }
+          } catch {
+            // export continues without a cover
+          }
+        }
+
+        const epubBytes = await buildEpub(nodes, {
+          title: bookTitle,
+          subtitle: bookSubtitle || undefined,
+          author: bookAuthor,
+          includeSceneTitles: compileIncludeSceneTitles,
+          frontMatter: compileFrontMatter,
+          cover,
+        })
+
+        const outputPath = await save({
+          title: 'Export Manuscript',
+          defaultPath: `${project.name}.epub`,
+          filters: [{ name: 'EPUB', extensions: ['epub'] }],
+        })
+        if (!outputPath) return
+
+        await writeFile(outputPath, epubBytes)
+        reportExportComplete(outputPath)
+      } catch (e) {
+        showMessage('Export failed: ' + String(e), 'Export Failed', 'error')
+      }
+      return
+    }
+
+    const paragraphs = []
+    const isShunn = isShunnCompileStyle()
+    const manuscriptWords = nodes.reduce(
+      (total, node) => node.type === 'body' ? total + countHtmlWords(node.html) : total,
+      0,
+    )
+
+    if (compileFrontMatter && isShunn) {
+      // Shunn first page: author top-left, rounded word count top-right,
+      // title and byline centered a third of the way down. The text follows
+      // on the same page.
+      const aboutWords = Math.max(100, Math.round(manuscriptWords / 100) * 100)
+      const shunnRun = (text: string) => new TextRun({ text, font: 'Times New Roman', size: 12 * 2 })
+      paragraphs.push(
+        new Paragraph({
+          children: [shunnRun(bookAuthor || bookTitle)],
+          alignment: AlignmentType.LEFT,
+          spacing: { after: 0 },
+        }),
+        new Paragraph({
+          children: [shunnRun(`about ${aboutWords.toLocaleString('en-US')} words`)],
+          alignment: AlignmentType.RIGHT,
+          spacing: { after: 0 },
+        }),
+        new Paragraph({
+          children: [shunnRun(bookTitle)],
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 3200, after: bookAuthor ? 0 : 480, line: 480, lineRule: 'auto' as const },
+        }),
+      )
+      if (bookAuthor) {
+        paragraphs.push(new Paragraph({
+          children: [shunnRun(`by ${bookAuthor}`)],
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 480, line: 480, lineRule: 'auto' as const },
+        }))
+      }
+    } else if (compileFrontMatter) {
+      const coverTitle = bookTitle
+      const coverSubtitle = bookSubtitle
+      const coverAuthor = bookAuthor
 
       paragraphs.push(
         new Paragraph({
@@ -3319,6 +3606,34 @@ export default function App() {
       }
     }
 
+    if (isShunn) {
+      paragraphs.push(new Paragraph({
+        children: [new TextRun({ text: 'END', font: 'Times New Roman', size: 12 * 2 })],
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 480, line: 480, lineRule: 'auto' as const },
+      }))
+    }
+
+    // Shunn running header: "Surname / TITLE / page", omitted on the first page.
+    const shunnSurname = bookAuthor.split(/\s+/).pop() ?? ''
+    const shunnHeader = new Header({
+      children: [new Paragraph({
+        alignment: AlignmentType.RIGHT,
+        children: [
+          new TextRun({
+            text: `${shunnSurname ? `${shunnSurname} / ` : ''}${bookTitle.toUpperCase()} / `,
+            font: 'Times New Roman',
+            size: 12 * 2,
+          }),
+          new TextRun({
+            children: [PageNumber.CURRENT],
+            font: 'Times New Roman',
+            size: 12 * 2,
+          }),
+        ],
+      })],
+    })
+
     const doc = new Document({
       styles: {
         paragraphStyles: [
@@ -3349,7 +3664,18 @@ export default function App() {
           },
         ],
       },
-      sections: [{ children: paragraphs }],
+      sections: [{
+        ...(isShunn
+          ? {
+            properties: { titlePage: true },
+            headers: {
+              default: shunnHeader,
+              first: new Header({ children: [] }),
+            },
+          }
+          : {}),
+        children: paragraphs,
+      }],
     })
 
     try {
@@ -3366,16 +3692,7 @@ export default function App() {
       if (!outputPath) return
 
       await writeFile(outputPath, uint8)
-      setShowCompile(false)
-      showMessage(
-        `Exported to ${outputPath}`,
-        'Export Complete',
-        'info',
-        {
-          label: 'Show in Folder',
-          onClick: () => revealItemInDir(outputPath)
-        }
-      )
+      reportExportComplete(outputPath)
     } catch (e) {
       showMessage('Export failed: ' + String(e), 'Export Failed', 'error')
     }
@@ -3513,6 +3830,7 @@ export default function App() {
   // Hydrates project state from project.json and restores the last active scene.
   const loadProjectData = async (data: Record<string, unknown>, path: string) => {
     clearSaveStatus()
+    clearProjectSearchCache()
     const loadedStyles = normalizeProjectStyles(data.styles as Partial<ProjectStyles> | undefined)
     const loadedTree = data.tree as TreeNode[]
     const restoredId = (data.lastActiveId as number | null) ?? null
@@ -3531,6 +3849,7 @@ export default function App() {
       lastActiveTabIndex: restoredTabIndex,
       compileSelections: (data.compileSelections as Record<string, string>) ?? {},
       compileIncludes: (data.compileIncludes as Record<string, boolean>) ?? {},
+      compileCollapsed: (data.compileCollapsed as Record<string, boolean>) ?? {},
       writingStats: normalizeWritingStats(data.writingStats as Partial<Project['writingStats']> | undefined),
     }
     sceneWordCountsRef.current = {}
@@ -3587,9 +3906,7 @@ export default function App() {
         setRevisionTabs(tabs)
         setRevisionActiveTabIndex(safeTabIndex)
         setRevisionContent(tabs[safeTabIndex]?.content ?? '')
-        const div = document.createElement('div')
-        div.innerHTML = content
-        const text = div.textContent ?? ''
+        const text = htmlFragmentText(content)
         setWordCount(countLatestRevisionWords(tabs))
         setCharCount(text.length)
         setTitleValue(formatSceneTabTitle(restoredNode.title, tabs, safeTabIndex))
@@ -3615,12 +3932,32 @@ export default function App() {
     }, 200)
   }
 
-  const saveProjectSettings = (settings: ProjectSettings, nextStyles: ProjectStyles, dictionaryWords: string[]) => {
+  const saveProjectSettings = async (
+    settings: ProjectSettings,
+    nextStyles: ProjectStyles,
+    dictionaryWords: string[],
+    coverAction: CoverImageAction,
+  ) => {
     if (!projectRef.current) return
     const normalizedStyles = normalizeProjectStyles(nextStyles)
     const normalizedSettings = normalizeProjectSettings(settings)
     const normalizedDictionary = Array.from(new Set(dictionaryWords.map(word => word.trim()).filter(Boolean)))
       .sort((a, b) => a.localeCompare(b))
+
+    if (coverAction.type === 'set') {
+      try {
+        const previousCover = normalizedSettings.coverImage
+        normalizedSettings.coverImage = await copyCoverImage(projectRef.current.path, coverAction.sourcePath)
+        if (previousCover) await deleteCoverImage(projectRef.current.path, previousCover)
+      } catch (e) {
+        showMessage('Could not copy the cover image into the project: ' + String(e), 'Cover Image', 'error')
+      }
+    } else if (coverAction.type === 'remove') {
+      if (normalizedSettings.coverImage) {
+        await deleteCoverImage(projectRef.current.path, normalizedSettings.coverImage)
+      }
+      normalizedSettings.coverImage = ''
+    }
     const updated = { ...projectRef.current, settings: normalizedSettings, styles: normalizedStyles }
     projectRef.current = updated
     setProject(updated)
@@ -4213,20 +4550,25 @@ export default function App() {
   }
 
   // Moves a binder node to trash instead of deleting it permanently.
-  const deleteNode = (id: number) => {
+  // The node is only removed from the binder once its files are safely in trash.
+  const deleteNode = async (id: number) => {
+    const node = findNode(treeRef.current, id)
+    if (!node || !projectRef.current) return
+    const parentFolder = findParentFolder(treeRef.current, id)
+    const folderId = parentFolder?.id ?? 1
+    try {
+      await trashNode(projectRef.current.path, node, folderId)
+    } catch (e) {
+      showMessage(`Could not move "${node.label}" to the trash:\n${String(e)}`, 'Delete Failed', 'error')
+      return
+    }
+    loadTrash()
     setSelectedBinderIds(prev => {
       if (!prev.has(id)) return prev
       const next = new Set(prev)
       next.delete(id)
       return next
     })
-    const node = findNode(treeRef.current, id)
-    if (node && projectRef.current) {
-      const parentFolder = findParentFolder(treeRef.current, id)
-      const folderId = parentFolder?.id ?? 1
-      trashNode(projectRef.current.path, node, folderId)
-        .then(() => loadTrash())
-    }
     setTree(prev => {
       const newTree = removeNodeFromTree(prev, id)
       if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
@@ -4253,25 +4595,40 @@ export default function App() {
       })
       .filter((entry): entry is { id: number; node: TreeNode; folderId: number } => Boolean(entry))
 
-    await Promise.all(nodesToTrash.map(entry =>
-      trashNode(projectRef.current!.path, entry.node, entry.folderId)
+    const results = await Promise.allSettled(nodesToTrash.map(entry =>
+      trashNode(projectRef.current!.path, entry.node, entry.folderId).then(() => entry)
     ))
+    const trashed = results
+      .filter((result): result is PromiseFulfilledResult<typeof nodesToTrash[number]> => result.status === 'fulfilled')
+      .map(result => result.value)
+    const failures = results.filter(result => result.status === 'rejected') as PromiseRejectedResult[]
     await loadTrash()
 
-    const newTree = removeNodesFromTree(treeRef.current, actionIds)
-    setTree(newTree)
-    treeRef.current = newTree
-    saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+    // Only drop the nodes that actually made it into the trash.
+    const trashedIds = trashed.map(entry => entry.id)
+    if (trashedIds.length > 0) {
+      const newTree = removeNodesFromTree(treeRef.current, trashedIds)
+      setTree(newTree)
+      treeRef.current = newTree
+      saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+    }
 
     setSelectedBinderIds(prev => {
       const next = new Set(prev)
-      actionIds.forEach(id => next.delete(id))
+      trashedIds.forEach(id => next.delete(id))
       return next
     })
-    if (activeIdRef.current !== null && actionIds.some(id => findNode(nodesToTrash.map(entry => entry.node), id))) {
+    if (activeIdRef.current !== null && findNode(trashed.map(entry => entry.node), activeIdRef.current)) {
       setActiveId(null)
       bodyHtmlRef.current = ''
       editor?.commands.setContent('')
+    }
+    if (failures.length > 0) {
+      showMessage(
+        `Could not move ${failures.length} item${failures.length === 1 ? '' : 's'} to the trash:\n${String(failures[0].reason)}`,
+        'Delete Failed',
+        'error',
+      )
     }
   }
 
@@ -4307,9 +4664,7 @@ export default function App() {
     setTitleValue(formatSceneTabTitle(doc.title, tabs, tabs.length - 1))
     bodyHtmlRef.current = content
     editor?.commands.setContent(content, { emitUpdate: false })
-    const div = document.createElement('div')
-    div.innerHTML = content
-    const text = div.textContent ?? ''
+    const text = htmlFragmentText(content)
     setWordCount(countLatestRevisionWords(tabs))
     setCharCount(text.length)
   }
@@ -4519,6 +4874,17 @@ export default function App() {
   const handleTabContextRename = (index: number) => {
     setRenamingTabIndex(index)
     setTabContextMenu(null)
+  }
+
+  // Opens the draft comparison with the clicked tab against the latest draft
+  // (or against the previous draft when the clicked tab is the latest).
+  const handleTabContextCompare = (index: number) => {
+    setTabContextMenu(null)
+    if (sceneTabs.length < 2) return
+    const latest = sceneTabs.length - 1
+    setDraftDiff(index === latest
+      ? { left: latest - 1, right: latest }
+      : { left: index, right: latest })
   }
 
   const handleTabContextDuplicate = (index: number) => {
@@ -5012,8 +5378,16 @@ export default function App() {
           settings={normalizeProjectSettings(project.settings)}
           styles={styles}
           dictionaryWords={projectDictionary}
+          projectPath={project.path}
           activeTab={projectSettingsTab}
           onTabChange={setProjectSettingsTab}
+          onPickCoverImage={async () => {
+            const selected = await open({
+              title: 'Choose Cover Image',
+              filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif'] }],
+            })
+            return !selected || Array.isArray(selected) ? null : selected
+          }}
           onCancel={() => setShowProjectSettings(false)}
           onSave={saveProjectSettings}
         />
@@ -5024,6 +5398,7 @@ export default function App() {
           activeTab={stylesTab}
           onTabChange={setStylesTab}
           onCancel={() => setShowStyles(false)}
+          overlayZIndex={showCompile ? 2100 : undefined}
           onApply={local => {
             setStyles(local)
             setProject(prev => prev ? { ...prev, styles: local } : prev)
@@ -5237,16 +5612,22 @@ export default function App() {
           frontMatter={compileFrontMatter}
           includeActHeadings={compileIncludeActHeadings}
           includeSceneTitles={compileIncludeSceneTitles}
+          collapsed={projectRef.current?.compileCollapsed ?? {}}
           style={compileStyle}
           projectStyles={styles}
           onClose={() => setShowCompile(false)}
+          onFormatChange={setCompileFormat}
           onStyleChange={setCompileStyle}
           onFrontMatterChange={setCompileFrontMatter}
           onIncludeActHeadingsChange={setCompileIncludeActHeadings}
           onIncludeSceneTitlesChange={setCompileIncludeSceneTitles}
-          onChaptersChange={setCompileChapters}
           onSelectionChange={updateCompileSelection}
           onIncludeChange={updateCompileIncludes}
+          onCollapsedChange={updateCompileCollapsed}
+          onOpenStyles={() => {
+            setStylesTab('chapter')
+            setShowStyles(true)
+          }}
           onExport={compileProject}
         />
       )}
@@ -5362,6 +5743,7 @@ export default function App() {
             setFnrUndoSnapshot([])
           } else {
             setShowFnR(true)
+            cancelPendingSearch()
             setShowSearch(false)
             setSearchQuery('')
             setSearchResults([])
@@ -5370,6 +5752,7 @@ export default function App() {
         }}
         onToggleSearch={() => {
           if (showSearch) {
+            cancelPendingSearch()
             setShowSearch(false)
             setSearchQuery('')
             setSearchResults([])
@@ -5418,7 +5801,7 @@ export default function App() {
           setSearchQuery(value)
           runSearch(value)
         }}
-        onClose={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]) }}
+        onClose={() => { cancelPendingSearch(); setShowSearch(false); setSearchQuery(''); setSearchResults([]) }}
         onOpenResult={openSearchResult}
       />
 
@@ -5445,12 +5828,14 @@ export default function App() {
           showEditor,
           editor,
           focusMode,
+          typewriterScrolling,
           isNarrow,
           isTrashPreview,
           titleValue,
           titleBookmarked: activeId !== null && !isTrashPreview,
           loreLinksEnabled,
           onFocusModeChange: setFocusMode,
+          onTypewriterScrollingChange: setTypewriterScrolling,
           onLoreLinksEnabledChange: setLoreLinksEnabled,
         }}
         tabState={{
@@ -5485,6 +5870,10 @@ export default function App() {
           chapterWordCount,
           manuscriptWordCount,
           readingWpm,
+          sprint,
+          sprintWords,
+          onSprintStart: startSprint,
+          onSprintStop: stopSprint,
           zoom,
           zoomOpen,
           zoomPresets: ZOOM_PRESETS,
@@ -5494,6 +5883,7 @@ export default function App() {
         outlineState={{
           rows: outlineRows,
           manuscriptWordCount,
+          readingWpm,
           collapsedFolderIds: outlineCollapsedFolderIds,
           onCollapsedFolderIdsChange: setOutlineCollapsedFolderIds,
           onOpenScene: openOutlineScene,
@@ -5536,6 +5926,7 @@ export default function App() {
           onDeleteEntryRequest: setConfirmDeleteLoreEntry,
           onToggleEntryPinned: toggleLoreEntryPinned,
           onOpenScene: openOutlineScene,
+          onOpenPresence: () => setShowLorePresence(true),
         }}
         revisionState={{
           revisionActiveId,
@@ -5633,14 +6024,39 @@ export default function App() {
       <TabContextMenu
         menu={tabContextMenu}
         canDelete={sceneTabs.length > 1}
+        canCompare={sceneTabs.length > 1}
         canOpenSplit={Boolean(tabContextMenu && sceneTabs.length > 1 && tabContextMenu.index !== activeTabIndex)}
         splitOpen={editorSplitTabIndex !== null}
         onRename={handleTabContextRename}
         onDuplicate={handleTabContextDuplicate}
+        onCompare={handleTabContextCompare}
         onDelete={handleTabContextDelete}
         onOpenSplit={openEditorSplitTab}
         onCloseSplit={closeEditorSplitTab}
       />
+
+      {draftDiff && activeId !== null && sceneTabs.length > 1 && (
+        <DraftDiffModal
+          tabs={sceneTabs.map((tab, index) =>
+            index === activeTabIndex ? { ...tab, content: bodyHtmlRef.current } : tab)}
+          sceneTitle={(findNode(tree, activeId) as DocNode | null)?.title ?? 'Scene'}
+          leftIndex={draftDiff.left}
+          rightIndex={draftDiff.right}
+          onLeftIndexChange={index => setDraftDiff(current => current ? { ...current, left: index } : current)}
+          onRightIndexChange={index => setDraftDiff(current => current ? { ...current, right: index } : current)}
+          onClose={() => setDraftDiff(null)}
+        />
+      )}
+
+      {showLorePresence && (
+        <LorePresenceModal
+          loreBook={loreBook}
+          backlinks={loreBacklinks}
+          outlineRows={outlineRows}
+          onOpenScene={openOutlineScene}
+          onClose={() => setShowLorePresence(false)}
+        />
+      )}
       
       <BinderContextMenu
         menu={contextMenu}

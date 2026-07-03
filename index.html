@@ -1,39 +1,13 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" />
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Scrivus</title>
-    <script>
-      (() => {
-        try {
-          const settings = JSON.parse(localStorage.getItem('scrivus-settings') || '{}')
-          const themes = new Set([
-            'dark',
-            'light',
-            'contrastLight',
-            'contrastDark',
-            'lavenderLight',
-            'lavenderDark',
-            'mintLight',
-            'mintDark',
-            'roseLight',
-            'roseDark',
-            'skyLight',
-            'skyDark',
-            'neonCyber',
-            'neonViolet',
-            'neonEmber',
-            'neonLagoon',
-          ])
-          document.documentElement.dataset.theme = themes.has(settings.theme) ? settings.theme : 'dark'
-        } catch {
-          document.documentElement.dataset.theme = 'dark'
-        }
-      })()
-    </script>
+    <!-- Plain (non-module) script so the theme is applied before first paint,
+         from a file so it satisfies a script-src 'self' CSP. -->
+    <script src="/theme-boot.js"></script>
   </head>
 
   <body>

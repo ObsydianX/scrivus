@@ -41,6 +41,11 @@ jobs:
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
@@ -50,10 +55,24 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Pre-fetch Rust dependencies
+        shell: bash
+        env:
+          CARGO_NET_RETRY: 10
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if cargo fetch --manifest-path src-tauri/Cargo.toml ${{ matrix.args }}; then
+              exit 0
+            fi
+            sleep $((attempt * 10))
+          done
+          cargo fetch --manifest-path src-tauri/Cargo.toml ${{ matrix.args }}
+
       - name: Build and publish Tauri bundles
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_NET_RETRY: 10
         with:
           tagName: v__VERSION__
           releaseName: Scrivus v__VERSION__

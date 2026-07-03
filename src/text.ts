@@ -1,6 +1,7 @@
+import { parseHtmlFragment } from './html'
+
 export function htmlToPlainLines(html: string): string[] {
-  const div = document.createElement('div')
-  div.innerHTML = html
+  const div = parseHtmlFragment(html)
   const lines: string[] = []
 
   const collectLine = (el: Element) => {

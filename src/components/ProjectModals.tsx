@@ -1,34 +1,57 @@
 import { useEffect, useState } from 'react'
+import { convertFileSrc } from '@tauri-apps/api/core'
 import { DEFAULT_BACKUP_SETTINGS, DEFAULT_STYLES, normalizeProjectSettings, normalizeProjectStyles } from '../constants'
 import type { BackupSettings, BodyStyle, EditorStyle, ProjectSettings, ProjectStyles, ThemeId } from '../types'
+
+// What to do with the project cover image when the settings are saved.
+export type CoverImageAction =
+  | { type: 'keep' }
+  | { type: 'set'; sourcePath: string }
+  | { type: 'remove' }
 
 export function ProjectSettingsModal({
   settings,
   styles,
   dictionaryWords,
+  projectPath,
   activeTab,
   onTabChange,
+  onPickCoverImage,
   onCancel,
   onSave,
 }: {
   settings: ProjectSettings
   styles: ProjectStyles
   dictionaryWords: string[]
+  projectPath: string | null
   activeTab: 'book' | 'styles' | 'backups' | 'dictionary'
   onTabChange: (tab: 'book' | 'styles' | 'backups' | 'dictionary') => void
+  onPickCoverImage: () => Promise<string | null>
   onCancel: () => void
-  onSave: (settings: ProjectSettings, styles: ProjectStyles, dictionaryWords: string[]) => void
+  onSave: (settings: ProjectSettings, styles: ProjectStyles, dictionaryWords: string[], coverAction: CoverImageAction) => void
 }) {
   const [local, setLocal] = useState<ProjectSettings>(() => normalizeProjectSettings(settings))
   const [localStyles, setLocalStyles] = useState<ProjectStyles>(() => normalizeProjectStyles(styles))
   const [localDictionary, setLocalDictionary] = useState<string[]>(dictionaryWords)
+  const [dictionaryInput, setDictionaryInput] = useState('')
   const [styleTab, setStyleTab] = useState<'chapter' | 'body' | 'editor'>('chapter')
+  const [coverAction, setCoverAction] = useState<CoverImageAction>({ type: 'keep' })
 
   useEffect(() => {
     setLocal(normalizeProjectSettings(settings))
     setLocalStyles(normalizeProjectStyles(styles))
     setLocalDictionary(dictionaryWords)
+    setDictionaryInput('')
+    setCoverAction({ type: 'keep' })
   }, [settings, styles, dictionaryWords])
+
+  const coverPreviewSrc = coverAction.type === 'set'
+    ? convertFileSrc(coverAction.sourcePath)
+    : coverAction.type === 'remove'
+      ? null
+      : local.coverImage && projectPath
+        ? convertFileSrc(`${projectPath}/${local.coverImage}`.replace(/\\/g, '/'))
+        : null
 
   const fonts = ['Georgia', 'Times New Roman', 'Garamond', 'Palatino', 'Arial', 'Helvetica', 'Courier New']
 
@@ -46,6 +69,16 @@ export function ProjectSettingsModal({
 
   const setBackupSettings = (patch: Partial<BackupSettings>) => {
     setLocal(prev => ({ ...prev, backups: { ...prev.backups, ...patch } }))
+  }
+
+  const addDictionaryWord = () => {
+    const word = dictionaryInput.trim()
+    if (!word) return
+    setLocalDictionary(prev => {
+      if (prev.some(item => item.toLocaleLowerCase() === word.toLocaleLowerCase())) return prev
+      return [...prev, word].sort((a, b) => a.localeCompare(b))
+    })
+    setDictionaryInput('')
   }
 
   const NumberField = ({
@@ -131,6 +164,38 @@ export function ProjectSettingsModal({
                 value={local.author}
                 onChange={e => setLocal(prev => ({ ...prev, author: e.target.value }))}
               />
+            </div>
+            <div className="modal-field">
+              <label className="modal-label">Cover image</label>
+              <div className="cover-image-field">
+                <div className="cover-image-preview">
+                  {coverPreviewSrc
+                    ? <img src={coverPreviewSrc} alt="Book cover preview" draggable={false} />
+                    : <i className="ti ti-photo" aria-hidden="true" />}
+                </div>
+                <div className="cover-image-actions">
+                  <button
+                    type="button"
+                    className="welcome-btn"
+                    onClick={async () => {
+                      const sourcePath = await onPickCoverImage()
+                      if (sourcePath) setCoverAction({ type: 'set', sourcePath })
+                    }}
+                  >
+                    Choose Image...
+                  </button>
+                  {coverPreviewSrc && (
+                    <button
+                      type="button"
+                      className="welcome-btn"
+                      onClick={() => setCoverAction(local.coverImage ? { type: 'remove' } : { type: 'keep' })}
+                    >
+                      Remove
+                    </button>
+                  )}
+                  <span className="cover-image-hint">Used as the cover for EPUB exports.</span>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -312,26 +377,50 @@ export function ProjectSettingsModal({
 
         {activeTab === 'dictionary' && (
           <div className="dictionary-panel">
-            {localDictionary.length === 0 ? (
-              <div className="dictionary-empty">
-                Project dictionary is empty.
-              </div>
-            ) : (
-              <div className="dictionary-list">
-                {localDictionary.map(word => (
-                  <div className="dictionary-word-row" key={word}>
-                    <span>{word}</span>
-                    <button
-                      type="button"
-                      title="Remove word"
-                      onClick={() => setLocalDictionary(prev => prev.filter(item => item !== word))}
-                    >
-                      <i className="ti ti-x" aria-hidden="true" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="dictionary-add-row">
+              <input
+                className="modal-input"
+                value={dictionaryInput}
+                onChange={e => setDictionaryInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addDictionaryWord()
+                  }
+                }}
+                placeholder="Add word..."
+              />
+              <button
+                type="button"
+                className="welcome-btn"
+                disabled={!dictionaryInput.trim()}
+                onClick={addDictionaryWord}
+              >
+                Add
+              </button>
+            </div>
+            <div className="dictionary-list-wrap">
+              {localDictionary.length === 0 ? (
+                <div className="dictionary-empty">
+                  Project dictionary is empty.
+                </div>
+              ) : (
+                <div className="dictionary-list">
+                  {localDictionary.map(word => (
+                    <div className="dictionary-word-row" key={word}>
+                      <span>{word}</span>
+                      <button
+                        type="button"
+                        title="Remove word"
+                        onClick={() => setLocalDictionary(prev => prev.filter(item => item !== word))}
+                      >
+                        <i className="ti ti-x" aria-hidden="true" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -374,7 +463,7 @@ export function ProjectSettingsModal({
 
         <div className="modal-footer">
           <button className="welcome-btn" onClick={onCancel}>Cancel</button>
-          <button className="welcome-btn" onClick={() => onSave(normalizeProjectSettings(local), localStyles, localDictionary)}>Save</button>
+          <button className="welcome-btn" onClick={() => onSave(normalizeProjectSettings(local), localStyles, localDictionary, coverAction)}>Save</button>
         </div>
       </div>
     </div>
@@ -447,10 +536,28 @@ export function PreferencesModal({
     setLocalDefaultSceneTargetWordCount(normalized > 0 ? String(normalized) : '')
     return normalized
   }
+  const lightThemes = THEME_OPTIONS.filter(theme =>
+    theme.name === 'Light' || theme.name.includes('Light') || theme.name.startsWith('Soft ')
+  )
+  const darkThemes = THEME_OPTIONS.filter(theme => !lightThemes.includes(theme))
+  const renderThemeOption = (theme: typeof THEME_OPTIONS[number]) => (
+    <button
+      key={theme.id}
+      className={`theme-option${localTheme === theme.id ? ' active' : ''}`}
+      onClick={() => setLocalTheme(theme.id)}
+    >
+      <span className="theme-swatches">
+        {theme.swatches.map(color => (
+          <span key={color} style={{ background: color }} />
+        ))}
+      </span>
+      <span>{theme.name}</span>
+    </button>
+  )
 
   return (
     <div className="modal-overlay">
-      <div className="modal-box project-settings-modal">
+      <div className="modal-box project-settings-modal preferences-modal">
         <p className="modal-title">Preferences</p>
         <div className="modal-tabs">
           {([
@@ -508,22 +615,19 @@ export function PreferencesModal({
           )}
           {activeTab === 'themes' && (
             <div className="modal-field">
-              <label className="modal-label">Theme</label>
-              <div className="theme-grid">
-                {THEME_OPTIONS.map(theme => (
-                  <button
-                    key={theme.id}
-                    className={`theme-option${localTheme === theme.id ? ' active' : ''}`}
-                    onClick={() => setLocalTheme(theme.id)}
-                  >
-                    <span className="theme-swatches">
-                      {theme.swatches.map(color => (
-                        <span key={color} style={{ background: color }} />
-                      ))}
-                    </span>
-                    <span>{theme.name}</span>
-                  </button>
-                ))}
+              <div className="preferences-theme-sections">
+                <section className="preferences-theme-section">
+                  <h3>Light Themes</h3>
+                  <div className="theme-grid preferences-theme-grid">
+                    {lightThemes.map(renderThemeOption)}
+                  </div>
+                </section>
+                <section className="preferences-theme-section">
+                  <h3>Dark Themes</h3>
+                  <div className="theme-grid preferences-theme-grid">
+                    {darkThemes.map(renderThemeOption)}
+                  </div>
+                </section>
               </div>
             </div>
           )}
@@ -544,6 +648,7 @@ export function StylesModal({
   onCancel,
   onApply,
   onSaveAsDefault,
+  overlayZIndex,
 }: {
   styles: ProjectStyles
   activeTab: 'chapter' | 'body'
@@ -551,6 +656,7 @@ export function StylesModal({
   onCancel: () => void
   onApply: (styles: ProjectStyles) => void
   onSaveAsDefault: (styles: ProjectStyles) => void
+  overlayZIndex?: number
 }) {
   const [local, setLocal] = useState<ProjectStyles>(styles)
 
@@ -561,7 +667,7 @@ export function StylesModal({
   const fonts = ['Georgia', 'Times New Roman', 'Garamond', 'Palatino', 'Arial', 'Helvetica', 'Courier New']
 
   return (
-    <div className="modal-overlay">
+    <div className="modal-overlay" style={overlayZIndex !== undefined ? { zIndex: overlayZIndex } : undefined}>
       <div className="modal-box">
         <p className="modal-title">Styles</p>
         <div className="modal-tabs">

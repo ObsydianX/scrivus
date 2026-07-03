@@ -79,6 +79,10 @@ function migrateFormat0To1(data: Record<string, unknown>) {
     changed = setIfChanged(data, 'compileIncludes', {}) || changed
   }
 
+  if (!data.compileCollapsed || typeof data.compileCollapsed !== 'object' || Array.isArray(data.compileCollapsed)) {
+    changed = setIfChanged(data, 'compileCollapsed', {}) || changed
+  }
+
   changed = setIfChanged(data, 'writingStats', normalizeWritingStats(data.writingStats as Partial<WritingStats> | undefined)) || changed
 
   return changed
@@ -100,6 +104,9 @@ export function migrateProjectData(rawData: Record<string, unknown>): ProjectMig
     changed = setIfChanged(data, 'projectFormatVersion', PROJECT_FORMAT_VERSION) || changed
     if (!data.compileIncludes || typeof data.compileIncludes !== 'object' || Array.isArray(data.compileIncludes)) {
       changed = setIfChanged(data, 'compileIncludes', {}) || changed
+    }
+    if (!data.compileCollapsed || typeof data.compileCollapsed !== 'object' || Array.isArray(data.compileCollapsed)) {
+      changed = setIfChanged(data, 'compileCollapsed', {}) || changed
     }
     if (Array.isArray(data.tree)) {
       changed = setIfChanged(

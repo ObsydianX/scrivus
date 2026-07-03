@@ -33,6 +33,7 @@ export type Project = {
   lastActiveTabIndex?: number
   compileSelections: Record<string, string>
   compileIncludes: Record<string, boolean>
+  compileCollapsed: Record<string, boolean>
   writingStats: WritingStats
 }
 
@@ -78,6 +79,16 @@ export type ChecklistItem = {
 export type SceneTab = {
   name: string
   content: string
+}
+
+export type CompileFormat = 'docx' | 'epub'
+
+export type SprintTimerState = {
+  endsAt: number
+  durationMinutes: number
+  baselineWords: number
+  finished: boolean
+  finalWords: number
 }
 
 export type SceneStatus =
@@ -153,6 +164,8 @@ export type ProjectSettings = {
   author: string
   title: string
   subtitle: string
+  // Project-relative path to the book cover image (used by the EPUB export).
+  coverImage: string
   backups: BackupSettings
 }
 
