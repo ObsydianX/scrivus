@@ -40,7 +40,7 @@ Before publishing a Windows installer:
 
 ## GitHub Actions Release Builds
 
-The release workflow in `.github/workflows/release.yml` builds Scrivus on Windows, Linux, and macOS using Tauri's official GitHub Action.
+The release workflow in `.github/workflows/release.yml` builds Scrivus on Windows, Linux, and macOS using Node.js 24 and Tauri's official GitHub Action.
 
 To start a release build, update the app version in `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`, then push a matching version tag:
 

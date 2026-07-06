@@ -148,6 +148,8 @@ open /Applications/Scrivus.app
 
 Scrivus is built with Tauri, React, TypeScript, and Vite.
 
+Development and release builds require Node.js 24.
+
 ```bash
 npm install
 npm run dev
