@@ -10,6 +10,8 @@ Current Scrivus projects include these fields in `project.json`:
 
 - `scrivusVersion`: the Scrivus app version that last saved the project.
 - `projectFormatVersion`: the project file format version.
+- `manuscripts`: the manuscript records in the project. Each record points to a binder folder root and stores the manuscript name, book metadata, cover image, and compile selections for that manuscript.
+- `activeManuscriptId`: the manuscript currently selected in the project.
 
 Older projects that do not include `projectFormatVersion` are treated as legacy format `0`.
 
@@ -30,3 +32,7 @@ This prevents an older Scrivus build from damaging project data it does not unde
 For small additive changes, Scrivus can usually rely on defaults and normalizers. For structural changes, Scrivus should add explicit versioned migrations that move projects from older `projectFormatVersion` values to the current format.
 
 Project migrations should preserve user content, create or rely on a pre-open backup, and avoid deleting unknown data unless the migration is intentionally removing an obsolete field.
+
+## Format 2
+
+Project format 2 introduced multiple manuscripts per project. Older projects are migrated by wrapping the existing binder folder with id `1` as the first manuscript. Project-wide systems such as Lore Book, Atlas, Canvas, notes, dictionaries, backups, trash, and scene files remain shared by the project. Manuscript-specific data includes the manuscript root folder id, manuscript name, book title/subtitle/author, cover image, active compile selections, compile includes, and compile collapsed state. The manuscript name is linked to the binder root label; the book title is used by compile/export metadata.

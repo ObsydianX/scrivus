@@ -1,7 +1,17 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
-import { createLoreImageValue, getLoreFieldText, getLoreImageCrop, getLoreImageFullWidth, getLoreImageIgnoreEntryCrop, getLoreImagePath } from '../loreImages'
-import type { LoreCategory, LoreEntry, LoreFieldType, LoreImageCrop, LoreSubcategoryColor, LoreTemplateElement } from '../types'
+import { readFile } from '@tauri-apps/plugin-fs'
+import {
+  createLoreImageValue,
+  getLoreFieldText,
+  getLoreImageCroppedPath,
+  getLoreImageCropRect,
+  getLoreImageDisplayPath,
+  getLoreImageFullWidth,
+  getLoreImageIgnoreEntryCrop,
+  getLoreImagePath,
+} from '../loreImages'
+import type { LoreCategory, LoreEntry, LoreFieldType, LoreSubcategoryColor, LoreTemplateElement } from '../types'
 
 const LORE_SUBCATEGORY_COLORS: { value: LoreSubcategoryColor; label: string }[] = [
   { value: 'default', label: 'Default' },
@@ -15,6 +25,44 @@ const LORE_SUBCATEGORY_COLORS: { value: LoreSubcategoryColor; label: string }[] 
   { value: 'red', label: 'Red' },
   { value: 'slate', label: 'Slate' },
 ]
+
+const resizeLoreEntryTextarea = (textarea: HTMLTextAreaElement | null) => {
+  if (!textarea) return
+  textarea.style.height = 'auto'
+  textarea.style.height = `${textarea.scrollHeight}px`
+}
+
+type CropEditorState = {
+  fieldId: string
+  path: string
+  label: string
+  fullWidth: boolean
+  ignoreEntryCrop: boolean
+}
+
+type CropRect = {
+  x: number
+  y: number
+  size: number
+}
+
+type CropDragState = {
+  mode: 'move' | 'nw' | 'ne' | 'sw' | 'se'
+  pointerId: number
+  startX: number
+  startY: number
+  rect: CropRect
+}
+
+const MIN_CROP_SIZE = 48
+
+const getImageMimeType = (path: string) => {
+  const ext = path.split('.').pop()?.toLowerCase()
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'gif') return 'image/gif'
+  return 'image/png'
+}
 
 export function LoreTemplateEditorModal({
   category,
@@ -382,8 +430,8 @@ export function LoreTemplateEditorModal({
         )}
 
         <div className="modal-footer">
-          <button className="welcome-btn" onClick={onCancel}>Cancel</button>
-          <button className="welcome-btn" onClick={() => onSave(local)}>Save</button>
+          <button className="modal-btn" onClick={onCancel}>Cancel</button>
+          <button className="modal-btn modal-btn-primary" onClick={() => onSave(local)}>Save</button>
         </div>
       </div>
       {hardDeleteTarget && (
@@ -413,21 +461,60 @@ export function LoreEntryEditorModal({
   onCancel,
   onSave,
   onPickImage,
+  onSaveCroppedImage,
+  onDeleteImage,
 }: {
   category: LoreCategory | null
   entry: LoreEntry | null
   projectPath: string | null
   onCancel: () => void
   onSave: (categoryId: string, entry: LoreEntry) => void
-  onPickImage: (entryId: string, fieldId: string, previousImagePath?: string) => Promise<string | null>
+  onPickImage: (entryId: string, fieldId: string, previousImagePaths?: string[]) => Promise<string | null>
+  onSaveCroppedImage: (entryId: string, fieldId: string, bytes: Uint8Array) => Promise<string | null>
+  onDeleteImage: (imagePath: string) => Promise<void>
 }) {
   const [local, setLocal] = useState<LoreEntry | null>(entry)
   const [keywordText, setKeywordText] = useState('')
+  const [cropEditor, setCropEditor] = useState<CropEditorState | null>(null)
+  const [cropRect, setCropRect] = useState<CropRect | null>(null)
+  const [cropSaving, setCropSaving] = useState(false)
+  const [cropImageSize, setCropImageSize] = useState({ width: 0, height: 0 })
+  const [cropSourceUrl, setCropSourceUrl] = useState<string | null>(null)
+  const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
+  const cropImageRef = useRef<HTMLImageElement | null>(null)
+  const cropDragRef = useRef<CropDragState | null>(null)
 
   useEffect(() => {
     setLocal(entry)
     setKeywordText(entry?.keywords?.join(', ') ?? '')
   }, [entry])
+
+  useEffect(() => {
+    if (!category || !local) return
+    category.template
+      .filter(field => !field.removed && field.type === 'textarea')
+      .forEach(field => resizeLoreEntryTextarea(textareaRefs.current[field.id] ?? null))
+  }, [category, local])
+
+  useEffect(() => {
+    setCropSourceUrl(null)
+    if (!projectPath || !cropEditor) {
+      return
+    }
+    let cancelled = false
+    let objectUrl: string | null = null
+    readFile(`${projectPath}/${cropEditor.path}`.replace(/\//g, '\\'))
+      .then(bytes => {
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(new Blob([bytes], { type: getImageMimeType(cropEditor.path) }))
+        setCropSourceUrl(objectUrl)
+      })
+      .catch(() => setCropSourceUrl(null))
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [cropEditor, projectPath])
 
   if (!category || !local) return null
 
@@ -435,233 +522,293 @@ export function LoreEntryEditorModal({
 
   const handleImagePick = async (fieldId: string) => {
     const current = local.fields[fieldId]
-    const rel = await onPickImage(local.id, fieldId, getLoreImagePath(current))
+    const previousPaths = [getLoreImagePath(current), getLoreImageCroppedPath(current)].filter(Boolean)
+    const rel = await onPickImage(local.id, fieldId, previousPaths)
     if (!rel) return
     setLocal(prev => prev ? {
       ...prev,
-      fields: { ...prev.fields, [fieldId]: createLoreImageValue(rel, getLoreImageCrop(current), getLoreImageFullWidth(current), getLoreImageIgnoreEntryCrop(current)) },
+      fields: { ...prev.fields, [fieldId]: createLoreImageValue(rel) },
     } : prev)
-  }
-
-  const updateImageCrop = (fieldId: string, patch: Partial<LoreImageCrop>) => {
-    setLocal(prev => {
-      if (!prev) return prev
-      const current = prev.fields[fieldId]
-      const path = getLoreImagePath(current)
-      if (!path) return prev
-      return {
-        ...prev,
-        fields: {
-          ...prev.fields,
-          [fieldId]: createLoreImageValue(path, { ...getLoreImageCrop(current), ...patch }, getLoreImageFullWidth(current), getLoreImageIgnoreEntryCrop(current)),
-        },
-      }
+    setCropEditor({
+      fieldId,
+      path: rel,
+      label: activeFields.find(field => field.id === fieldId)?.label ?? 'Image',
+      fullWidth: false,
+      ignoreEntryCrop: false,
     })
   }
 
-  const updateImageFullWidth = (fieldId: string, fullWidth: boolean) => {
-    setLocal(prev => {
-      if (!prev) return prev
-      const current = prev.fields[fieldId]
-      const path = getLoreImagePath(current)
-      if (!path) return prev
-      return {
-        ...prev,
-        fields: {
-          ...prev.fields,
-          [fieldId]: createLoreImageValue(path, getLoreImageCrop(current), fullWidth, getLoreImageIgnoreEntryCrop(current)),
-        },
-      }
+  const openCropEditor = (fieldId: string, path: string, label: string) => {
+    const current = local.fields[fieldId]
+    setCropRect(null)
+    setCropImageSize({ width: 0, height: 0 })
+    setCropEditor({
+      fieldId,
+      path,
+      label,
+      fullWidth: getLoreImageFullWidth(current),
+      ignoreEntryCrop: getLoreImageIgnoreEntryCrop(current),
     })
   }
 
-  const updateImageIgnoreEntryCrop = (fieldId: string, ignoreEntryCrop: boolean) => {
-    setLocal(prev => {
-      if (!prev) return prev
-      const current = prev.fields[fieldId]
-      const path = getLoreImagePath(current)
-      if (!path) return prev
-      return {
-        ...prev,
-        fields: {
-          ...prev.fields,
-          [fieldId]: createLoreImageValue(path, getLoreImageCrop(current), getLoreImageFullWidth(current), ignoreEntryCrop),
-        },
+  const clampCropRect = (rect: CropRect, bounds = cropImageSize): CropRect => {
+    const maxSize = Math.min(bounds.width, bounds.height)
+    const size = Math.min(Math.max(rect.size, Math.min(MIN_CROP_SIZE, maxSize)), maxSize)
+    const x = Math.min(Math.max(rect.x, 0), Math.max(0, bounds.width - size))
+    const y = Math.min(Math.max(rect.y, 0), Math.max(0, bounds.height - size))
+    return { x, y, size }
+  }
+
+  const initializeCropRect = () => {
+    const image = cropImageRef.current
+    if (!image || !cropEditor) return
+    const box = image.getBoundingClientRect()
+    const bounds = { width: box.width, height: box.height }
+    const current = local.fields[cropEditor.fieldId]
+    const savedRect = getLoreImageCropRect(current)
+    setCropImageSize(bounds)
+    if (savedRect) {
+      const scaleX = bounds.width / image.naturalWidth
+      const scaleY = bounds.height / image.naturalHeight
+      setCropRect(clampCropRect({
+        x: savedRect.x * scaleX,
+        y: savedRect.y * scaleY,
+        size: savedRect.size * Math.min(scaleX, scaleY),
+      }, bounds))
+      return
+    }
+    const size = Math.min(bounds.width, bounds.height)
+    setCropRect({ x: (bounds.width - size) / 2, y: (bounds.height - size) / 2, size })
+  }
+
+  const updateCropDrag = (clientX: number, clientY: number) => {
+    const drag = cropDragRef.current
+    if (!drag) return
+    const dx = clientX - drag.startX
+    const dy = clientY - drag.startY
+    const start = drag.rect
+    if (drag.mode === 'move') {
+      setCropRect(clampCropRect({ ...start, x: start.x + dx, y: start.y + dy }))
+      return
+    }
+
+    const minSize = Math.min(MIN_CROP_SIZE, cropImageSize.width, cropImageSize.height)
+    const maxSizeFromCorner =
+      drag.mode === 'nw' ? Math.min(start.x + start.size, start.y + start.size) :
+      drag.mode === 'ne' ? Math.min(cropImageSize.width - start.x, start.y + start.size) :
+      drag.mode === 'sw' ? Math.min(start.x + start.size, cropImageSize.height - start.y) :
+      Math.min(cropImageSize.width - start.x, cropImageSize.height - start.y)
+    const delta =
+      drag.mode === 'nw' ? Math.max(-dx, -dy) :
+      drag.mode === 'ne' ? Math.max(dx, -dy) :
+      drag.mode === 'sw' ? Math.max(-dx, dy) :
+      Math.max(dx, dy)
+    const size = Math.min(Math.max(start.size + delta, minSize), maxSizeFromCorner)
+    const x = drag.mode === 'nw' || drag.mode === 'sw' ? start.x + start.size - size : start.x
+    const y = drag.mode === 'nw' || drag.mode === 'ne' ? start.y + start.size - size : start.y
+    setCropRect(clampCropRect({ x, y, size }))
+  }
+
+  const endCropDrag = (event: PointerEvent<HTMLElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    cropDragRef.current = null
+  }
+
+  const saveCrop = async () => {
+    const image = cropImageRef.current
+    if (!cropEditor || !cropRect || !image || !local) return
+    setCropSaving(true)
+    try {
+      const canvas = document.createElement('canvas')
+      const context = canvas.getContext('2d')
+      if (!context) return
+      const scaleX = image.naturalWidth / cropImageSize.width
+      const scaleY = image.naturalHeight / cropImageSize.height
+      const sourceX = cropRect.x * scaleX
+      const sourceY = cropRect.y * scaleY
+      const sourceSize = cropRect.size * Math.min(scaleX, scaleY)
+      const outputSize = Math.max(1, Math.round(sourceSize))
+      canvas.width = outputSize
+      canvas.height = outputSize
+      context.drawImage(
+        image,
+        sourceX,
+        sourceY,
+        sourceSize,
+        sourceSize,
+        0,
+        0,
+        outputSize,
+        outputSize,
+      )
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'))
+      if (!blob) return
+      const bytes = new Uint8Array(await blob.arrayBuffer())
+      const croppedPath = await onSaveCroppedImage(local.id, cropEditor.fieldId, bytes)
+      if (!croppedPath) return
+      const previousCroppedPath = getLoreImageCroppedPath(local.fields[cropEditor.fieldId])
+      setLocal(prev => {
+        if (!prev) return prev
+        const current = prev.fields[cropEditor.fieldId]
+        const path = getLoreImagePath(current) || cropEditor.path
+        return {
+          ...prev,
+          fields: {
+            ...prev.fields,
+            [cropEditor.fieldId]: createLoreImageValue(
+              path,
+              undefined,
+              cropEditor.fullWidth,
+              cropEditor.ignoreEntryCrop,
+              croppedPath,
+              { x: sourceX, y: sourceY, size: sourceSize },
+            ),
+          },
+        }
+      })
+      if (previousCroppedPath && previousCroppedPath !== croppedPath) {
+        await onDeleteImage(previousCroppedPath)
       }
-    })
+      setCropEditor(null)
+    } finally {
+      setCropSaving(false)
+    }
   }
 
   return (
+    <>
     <div className="modal-overlay" style={{ zIndex: 150 }}>
       <div className="modal-box lore-entry-modal">
         <p className="modal-title">{local.id ? 'Edit Entry' : 'New Entry'}</p>
 
-        <div className="lore-entry-field-wrap">
-          <label className="lore-entry-label">Entry Name</label>
-          <input
-            className="modal-input"
-            value={local.name}
-            onChange={e => setLocal(prev => prev ? { ...prev, name: e.target.value } : prev)}
-            onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-            placeholder="Enter name..."
-            autoFocus
-          />
-        </div>
-
-        <div className="lore-entry-field-wrap">
-          <label className="lore-entry-label">Keywords</label>
-          <input
-            className="modal-input"
-            value={keywordText}
-            onChange={e => setKeywordText(e.target.value)}
-            onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-            placeholder="Comma-separated aliases..."
-          />
-        </div>
-
-        {(category.subcategories ?? []).length > 0 && (
+        <div className="lore-entry-modal-body">
           <div className="lore-entry-field-wrap">
-            <label className="lore-entry-label">Subcategory</label>
-            <select
+            <label className="lore-entry-label">Entry Name</label>
+            <input
               className="modal-input"
-              value={local.subcategoryId ?? ''}
-              onChange={e => setLocal(prev => prev ? { ...prev, subcategoryId: e.target.value || undefined } : prev)}
+              value={local.name}
+              onChange={e => setLocal(prev => prev ? { ...prev, name: e.target.value } : prev)}
               onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-            >
-              <option value="">Uncategorized</option>
-              {(category.subcategories ?? []).map(subcategory => (
-                <option key={subcategory.id} value={subcategory.id}>{subcategory.name || 'Unnamed subcategory'}</option>
-              ))}
-            </select>
+              placeholder="Enter name..."
+              autoFocus
+            />
           </div>
-        )}
 
-        {activeFields.map(field => {
-          if (field.type === 'divider') {
-            return <div key={field.id} className="lore-entry-divider" />
-          }
-          if (field.type === 'image') {
-            const value = local.fields[field.id]
-            const path = getLoreImagePath(value)
-            const crop = getLoreImageCrop(value)
-            const fullWidth = getLoreImageFullWidth(value)
-            const ignoreEntryCrop = getLoreImageIgnoreEntryCrop(value)
-            return (
-              <div key={field.id} className="lore-entry-field-wrap">
-                {field.label && <label className="lore-entry-label">{field.label}</label>}
-                <div className="lore-entry-image-wrap">
-                  {path && (
-                    <div className="lore-entry-image-crop-preview">
-                      <img
-                        src={projectPath ? convertFileSrc(`${projectPath}/${path}`.replace(/\\/g, '/')) : ''}
-                        className="lore-entry-image-preview"
-                        alt={field.label ?? 'image'}
-                        style={{
-                          '--lore-image-zoom': crop.zoom,
-                          '--lore-image-pan-x': `${crop.x}px`,
-                          '--lore-image-pan-y': `${crop.y}px`,
-                        } as CSSProperties}
-                      />
+          <div className="lore-entry-field-wrap">
+            <label className="lore-entry-label">Keywords</label>
+            <input
+              className="modal-input"
+              value={keywordText}
+              onChange={e => setKeywordText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
+              placeholder="Comma-separated aliases..."
+            />
+          </div>
+
+          {(category.subcategories ?? []).length > 0 && (
+            <div className="lore-entry-field-wrap">
+              <label className="lore-entry-label">Subcategory</label>
+              <select
+                className="modal-input"
+                value={local.subcategoryId ?? ''}
+                onChange={e => setLocal(prev => prev ? { ...prev, subcategoryId: e.target.value || undefined } : prev)}
+                onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
+              >
+                <option value="">Uncategorized</option>
+                {(category.subcategories ?? []).map(subcategory => (
+                  <option key={subcategory.id} value={subcategory.id}>{subcategory.name || 'Unnamed subcategory'}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {activeFields.map(field => {
+            if (field.type === 'divider') {
+              return <div key={field.id} className="lore-entry-divider" />
+            }
+            if (field.type === 'image') {
+              const value = local.fields[field.id]
+              const path = getLoreImagePath(value)
+              const displayPath = getLoreImageDisplayPath(value)
+              return (
+                <div key={field.id} className="lore-entry-field-wrap">
+                  {field.label && <label className="lore-entry-label">{field.label}</label>}
+                  <div className="lore-entry-image-wrap">
+                    {displayPath && (
+                      <div className="lore-entry-image-crop-preview">
+                        <img
+                          src={projectPath ? convertFileSrc(`${projectPath}/${displayPath}`.replace(/\\/g, '/')) : ''}
+                          className="lore-entry-image-preview"
+                          alt={field.label ?? 'image'}
+                        />
+                      </div>
+                    )}
+                    <div className="lore-entry-image-actions">
+                      <button type="button" className="welcome-btn" onClick={() => handleImagePick(field.id)}>
+                        {path ? 'Change image' : 'Select image'}
+                      </button>
+                      {path && (
+                        <button
+                          type="button"
+                          className="welcome-btn"
+                          onClick={() => openCropEditor(field.id, path, field.label ?? 'Image')}
+                        >
+                          Edit
+                        </button>
+                      )}
                     </div>
-                  )}
-                  <button type="button" className="welcome-btn" onClick={() => handleImagePick(field.id)}>
-                    {path ? 'Change image' : 'Select image'}
-                  </button>
-                  {path && (
-                    <div className="lore-entry-image-crop-controls">
-                      <label>
-                        <span>Zoom</span>
-                        <input
-                          type="range"
-                          min="1"
-                          max="4"
-                          step="0.05"
-                          value={crop.zoom}
-                          onChange={event => updateImageCrop(field.id, { zoom: Number(event.target.value) })}
-                        />
-                      </label>
-                      <label>
-                        <span>Pan X</span>
-                        <input
-                          type="range"
-                          min="-180"
-                          max="180"
-                          step="1"
-                          value={crop.x}
-                          onChange={event => updateImageCrop(field.id, { x: Number(event.target.value) })}
-                        />
-                      </label>
-                      <label>
-                        <span>Pan Y</span>
-                        <input
-                          type="range"
-                          min="-180"
-                          max="180"
-                          step="1"
-                          value={crop.y}
-                          onChange={event => updateImageCrop(field.id, { y: Number(event.target.value) })}
-                        />
-                      </label>
-                      <label className="lore-entry-image-full-width-toggle">
-                        <span>Full width</span>
-                        <input
-                          type="checkbox"
-                          checked={fullWidth}
-                          onChange={event => updateImageFullWidth(field.id, event.target.checked)}
-                        />
-                      </label>
-                      <label className="lore-entry-image-full-width-toggle">
-                        <span>Ignore crop in entry</span>
-                        <input
-                          type="checkbox"
-                          checked={ignoreEntryCrop}
-                          onChange={event => updateImageIgnoreEntryCrop(field.id, event.target.checked)}
-                        />
-                      </label>
-                    </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            )
-          }
-          if (field.type === 'textarea') {
+              )
+            }
+            if (field.type === 'textarea') {
+              return (
+                <div key={field.id} className="lore-entry-field-wrap">
+                  {field.label && <label className="lore-entry-label">{field.label}</label>}
+                  <textarea
+                    className="modal-input lore-entry-textarea"
+                    ref={element => {
+                      textareaRefs.current[field.id] = element
+                      resizeLoreEntryTextarea(element)
+                    }}
+                    value={getLoreFieldText(local.fields[field.id])}
+                    onChange={e => {
+                      resizeLoreEntryTextarea(e.currentTarget)
+                      setLocal(prev => prev ? {
+                        ...prev,
+                        fields: { ...prev.fields, [field.id]: e.target.value },
+                      } : prev)
+                    }}
+                    onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
+                    placeholder={`${field.label ?? 'Description'}...`}
+                  />
+                </div>
+              )
+            }
             return (
               <div key={field.id} className="lore-entry-field-wrap">
                 {field.label && <label className="lore-entry-label">{field.label}</label>}
-                <textarea
-                  className="modal-input lore-entry-textarea"
+                <input
+                  className="modal-input"
                   value={getLoreFieldText(local.fields[field.id])}
                   onChange={e => setLocal(prev => prev ? {
                     ...prev,
                     fields: { ...prev.fields, [field.id]: e.target.value },
                   } : prev)}
                   onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-                  placeholder={`${field.label ?? 'Description'}...`}
+                  placeholder={`${field.label ?? 'Field'}...`}
                 />
               </div>
             )
-          }
-          return (
-            <div key={field.id} className="lore-entry-field-wrap">
-              {field.label && <label className="lore-entry-label">{field.label}</label>}
-              <input
-                className="modal-input"
-                value={getLoreFieldText(local.fields[field.id])}
-                onChange={e => setLocal(prev => prev ? {
-                  ...prev,
-                  fields: { ...prev.fields, [field.id]: e.target.value },
-                } : prev)}
-                onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-                placeholder={`${field.label ?? 'Field'}...`}
-              />
-            </div>
-          )
-        })}
+          })}
+        </div>
 
         <div className="modal-footer">
-          <button className="welcome-btn" onClick={onCancel}>Cancel</button>
+          <button className="modal-btn" onClick={onCancel}>Cancel</button>
           <button
-            className="welcome-btn"
+            className="modal-btn modal-btn-primary"
             onClick={() => onSave(category.id, {
               ...local,
               keywords: keywordText.split(',').map(keyword => keyword.trim()).filter(Boolean),
@@ -673,5 +820,106 @@ export function LoreEntryEditorModal({
         </div>
       </div>
     </div>
+    {cropEditor && projectPath && (
+      <div className="modal-overlay" style={{ zIndex: 180 }}>
+        <div className="modal-box lore-image-crop-modal">
+          <p className="modal-title">Edit Image</p>
+          <div className="lore-image-crop-stage">
+            <div className="lore-image-crop-frame">
+              {cropSourceUrl && (
+                <img
+                  ref={cropImageRef}
+                  src={cropSourceUrl}
+                  alt={cropEditor.label}
+                  draggable={false}
+                  onLoad={initializeCropRect}
+                />
+              )}
+              {cropRect && (
+                <div
+                  className="lore-image-crop-selection"
+                  style={{
+                    left: `${cropRect.x}px`,
+                    top: `${cropRect.y}px`,
+                    width: `${cropRect.size}px`,
+                    height: `${cropRect.size}px`,
+                  }}
+                  onPointerDown={event => {
+                    event.preventDefault()
+                    cropDragRef.current = {
+                      mode: 'move',
+                      pointerId: event.pointerId,
+                      startX: event.clientX,
+                      startY: event.clientY,
+                      rect: cropRect,
+                    }
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                  }}
+                  onPointerMove={event => updateCropDrag(event.clientX, event.clientY)}
+                  onPointerUp={endCropDrag}
+                  onPointerCancel={endCropDrag}
+                >
+                  {(['nw', 'ne', 'sw', 'se'] as const).map(handle => (
+                    <span
+                      key={handle}
+                      className={`lore-image-crop-handle ${handle}`}
+                      onPointerDown={event => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        cropDragRef.current = {
+                          mode: handle,
+                          pointerId: event.pointerId,
+                          startX: event.clientX,
+                          startY: event.clientY,
+                          rect: cropRect,
+                        }
+                        event.currentTarget.setPointerCapture(event.pointerId)
+                      }}
+                      onPointerMove={event => updateCropDrag(event.clientX, event.clientY)}
+                      onPointerUp={endCropDrag}
+                      onPointerCancel={endCropDrag}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="lore-image-crop-info">
+            Crop the square image used for Lore Book cards, pinned entries, and compact previews.
+          </div>
+          <div className="lore-image-crop-options">
+            <label>
+              <input
+                type="checkbox"
+                checked={cropEditor.fullWidth}
+                onChange={event => {
+                  const fullWidth = event.currentTarget.checked
+                  setCropEditor(editor => editor ? { ...editor, fullWidth } : editor)
+                }}
+              />
+              <span>Full width in entry</span>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={cropEditor.ignoreEntryCrop}
+                onChange={event => {
+                  const ignoreEntryCrop = event.currentTarget.checked
+                  setCropEditor(editor => editor ? { ...editor, ignoreEntryCrop } : editor)
+                }}
+              />
+              <span>Ignore crop in entry</span>
+            </label>
+          </div>
+          <div className="modal-footer">
+            <button className="welcome-btn" onClick={() => setCropEditor(null)} disabled={cropSaving}>Cancel</button>
+            <button className="welcome-btn" onClick={saveCrop} disabled={cropSaving || !cropRect}>
+              {cropSaving ? 'Saving...' : 'Done'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }

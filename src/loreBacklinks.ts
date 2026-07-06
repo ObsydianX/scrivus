@@ -54,8 +54,9 @@ export async function buildLoreBacklinks(
   projectPath: string,
   tree: TreeNode[],
   loreBook: LoreBook,
+  manuscriptFolderId = 1,
 ): Promise<Record<string, LoreBacklink[]>> {
-  const manuscript = findNode(tree, 1)
+  const manuscript = findNode(tree, manuscriptFolderId)
   const docs = manuscript?.type === 'folder' ? collectDocs(manuscript) : []
   const entries = loreBook.categories.flatMap(category => category.entries)
   const patterns = entries

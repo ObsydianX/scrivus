@@ -28,13 +28,32 @@ export type Project = {
   name: string
   path: string
   tree: TreeNode[]
+  manuscripts: Manuscript[]
+  activeManuscriptId: string
   styles: ProjectStyles
   settings: ProjectSettings
   lastActiveTabIndex?: number
+  // Legacy project-wide compile settings. Kept during the 0.3.0 migration so
+  // older projects can be normalized before callers move to manuscript state.
   compileSelections: Record<string, string>
   compileIncludes: Record<string, boolean>
   compileCollapsed: Record<string, boolean>
   writingStats: WritingStats
+}
+
+export type Manuscript = {
+  id: string
+  folderId: number
+  name: string
+  title: string
+  subtitle: string
+  author: string
+  coverImage: string
+  lastActiveId?: number | null
+  lastActiveTabIndex?: number
+  compileSelections: Record<string, string>
+  compileIncludes: Record<string, boolean>
+  compileCollapsed: Record<string, boolean>
 }
 
 export type WritingStats = {
@@ -137,9 +156,17 @@ export type LoreFieldValue = string | LoreImageValue
 
 export type LoreImageValue = {
   path: string
+  croppedPath?: string
   crop?: LoreImageCrop
+  cropRect?: LoreImageCropRect
   fullWidth?: boolean
   ignoreEntryCrop?: boolean
+}
+
+export type LoreImageCropRect = {
+  x: number
+  y: number
+  size: number
 }
 
 export type LoreImageCrop = {
@@ -225,6 +252,13 @@ export type RevisionComment = {
   resolved: boolean
   startOffset: number
   endOffset: number
+  reviewId?: string
+  reviewSceneTitle?: string
+  reviewChapterTitle?: string
+  reviewReviewerName?: string
+  reviewSourceTabIndex?: number
+  reviewSourceTabName?: string
+  unanchored?: boolean
 }
 
 export type OutlineRow = {

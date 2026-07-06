@@ -21,6 +21,7 @@ function isRowInFolderRange(chapters: CompileChapterEntry[], parentIndex: number
 
 type CompileModalProps = {
   loading: boolean
+  busy?: boolean
   chapters: CompileChapterEntry[]
   format: CompileFormat
   frontMatter: boolean
@@ -40,10 +41,12 @@ type CompileModalProps = {
   onCollapsedChange: (updates: Record<string, boolean>) => void
   onOpenStyles: () => void
   onExport: (chapters: CompileChapterEntry[]) => void
+  onCreateReviewPackage: (chapters: CompileChapterEntry[]) => void
 }
 
 export function CompileModal({
   loading,
+  busy = false,
   chapters,
   format,
   frontMatter,
@@ -63,6 +66,7 @@ export function CompileModal({
   onCollapsedChange,
   onOpenStyles,
   onExport,
+  onCreateReviewPackage,
 }: CompileModalProps) {
   const [draftChapters, setDraftChapters] = useState(chapters)
   const [draftCollapsed, setDraftCollapsed] = useState(collapsed)
@@ -181,7 +185,7 @@ export function CompileModal({
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         zIndex: 2000,
       }}
-      onClick={onClose}
+      onClick={busy ? undefined : onClose}
     >
       <div
         style={{
@@ -213,7 +217,7 @@ export function CompileModal({
             {!loading && (
               <select
                 value={style}
-                disabled={format === 'epub'}
+                disabled={format === 'epub' || busy}
                 title={format === 'epub' ? 'Style presets apply to DOCX exports; e-readers control EPUB styling' : undefined}
                 onChange={event => onStyleChange(event.target.value as CompileStylePreset)}
                 style={{
@@ -234,7 +238,7 @@ export function CompileModal({
               </select>
             )}
             <button
-              onClick={onClose}
+              onClick={busy ? undefined : onClose}
               style={{
                 background: 'none', border: 'none', color: 'var(--text-muted)',
                 cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 2,
@@ -523,6 +527,7 @@ export function CompileModal({
                           type="checkbox"
                           className="compile-checkbox"
                           checked={chapter.included}
+                          disabled={busy}
                           onChange={e => {
                             const checked = e.target.checked
                             const updates: Record<string, boolean> = {}
@@ -561,6 +566,7 @@ export function CompileModal({
                           <input
                             type="checkbox"
                             checked={scene.included}
+                            disabled={busy}
                             style={{ accentColor: 'var(--accent)', flexShrink: 0 }}
                             onChange={e => {
                               const checked = e.target.checked
@@ -589,7 +595,7 @@ export function CompileModal({
                           </span>
                           <select
                             value={scene.selectedTab}
-                            disabled={!scene.included}
+                            disabled={!scene.included || busy}
                             onChange={e => {
                               const val = e.target.value
                               preserveSceneListScroll()
@@ -607,8 +613,8 @@ export function CompileModal({
                               background: 'var(--input-bg)',
                               border: '1px solid var(--border-soft)',
                               borderRadius: 3,
-                              color: scene.included ? 'var(--text-main)' : 'var(--text-muted)',
-                              opacity: scene.included ? 1 : 0.55,
+                              color: scene.included && !busy ? 'var(--text-main)' : 'var(--text-muted)',
+                              opacity: scene.included && !busy ? 1 : 0.55,
                               fontSize: 10,
                               padding: '2px 4px',
                               width: 110,
@@ -616,7 +622,7 @@ export function CompileModal({
                               maxWidth: 110,
                               flexShrink: 0,
                               overflow: 'hidden',
-                              cursor: scene.included ? 'pointer' : 'not-allowed',
+                              cursor: scene.included && !busy ? 'pointer' : 'not-allowed',
                             }}
                           >
                             <option value="__last__">Use Last Tab</option>
@@ -641,17 +647,24 @@ export function CompileModal({
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
           flexShrink: 0,
         }}>
-          <button className="modal-btn" onClick={onOpenStyles}>
+          <button className="modal-btn" onClick={onOpenStyles} disabled={busy}>
             <i className="ti ti-palette" aria-hidden="true" /> Styles
           </button>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <button className="modal-btn" onClick={onClose}>
+            <button className="modal-btn" onClick={onClose} disabled={busy}>
               Cancel
             </button>
             <button
               className="modal-btn modal-btn-primary"
+              onClick={() => onCreateReviewPackage(draftChapters)}
+              disabled={loading || busy || draftChapters.every(ch => !ch.included)}
+            >
+              Create Review Package
+            </button>
+            <button
+              className="modal-btn modal-btn-primary"
               onClick={() => onExport(draftChapters)}
-              disabled={loading || draftChapters.every(ch => !ch.included)}
+              disabled={loading || busy || draftChapters.every(ch => !ch.included)}
             >
               Export
             </button>

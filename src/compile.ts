@@ -30,9 +30,20 @@ async function buildSceneEntry(doc: DocNode, projectPath: string): Promise<Compi
 
 export async function buildCompileChapters(
   tree: TreeNode[],
-  projectPath: string
+  projectPath: string,
+  manuscriptFolderId = 1,
 ): Promise<CompileChapterEntry[]> {
-  const manuscript = tree.find(n => n.id === 1)
+  const findFolder = (nodes: TreeNode[]): FolderNode | null => {
+    for (const node of nodes) {
+      if (node.id === manuscriptFolderId && node.type === 'folder') return node
+      if (node.type === 'folder') {
+        const found = findFolder(node.children)
+        if (found) return found
+      }
+    }
+    return null
+  }
+  const manuscript = findFolder(tree)
   if (!manuscript || manuscript.type !== 'folder') return []
 
   const entries: CompileChapterEntry[] = []

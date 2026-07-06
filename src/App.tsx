@@ -8,8 +8,8 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { TextSelection } from '@tiptap/pm/state'
 import { open, save } from '@tauri-apps/plugin-dialog'
-import { exists, readFile, readTextFile, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
-import { join } from '@tauri-apps/api/path'
+import { exists, mkdir, readFile, readTextFile, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
+import { appDataDir, join } from '@tauri-apps/api/path'
 import { isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { exit } from '@tauri-apps/plugin-process'
@@ -58,7 +58,7 @@ import {
   ProjectSettingsModal,
   StylesModal,
   THEME_OPTIONS,
-  type CoverImageAction,
+  type ManuscriptCoverImageActions,
 } from './components/ProjectModals'
 import {
   addDocToTree,
@@ -86,20 +86,32 @@ import {
   ATLAS_WARNING_MEGAPIXELS,
   DEFAULT_ATLAS,
   DEFAULT_MIND_MAP,
+  DEFAULT_PROJECT_SETTINGS,
   PROJECT_FORMAT_VERSION,
   SCRIVUS_VERSION,
   DEFAULT_SCENE_METADATA,
   DEFAULT_STYLES,
+  createDefaultManuscript,
   normalizeMindMap,
   normalizeAtlas,
   normalizeProjectSettings,
   normalizeSceneMetadata,
   normalizeProjectStyles,
   normalizeWritingStats,
+  normalizeManuscripts,
 } from './constants'
 import { htmlFragmentText, parseHtmlFragment } from './html'
 import { allocateNextId, getNextIdValue, setNextIdValue } from './idCounter'
 import { buildLoreBacklinks, type LoreBacklink } from './loreBacklinks'
+import { escapeAttr } from './text'
+import { getLoreImageCroppedPath, getLoreImagePath } from './loreImages'
+import {
+  getActiveManuscript,
+  getActiveManuscriptDocs,
+  getActiveManuscriptFolder,
+  manuscriptBookSettings,
+  updateActiveManuscript,
+} from './manuscripts'
 import { createImportedProjectOnDisk, createProjectOnDisk, projectPackageFolderName, readProjectJson } from './projectFiles'
 import { migrateProjectData } from './projectMigrations'
 import { clearProjectSearchCache, searchProject, type SearchResult } from './search'
@@ -121,7 +133,9 @@ import {
   readAtlasFile,
   readCanvasFile,
   readNotesFile,
+  saveLoreCroppedImage,
   readProjectDictionary,
+  readReviewSnapshots,
   readRevisionFile,
   readSceneFile,
   saveDefaultStyles,
@@ -129,6 +143,7 @@ import {
   saveRecentProjects,
   trashNode,
   writeProjectDictionary,
+  writeReviewSnapshots,
   writeAtlasFile,
   writeLoreBookFile,
   writeCanvasFile,
@@ -139,6 +154,24 @@ import {
 import { parseWordDocxProject } from './wordImport'
 import { countHtmlWords, countLatestRevisionWords } from './wordCount'
 import { buildEpub, type EpubCoverImage } from './epubCompile'
+import {
+  DEFAULT_WORLD_BUNDLE_SELECTION,
+  createWorldBundle,
+  loadWorldBundle,
+  writeWorldBundleAssets,
+  type LoadedWorldBundle,
+  type WorldBundleSelection,
+} from './worldBundles'
+import {
+  buildReviewSnapshot,
+  createReviewCommentsPackage,
+  createReviewId,
+  createReviewPackage,
+  loadReviewCommentsPackage,
+  loadReviewPackage,
+  type ReviewPackage,
+} from './reviewPackages'
+import type { ReviewSnapshot } from './storage'
 import {
   emptyTrashFolder,
   loadTrashItems,
@@ -177,6 +210,7 @@ import type {
   LoreBook,
   LoreCategory,
   LoreEntry,
+  Manuscript,
   MindMap,
   MindMapNode,
   MindMapSceneOption,
@@ -252,6 +286,9 @@ export default function App() {
     currentVersion: SCRIVUS_VERSION,
   })
   const [fileMenuOpen, setFileMenuOpen] = useState(false)
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false)
+  const [reviewMenuOpen, setReviewMenuOpen] = useState(false)
+  const [worldMenuOpen, setWorldMenuOpen] = useState(false)
   const [styles, setStyles] = useState<ProjectStyles>(DEFAULT_STYLES)
   const [showStyles, setShowStyles] = useState(false)
   const [stylesTab, setStylesTab] = useState<'chapter' | 'body'>('chapter')
@@ -265,6 +302,15 @@ export default function App() {
   const [projectRecovery, setProjectRecovery] = useState<{ name: string; path: string; details: string } | null>(null)
   const [openingProject, setOpeningProject] = useState(false)
   const [creatingProject, setCreatingProject] = useState(false)
+  const [showExportWorld, setShowExportWorld] = useState(false)
+  const [worldExportSelection, setWorldExportSelection] = useState<WorldBundleSelection>(DEFAULT_WORLD_BUNDLE_SELECTION)
+  const [worldImportBundle, setWorldImportBundle] = useState<LoadedWorldBundle | null>(null)
+  const [worldImportSelection, setWorldImportSelection] = useState<WorldBundleSelection>(DEFAULT_WORLD_BUNDLE_SELECTION)
+  const [worldBundleBusy, setWorldBundleBusy] = useState(false)
+  const [reviewPackage, setReviewPackage] = useState<ReviewPackage | null>(null)
+  const [reviewPackageBusy, setReviewPackageBusy] = useState(false)
+  const [pendingReviewChapters, setPendingReviewChapters] = useState<CompileChapterEntry[] | null>(null)
+  const [reviewerNameDraft, setReviewerNameDraft] = useState('')
 
   // ── Editor stats and trash state ──
   const [wordCount, setWordCount] = useState(0)
@@ -310,6 +356,9 @@ export default function App() {
   const treeRef = useRef<TreeNode[]>([])
   const activeIdRef = useRef<number | null>(null)
   const fileMenuRef = useRef<HTMLDivElement>(null)
+  const projectMenuRef = useRef<HTMLDivElement>(null)
+  const reviewMenuRef = useRef<HTMLDivElement>(null)
+  const worldMenuRef = useRef<HTMLDivElement>(null)
   const editMenuRef = useRef<HTMLDivElement>(null)
   const helpMenuRef = useRef<HTMLDivElement>(null)
   const themeMenuRef = useRef<HTMLDivElement>(null)
@@ -417,6 +466,7 @@ export default function App() {
   const [loreEntryEditor, setLoreEntryEditor] = useState<LoreEntry | null>(null)
   const [confirmDeleteLoreCategory, setConfirmDeleteLoreCategory] = useState<LoreCategory | null>(null)
   const [confirmDeleteLoreEntry, setConfirmDeleteLoreEntry] = useState<LoreEntry | null>(null)
+  const [confirmDeleteManuscript, setConfirmDeleteManuscript] = useState<Manuscript | null>(null)
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null)
   const [loreLinkChoice, setLoreLinkChoice] = useState<LoreLinkChoice | null>(null)
   const lastLoreMouseBackRef = useRef(0)
@@ -432,6 +482,7 @@ export default function App() {
   // ── Revision workspace state ──
   const [revisionComments, setRevisionComments] = useState<RevisionComment[]>([])
   const revisionCommentsRef = useRef<RevisionComment[]>([])
+  const [outlineCountableCommentIds, setOutlineCountableCommentIds] = useState<Set<string>>(new Set())
   const [revisionActiveId, setRevisionActiveId] = useState<number | null>(null)
   const [revisionTabs, setRevisionTabs] = useState<SceneTab[]>([])
   const [revisionActiveTabIndex, setRevisionActiveTabIndex] = useState(0)
@@ -800,8 +851,8 @@ export default function App() {
       outlineProjectPathRef.current = projectRef.current.path
     }
 
-    const manuscript = findNode(treeRef.current, 1)
-    if (!manuscript || manuscript.type !== 'folder') {
+    const manuscript = getActiveManuscriptFolder(projectRef.current, treeRef.current)
+    if (!manuscript) {
       setOutlineRows([])
       return
     }
@@ -998,7 +1049,7 @@ export default function App() {
       return
     }
     let cancelled = false
-    buildLoreBacklinks(project.path, tree, loreBook)
+    buildLoreBacklinks(project.path, tree, loreBook, getActiveManuscript(project)?.folderId ?? 1)
       .then(backlinks => {
         if (!cancelled) setLoreBacklinks(backlinks)
       })
@@ -1030,6 +1081,15 @@ export default function App() {
       if (fileMenuRef.current && !fileMenuRef.current.contains(e.target as Node)) {
         setFileMenuOpen(false)
       }
+      if (projectMenuRef.current && !projectMenuRef.current.contains(e.target as Node)) {
+        setProjectMenuOpen(false)
+      }
+      if (reviewMenuRef.current && !reviewMenuRef.current.contains(e.target as Node)) {
+        setReviewMenuOpen(false)
+      }
+      if (worldMenuRef.current && !worldMenuRef.current.contains(e.target as Node)) {
+        setWorldMenuOpen(false)
+      }
       if (editMenuRef.current && !editMenuRef.current.contains(e.target as Node)) {
         setEditMenuOpen(false)
       }
@@ -1041,8 +1101,8 @@ export default function App() {
         setPreviewTheme(null)
       }
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('mousedown', handler, true)
+    return () => document.removeEventListener('mousedown', handler, true)
   }, [])
 
   useEffect(() => {
@@ -1498,10 +1558,39 @@ export default function App() {
   }
 
   const saveProjectState = (project: Project, activeId: number | null = activeIdRef.current, activeTabIndex = activeTabIndexRef.current) => {
-    const updatedProject = { ...project, lastActiveTabIndex: activeTabIndex }
+    const activeManuscript = getActiveManuscript(project)
+    const activeDocs = activeId !== null ? getActiveManuscriptDocs(project, treeRef.current) : []
+    const updatedProject = activeManuscript && activeId !== null && activeDocs.some(doc => doc.id === activeId)
+      ? updateActiveManuscript(
+        { ...project, lastActiveTabIndex: activeTabIndex },
+        manuscript => ({ ...manuscript, lastActiveId: activeId, lastActiveTabIndex: activeTabIndex }),
+      )
+      : { ...project, lastActiveTabIndex: activeTabIndex }
     projectRef.current = updatedProject
     setProject(updatedProject)
     saveProjectToDisk(updatedProject, activeId ?? undefined, activeTabIndex)
+  }
+
+  const clearActiveEditor = () => {
+    setActiveId(null)
+    activeIdRef.current = null
+    setSceneTabs([])
+    sceneTabsRef.current = []
+    setActiveTabIndex(0)
+    activeTabIndexRef.current = 0
+    setEditorSplitTabIndex(null)
+    bodyHtmlRef.current = ''
+    rawFileRef.current = ''
+    editor?.commands.setContent('')
+    setTitleValue('')
+    setWordCount(0)
+    setCharCount(0)
+    setRevisionActiveId(null)
+    setRevisionTitle('')
+    setRevisionTabs([])
+    setRevisionActiveTabIndex(0)
+    setRevisionContent('')
+    setRevisionActiveCommentId(null)
   }
 
   // Saves the currently active scene and project metadata.
@@ -1536,6 +1625,10 @@ export default function App() {
       clearTimeout(saveLabelTimer.current)
       saveLabelTimer.current = null
     }
+    if (reviewPackage) {
+      setSaveLabel('')
+      return
+    }
     setSaveLabel('editing…')
     saveTimer.current = setTimeout(() => {
       saveActive()
@@ -1549,7 +1642,7 @@ export default function App() {
         saveLabelTimer.current = null
       }, 1200)
     }, 900)
-  }, [saveActive, refreshOutlineRows])
+  }, [reviewPackage, saveActive, refreshOutlineRows])
 
   // #region === WRITING SPRINTS ===
 
@@ -2281,6 +2374,16 @@ export default function App() {
 
   // Deletes a category and all its entries.
   const deleteLoreCategory = async (categoryId: string) => {
+    const category = loreBookRef.current.categories.find(c => c.id === categoryId)
+    if (projectRef.current && category) {
+      const imagePaths = category.entries
+        .flatMap(entry => Object.values(entry.fields))
+        .flatMap(value => [getLoreImagePath(value), getLoreImageCroppedPath(value)])
+        .filter(Boolean)
+      for (const imagePath of imagePaths) {
+        await deleteLoreImage(projectRef.current.path, imagePath)
+      }
+    }
     const updated = {
       ...loreBookRef.current,
       categories: loreBookRef.current.categories.filter(c => c.id !== categoryId),
@@ -2300,17 +2403,22 @@ export default function App() {
     `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 
   // Loads a scene into the revision viewer (read-only).
-  const selectRevisionDoc = async (id: number) => {
+  const selectRevisionDoc = async (id: number, targetComment?: RevisionComment) => {
     await selectDoc(id)
     const node = findNode(treeRef.current, id)
     if (node && node.type === 'doc' && projectRef.current) {
       const raw = await readSceneFile(projectRef.current.path, node.file)
       const tabs = parseSceneTabs(raw)
+      const targetTabIndex = targetComment
+        ? targetComment.tabIndex ?? Math.max(tabs.length - 1, 0)
+        : undefined
       const rememberedIndex = sceneActiveTabRef.current[id]
-      const safeIndex =
-        rememberedIndex !== undefined && rememberedIndex >= 0 && rememberedIndex < tabs.length
-          ? rememberedIndex
-          : tabs.length - 1
+      let safeIndex = tabs.length - 1
+      if (targetTabIndex !== undefined && targetTabIndex >= 0 && targetTabIndex < tabs.length) {
+        safeIndex = targetTabIndex
+      } else if (rememberedIndex !== undefined && rememberedIndex >= 0 && rememberedIndex < tabs.length) {
+        safeIndex = rememberedIndex
+      }
       setRevisionTabs(tabs)
       setRevisionActiveTabIndex(safeIndex)
       setRevisionContent(tabs[safeIndex]?.content ?? '')
@@ -2333,11 +2441,18 @@ export default function App() {
   const addRevisionComment = async (quote: string, text: string) => {
     if (!projectRef.current || !revisionActiveId || !revisionPendingComment) return
     const id = generateRevisionId()
+    const reviewScene = reviewPackage?.snapshot.scenes.find(scene => scene.sceneId === revisionActiveId)
+    const commentTabIndex = reviewPackage ? revisionActiveTabIndex : revisionActiveTabIndex
     const newComment: RevisionComment = {
-      id, sceneId: revisionActiveId, tabIndex: revisionActiveTabIndex, quote, text,
+      id, sceneId: revisionActiveId, tabIndex: commentTabIndex, quote, text,
       createdAt: Date.now(), resolved: false,
       startOffset: revisionPendingComment.startOffset,
       endOffset: revisionPendingComment.endOffset,
+      reviewId: reviewPackage?.snapshot.reviewId,
+      reviewChapterTitle: reviewScene?.chapterTitle,
+      reviewSceneTitle: reviewScene?.title,
+      reviewSourceTabIndex: reviewScene?.tabIndex,
+      reviewSourceTabName: reviewScene?.tabName,
     }
 
     // Replace the temporary 'pending' id with the real comment id
@@ -2573,6 +2688,17 @@ export default function App() {
 
   // Deletes an entry.
   const deleteLoreEntry = async (categoryId: string, entryId: string) => {
+    const entry = loreBookRef.current.categories
+      .find(c => c.id === categoryId)
+      ?.entries.find(e => e.id === entryId)
+    if (projectRef.current && entry) {
+      const imagePaths = Object.values(entry.fields)
+        .flatMap(value => [getLoreImagePath(value), getLoreImageCroppedPath(value)])
+        .filter(Boolean)
+      for (const imagePath of imagePaths) {
+        await deleteLoreImage(projectRef.current.path, imagePath)
+      }
+    }
     const updated = { ...loreBookRef.current }
     updated.categories = updated.categories.map(c => {
       if (c.id !== categoryId) return c
@@ -2593,7 +2719,7 @@ export default function App() {
   }
 
   // Restores a trashed scene/folder and moves its files back into scenes.
-  const restoreFromTrash = async (sidecarId: string, node: TreeNode, originalFolderId: number, parentSidecarId?: string) => {
+  const restoreFromTrash = async (sidecarId: string, node: TreeNode, originalFolderId: number, parentSidecarId?: string, manuscript?: Manuscript) => {
     if (!projectRef.current) return
     try {
       const restored = await restoreTrashItem({
@@ -2603,19 +2729,49 @@ export default function App() {
         node,
         originalFolderId,
         parentSidecarId,
+        fallbackFolderId: getActiveManuscript(projectRef.current)?.folderId ?? 1,
+        restoreToProjectRoot: Boolean(manuscript),
       })
+
+      const restoredManuscripts = manuscript
+        ? [
+          ...projectRef.current.manuscripts.filter(item => item.id !== manuscript.id),
+          { ...manuscript, folderId: node.id, name: node.label },
+        ]
+        : projectRef.current.manuscripts
+      const updatedProject = manuscript
+        ? {
+          ...projectRef.current,
+          tree: restored.tree,
+          manuscripts: restoredManuscripts,
+          activeManuscriptId: manuscript.id,
+        }
+        : { ...projectRef.current, tree: restored.tree }
 
       setTree(restored.tree)
       treeRef.current = restored.tree
       setTrashItems(restored.trashItems)
-      saveProjectToDisk({ ...projectRef.current, tree: restored.tree }, activeIdRef.current ?? undefined)
+      projectRef.current = updatedProject
+      setProject(updatedProject)
+      saveProjectToDisk(updatedProject, activeIdRef.current ?? undefined)
 
       if (isTrashPreview) {
         setIsTrashPreview(false)
-        setActiveId(null)
-        setTitleValue('')
-        bodyHtmlRef.current = ''
-        editor?.commands.setContent('')
+        clearActiveEditor()
+      }
+
+      if (manuscript) {
+        const docs = getActiveManuscriptDocs(updatedProject, restored.tree)
+        const rememberedDoc = manuscript.lastActiveId
+          ? docs.find(doc => doc.id === manuscript.lastActiveId)
+          : null
+        const nextDoc = rememberedDoc ?? docs[0] ?? null
+        if (nextDoc) {
+          if (typeof manuscript.lastActiveTabIndex === 'number') sceneActiveTabRef.current[nextDoc.id] = manuscript.lastActiveTabIndex
+          await selectDoc(nextDoc.id)
+        } else {
+          clearActiveEditor()
+        }
       }
     } catch (e) {
       showMessage('Failed to restore: ' + String(e), 'Error', 'error')
@@ -2668,7 +2824,12 @@ export default function App() {
       try {
         const activeProject = projectRef.current
         if (!activeProject) return
-        const results = await searchProject(activeProject.path, treeRef.current, query)
+        const results = await searchProject(
+          activeProject.path,
+          treeRef.current,
+          query,
+          getActiveManuscript(activeProject)?.folderId ?? 1,
+        )
         if (searchRequestIdRef.current === requestId) setSearchResults(results)
       } catch (e) {
         if (searchRequestIdRef.current === requestId) {
@@ -2908,9 +3069,7 @@ export default function App() {
       setFnrStatus('Replaced 1 match.')
       setFnrVersion(v => v + 1)
     } else {
-      const manuscript = findNode(treeRef.current, 1)
-      if (!manuscript || manuscript.type !== 'folder') return
-      const docs = collectDocs(manuscript)
+      const docs = getActiveManuscriptDocs(projectRef.current, treeRef.current)
       for (const doc of docs) {
         const content = await readSceneFile(projectRef.current.path, doc.file)
         const clean = stripFnrHighlights(content)
@@ -2947,9 +3106,7 @@ export default function App() {
       saveActive()
       totalCount = count
     } else {
-      const manuscript = findNode(treeRef.current, 1)
-      if (!manuscript || manuscript.type !== 'folder') return
-      const docs = collectDocs(manuscript)
+      const docs = getActiveManuscriptDocs(projectRef.current, treeRef.current)
       const snapshot: { fileId: string; content: string }[] = []
       for (const doc of docs) {
         const content = await readSceneFile(projectRef.current.path, doc.file)
@@ -3142,6 +3299,7 @@ export default function App() {
     setAtlas(DEFAULT_ATLAS)
     atlasRef.current = DEFAULT_ATLAS
     setSpellcheckMenu(null)
+    setReviewPackage(null)
   }
 
   // Exports the manuscript folder to a DOCX document.
@@ -3157,10 +3315,11 @@ export default function App() {
 
     try {
       await runProjectBackup('compile')
-      const chapters = await buildCompileChapters(tree, project.path)
+      const activeManuscript = getActiveManuscript(projectRef.current)
+      const chapters = await buildCompileChapters(tree, project.path, activeManuscript?.folderId ?? 1)
       // Restore saved tab and inclusion selections, defaulting to the current tree.
-      const selections = projectRef.current?.compileSelections ?? {}
-      const includes = projectRef.current?.compileIncludes ?? {}
+      const selections = activeManuscript?.compileSelections ?? projectRef.current?.compileSelections ?? {}
+      const includes = activeManuscript?.compileIncludes ?? projectRef.current?.compileIncludes ?? {}
       const ancestorIncludedByDepth: boolean[] = []
       const restored = chapters.map(ch => {
         const depth = ch.depth ?? 0
@@ -3194,37 +3353,40 @@ export default function App() {
 
   const updateCompileSelection = (fileId: string, value: string) => {
     if (!projectRef.current) return
-    const updated: Project = {
-      ...projectRef.current,
-      compileSelections: {
-        ...projectRef.current.compileSelections,
-        [fileId]: value,
-      },
+    const nextSelections = {
+      ...((getActiveManuscript(projectRef.current)?.compileSelections) ?? projectRef.current.compileSelections),
+      [fileId]: value,
     }
+    const updated = updateActiveManuscript({
+      ...projectRef.current,
+      compileSelections: nextSelections,
+    }, manuscript => ({ ...manuscript, compileSelections: nextSelections }))
     saveCompileProjectMetadata(updated)
   }
 
   const updateCompileIncludes = (updates: Record<string, boolean>) => {
     if (!projectRef.current) return
-    const updated: Project = {
-      ...projectRef.current,
-      compileIncludes: {
-        ...projectRef.current.compileIncludes,
-        ...updates,
-      },
+    const nextIncludes = {
+      ...((getActiveManuscript(projectRef.current)?.compileIncludes) ?? projectRef.current.compileIncludes),
+      ...updates,
     }
+    const updated = updateActiveManuscript({
+      ...projectRef.current,
+      compileIncludes: nextIncludes,
+    }, manuscript => ({ ...manuscript, compileIncludes: nextIncludes }))
     saveCompileProjectMetadata(updated)
   }
 
   const updateCompileCollapsed = (updates: Record<string, boolean>) => {
     if (!projectRef.current) return
-    const updated: Project = {
-      ...projectRef.current,
-      compileCollapsed: {
-        ...(projectRef.current.compileCollapsed ?? {}),
-        ...updates,
-      },
+    const nextCollapsed = {
+      ...((getActiveManuscript(projectRef.current)?.compileCollapsed) ?? projectRef.current.compileCollapsed ?? {}),
+      ...updates,
     }
+    const updated = updateActiveManuscript({
+      ...projectRef.current,
+      compileCollapsed: nextCollapsed,
+    }, manuscript => ({ ...manuscript, compileCollapsed: nextCollapsed }))
     saveCompileProjectMetadata(updated)
   }
 
@@ -3439,6 +3601,560 @@ export default function App() {
     )
   }
 
+  const hasWorldBundleSelection = (selection: WorldBundleSelection) =>
+    selection.loreBook || selection.canvas || selection.atlas || selection.dictionary
+
+  const worldBundleDefaultName = () => {
+    const base = (projectRef.current?.name || 'Scrivus World')
+      .replace(/[<>:"/\\|?*]+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim() || 'Scrivus World'
+    return `${base}.scrivusworld`
+  }
+
+  const openExportWorldBundle = () => {
+    if (!projectRef.current) return
+    setFileMenuOpen(false)
+    setWorldExportSelection(DEFAULT_WORLD_BUNDLE_SELECTION)
+    setShowExportWorld(true)
+  }
+
+  const exportWorldBundle = async () => {
+    const activeProject = projectRef.current
+    if (!activeProject || !hasWorldBundleSelection(worldExportSelection)) return
+    setWorldBundleBusy(true)
+    try {
+      saveActive()
+      await flushProjectFiles()
+      const outputPath = await save({
+        title: 'Export World',
+        defaultPath: worldBundleDefaultName(),
+        filters: [{ name: 'Scrivus World', extensions: ['scrivusworld'] }],
+      })
+      if (!outputPath) return
+      const bytes = await createWorldBundle({
+        projectPath: activeProject.path,
+        projectName: activeProject.name,
+        selection: worldExportSelection,
+        data: {
+          loreBook: loreBookRef.current,
+          canvas: mindMapRef.current,
+          atlas: atlasRef.current,
+          dictionary: projectDictionaryRef.current,
+        },
+      })
+      await writeFile(outputPath, bytes)
+      setShowExportWorld(false)
+      reportExportComplete(outputPath)
+    } catch (error) {
+      showMessage('World export failed: ' + String(error), 'Export World Failed', 'error')
+    } finally {
+      setWorldBundleBusy(false)
+    }
+  }
+
+  const openImportWorldBundle = async () => {
+    if (!projectRef.current) return
+    setFileMenuOpen(false)
+    const selectedPath = await open({
+      title: 'Import World',
+      filters: [{ name: 'Scrivus World', extensions: ['scrivusworld'] }],
+    })
+    if (!selectedPath || Array.isArray(selectedPath)) return
+    try {
+      const bundle = await loadWorldBundle(await readFile(selectedPath))
+      setWorldImportBundle(bundle)
+      setWorldImportSelection(bundle.available)
+    } catch (error) {
+      showMessage('World import failed: ' + String(error), 'Import World Failed', 'error')
+    }
+  }
+
+  const importWorldBundle = async () => {
+    const activeProject = projectRef.current
+    const bundle = worldImportBundle
+    if (!activeProject || !bundle || !hasWorldBundleSelection(worldImportSelection)) return
+    setWorldBundleBusy(true)
+    try {
+      await writeWorldBundleAssets(activeProject.path, bundle, worldImportSelection)
+      if (worldImportSelection.loreBook && bundle.data.loreBook) {
+        loreBookRef.current = bundle.data.loreBook
+        setLoreBook(bundle.data.loreBook)
+        await writeLoreBookFile(activeProject.path, bundle.data.loreBook)
+        setLoreBacklinks({})
+        setLoreView('home')
+        setActiveLoreCategoryId(null)
+        setExpandedEntryId(null)
+      }
+      if (worldImportSelection.canvas && bundle.data.canvas) {
+        const normalized = normalizeMindMap(bundle.data.canvas)
+        mindMapRef.current = normalized
+        setMindMap(normalized)
+        await writeCanvasFile(activeProject.path, normalized)
+      }
+      if (worldImportSelection.atlas && bundle.data.atlas) {
+        const normalized = normalizeAtlas(bundle.data.atlas)
+        atlasRef.current = normalized
+        setAtlas(normalized)
+        await writeAtlasFile(activeProject.path, normalized)
+      }
+      if (worldImportSelection.dictionary && bundle.data.dictionary) {
+        const normalized = Array.from(new Set(bundle.data.dictionary.map(word => String(word).trim()).filter(Boolean)))
+          .sort((a, b) => a.localeCompare(b))
+        projectDictionaryRef.current = normalized
+        setProjectDictionary(normalized)
+        await writeProjectDictionary(activeProject.path, normalized)
+      }
+      setWorldImportBundle(null)
+      showMessage('Selected world data was imported into this project.', 'World Imported')
+    } catch (error) {
+      showMessage('World import failed: ' + String(error), 'Import World Failed', 'error')
+    } finally {
+      setWorldBundleBusy(false)
+    }
+  }
+
+  const reviewFileStem = (projectName: string, reviewerName: string, date = new Date().toISOString().slice(0, 10)) => {
+    const cleanPart = (value: string, fallback: string) => value
+      .replace(/[<>:"/\\|?*]+/g, '')
+      .replace(/\s+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .trim() || fallback
+    const project = cleanPart(projectName, 'Scrivus')
+    const reviewer = cleanPart(reviewerName, '')
+    return [project, reviewer, date].filter(Boolean).join('_')
+  }
+
+  const reviewPackageDefaultName = (reviewerName: string) => {
+    return `${reviewFileStem(projectRef.current?.name || 'Scrivus', reviewerName)}.scrivusreview`
+  }
+
+  const manuscriptExportDefaultName = (extension: 'docx' | 'epub') => {
+    const activeProject = projectRef.current
+    const activeManuscript = getActiveManuscript(activeProject)
+    const settings = activeProject ? manuscriptBookSettings(activeProject, activeManuscript) : null
+    const base = (settings?.title || activeManuscript?.name || activeProject?.name || 'Manuscript')
+      .replace(/[<>:"/\\|?*]+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim() || 'Manuscript'
+    return `${base}.${extension}`
+  }
+
+  const createReviewPackageFromCompile = (chaptersToReview: CompileChapterEntry[]) => {
+    const activeProject = projectRef.current
+    if (!activeProject) return
+    const selectedSceneCount = chaptersToReview.reduce((count, chapter) => (
+      count + (chapter.included ? chapter.scenes.filter(scene => scene.included).length : 0)
+    ), 0)
+    if (selectedSceneCount === 0) {
+      showMessage('Nothing to review - no scenes are selected.', 'Nothing to Review', 'warning')
+      return
+    }
+    setReviewerNameDraft('')
+    setPendingReviewChapters(chaptersToReview)
+  }
+
+  const confirmCreateReviewPackage = async () => {
+    const activeProject = projectRef.current
+    const chaptersToReview = pendingReviewChapters
+    if (!activeProject || !chaptersToReview || reviewPackageBusy) return
+    setReviewPackageBusy(true)
+    const reviewerName = reviewerNameDraft.trim()
+    const activeManuscript = getActiveManuscript(activeProject)
+    const manuscriptId = activeManuscript?.id ?? activeProject.activeManuscriptId
+    const manuscriptTitle = manuscriptBookSettings(activeProject, activeManuscript).title || activeProject.name
+    try {
+      const outputPath = await save({
+        title: 'Create Review Package',
+        defaultPath: reviewPackageDefaultName(reviewerName),
+        filters: [{ name: 'Scrivus Review', extensions: ['scrivusreview'] }],
+      })
+      if (!outputPath) return
+      saveActive()
+      await flushProjectFiles()
+      const reviewId = createReviewId()
+      const snapshot = await buildReviewSnapshot({
+        reviewId,
+        projectPath: activeProject.path,
+        projectName: activeProject.name,
+        reviewerName,
+        manuscriptId,
+        manuscriptTitle,
+        chapters: chaptersToReview,
+      })
+      if (snapshot.scenes.length === 0) {
+        showMessage('Nothing to review - selected scenes are empty or unavailable.', 'Nothing to Review', 'warning')
+        return
+      }
+      const bytes = await createReviewPackage(snapshot)
+      await writeFile(outputPath, bytes)
+      const snapshots = await readReviewSnapshots(activeProject.path)
+      await writeReviewSnapshots(activeProject.path, [
+        snapshot,
+        ...snapshots.filter(existing => existing.reviewId !== reviewId),
+      ])
+      setPendingReviewChapters(null)
+      setShowCompile(false)
+      reportExportComplete(outputPath)
+    } catch (error) {
+      showMessage('Review package failed: ' + String(error), 'Review Package Failed', 'error')
+    } finally {
+      setReviewPackageBusy(false)
+    }
+  }
+
+  const buildReviewTree = (snapshot: ReviewSnapshot): TreeNode[] => {
+    const manuscript = createDefaultManuscript(snapshot.manuscriptTitle || snapshot.projectName, 1, DEFAULT_PROJECT_SETTINGS)
+    const folders = new Map<string, FolderNode>()
+    let folderId = Math.max(100000, ...snapshot.scenes.map(scene => scene.sceneId)) + 1
+    snapshot.scenes.forEach(scene => {
+      const chapterTitle = scene.chapterTitle || 'Review'
+      if (!folders.has(chapterTitle)) {
+        folders.set(chapterTitle, {
+          id: folderId++,
+          type: 'folder',
+          label: chapterTitle,
+          open: true,
+          role: 'chapter',
+          children: [],
+        })
+      }
+      folders.get(chapterTitle)!.children.push({
+        id: scene.sceneId,
+        type: 'doc',
+        label: scene.title,
+        title: scene.title,
+        file: scene.fileId,
+        metadata: DEFAULT_SCENE_METADATA,
+      })
+    })
+    return [
+      { id: manuscript.folderId, type: 'folder', label: manuscript.name, open: true, role: 'chapter', children: Array.from(folders.values()) },
+      { id: 2, type: 'folder', label: 'Notes', open: false, children: [] },
+    ]
+  }
+
+  const openReviewPackage = async () => {
+    setFileMenuOpen(false)
+    const selectedPath = await open({
+      title: 'Open Review Package',
+      filters: [{ name: 'Scrivus Review', extensions: ['scrivusreview'] }],
+    })
+    if (!selectedPath || Array.isArray(selectedPath)) return
+    setOpeningProject(true)
+    try {
+      const loaded = await loadReviewPackage(await readFile(selectedPath))
+      const reviewRoot = await join(await appDataDir(), 'review-sessions', loaded.manifest.reviewId)
+      await mkdir(reviewRoot, { recursive: true })
+      const tree = buildReviewTree(loaded.snapshot)
+      for (const scene of loaded.snapshot.scenes) {
+        const scenePath = await join(reviewRoot, 'scenes', `${scene.fileId}.md`)
+        if (!(await exists(scenePath))) {
+          await writeSceneFile(reviewRoot, scene.fileId, serializeSceneTabs([{ name: scene.tabName, content: scene.content }], ''))
+        }
+      }
+      const revisionPath = await join(reviewRoot, 'revision.json')
+      if (!(await exists(revisionPath))) {
+        await writeRevisionFile(reviewRoot, [])
+      }
+
+      const manuscript = createDefaultManuscript(loaded.snapshot.manuscriptTitle || loaded.snapshot.projectName, 1, DEFAULT_PROJECT_SETTINGS)
+      const reviewProject: Project = {
+        name: `${loaded.snapshot.projectName} Review`,
+        path: reviewRoot,
+        tree,
+        manuscripts: [{ ...manuscript, title: loaded.snapshot.manuscriptTitle }],
+        activeManuscriptId: manuscript.id,
+        styles: DEFAULT_STYLES,
+        settings: DEFAULT_PROJECT_SETTINGS,
+        compileSelections: {},
+        compileIncludes: {},
+        compileCollapsed: {},
+        writingStats: { dailyWordDeltas: {} },
+      }
+      setReviewPackage(loaded)
+      await loadProjectData(reviewProject, reviewRoot)
+      const normalizedReviewComments = revisionCommentsRef.current.map(comment => {
+        if (comment.reviewId !== loaded.snapshot.reviewId) return comment
+        const sourceTabIndex = comment.reviewSourceTabIndex ?? comment.tabIndex ?? 0
+        const sourceScene = loaded.snapshot.scenes.find(scene =>
+          scene.sceneId === comment.sceneId && scene.tabIndex === sourceTabIndex
+        )
+        return {
+          ...comment,
+          tabIndex: 0,
+          reviewSourceTabIndex: sourceTabIndex,
+          reviewSourceTabName: comment.reviewSourceTabName ?? sourceScene?.tabName,
+        }
+      })
+      revisionCommentsRef.current = normalizedReviewComments
+      setRevisionComments(normalizedReviewComments)
+      await writeRevisionFile(reviewRoot, normalizedReviewComments)
+      setWorkspace('revision')
+      const firstScene = loaded.snapshot.scenes[0]
+      if (firstScene) await selectRevisionDoc(firstScene.sceneId)
+    } catch (error) {
+      showMessage('Review package could not be opened: ' + String(error), 'Open Review Failed', 'error')
+    } finally {
+      setOpeningProject(false)
+    }
+  }
+
+  const exportReviewComments = async () => {
+    if (!reviewPackage) return
+    const outputPath = await save({
+      title: 'Export Review Comments',
+      defaultPath: `${reviewFileStem(reviewPackage.snapshot.projectName, reviewPackage.snapshot.reviewerName)}.scrivuscomments`,
+      filters: [{ name: 'Scrivus Comments', extensions: ['scrivuscomments'] }],
+    })
+    if (!outputPath) return
+    setReviewPackageBusy(true)
+    try {
+      await saveReviewProgress(false)
+      const bytes = await createReviewCommentsPackage(reviewPackage.snapshot, revisionCommentsRef.current)
+      await writeFile(outputPath, bytes)
+      reportExportComplete(outputPath)
+    } catch (error) {
+      showMessage('Review comments export failed: ' + String(error), 'Export Comments Failed', 'error')
+    } finally {
+      setReviewPackageBusy(false)
+    }
+  }
+
+  const saveReviewProgress = async (showConfirmation = true) => {
+    const activeProject = projectRef.current
+    if (!reviewPackage || !activeProject) return
+    try {
+      saveActive()
+      await flushProjectFiles()
+      await writeRevisionFile(activeProject.path, revisionCommentsRef.current)
+      if (showConfirmation) showMessage('Review progress was saved on this device.', 'Review Saved')
+    } catch (error) {
+      showMessage('Review progress could not be saved: ' + String(error), 'Save Review Failed', 'error')
+    }
+  }
+
+  const insertCommentMarkersByTextOffset = (html: string, startOffset: number, endOffset: number, id: string) => {
+    const container = document.createElement('div')
+    container.innerHTML = html
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+    let consumed = 0
+    let startNode: Text | null = null
+    let endNode: Text | null = null
+    let startNodeOffset = 0
+    let endNodeOffset = 0
+    while (walker.nextNode()) {
+      const node = walker.currentNode as Text
+      const nextConsumed = consumed + node.data.length
+      if (!startNode && startOffset >= consumed && startOffset <= nextConsumed) {
+        startNode = node
+        startNodeOffset = startOffset - consumed
+      }
+      if (!endNode && endOffset >= consumed && endOffset <= nextConsumed) {
+        endNode = node
+        endNodeOffset = endOffset - consumed
+        break
+      }
+      consumed = nextConsumed
+    }
+    if (!startNode || !endNode) return null
+
+    const endMarker = document.createElement('x-comment-end')
+    endMarker.setAttribute('data-id', id)
+    const endRange = document.createRange()
+    endRange.setStart(endNode, endNodeOffset)
+    endRange.collapse(true)
+    endRange.insertNode(endMarker)
+
+    const startMarker = document.createElement('x-comment-start')
+    startMarker.setAttribute('data-id', id)
+    const startRange = document.createRange()
+    startRange.setStart(startNode, startNodeOffset)
+    startRange.collapse(true)
+    startRange.insertNode(startMarker)
+
+    return container.innerHTML
+  }
+
+  const insertCommentMarkersByQuote = (html: string, quote: string, preferredOffset: number, id: string) => {
+    const normalizedQuote = quote.trim().replace(/\s+/g, ' ')
+    if (!normalizedQuote) return null
+    const container = document.createElement('div')
+    container.innerHTML = html
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+    const chars: string[] = []
+    const positions: { node: Text; offset: number }[] = []
+    const blockTags = new Set(['P', 'DIV', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE'])
+    let lastBlock: Element | null = null
+    let pendingSpace = false
+
+    const nearestBlock = (node: Text) => {
+      let element = node.parentElement
+      while (element && element !== container) {
+        if (blockTags.has(element.tagName)) return element
+        element = element.parentElement
+      }
+      return null
+    }
+
+    const pushSpace = (position: { node: Text; offset: number }) => {
+      if (chars.length === 0 || chars[chars.length - 1] === ' ') return
+      chars.push(' ')
+      positions.push(position)
+    }
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode as Text
+      const block = nearestBlock(node)
+      if (lastBlock && block && block !== lastBlock) pendingSpace = true
+      lastBlock = block ?? lastBlock
+      for (let offset = 0; offset < node.data.length; offset++) {
+        const char = node.data[offset]
+        if (/\s/.test(char)) {
+          pendingSpace = true
+          continue
+        }
+        if (pendingSpace) {
+          pushSpace({ node, offset })
+          pendingSpace = false
+        }
+        chars.push(char)
+        positions.push({ node, offset })
+      }
+    }
+
+    const text = chars.join('')
+    const matches: number[] = []
+    let index = text.indexOf(normalizedQuote)
+    while (index !== -1) {
+      matches.push(index)
+      index = text.indexOf(normalizedQuote, index + 1)
+    }
+    if (matches.length === 0) return null
+    const matchStart = matches.reduce((closest, candidate) =>
+      Math.abs(candidate - preferredOffset) < Math.abs(closest - preferredOffset) ? candidate : closest
+    )
+    let matchEnd = matchStart + normalizedQuote.length - 1
+    while (matchEnd > matchStart && chars[matchEnd] === ' ') matchEnd--
+    let realStart = positions[matchStart]
+    while (realStart && chars[positions.indexOf(realStart)] === ' ') {
+      realStart = positions[positions.indexOf(realStart) + 1]
+    }
+    const realEnd = positions[matchEnd]
+    if (!realStart || !realEnd) return null
+
+    const endMarker = document.createElement('x-comment-end')
+    endMarker.setAttribute('data-id', id)
+    const endRange = document.createRange()
+    endRange.setStart(realEnd.node, realEnd.offset + 1)
+    endRange.collapse(true)
+    endRange.insertNode(endMarker)
+
+    const startMarker = document.createElement('x-comment-start')
+    startMarker.setAttribute('data-id', id)
+    const startRange = document.createRange()
+    startRange.setStart(realStart.node, realStart.offset)
+    startRange.collapse(true)
+    startRange.insertNode(startMarker)
+
+    return container.innerHTML
+  }
+
+  const importReviewComments = async () => {
+    const activeProject = projectRef.current
+    if (!activeProject || reviewPackage) return
+    setFileMenuOpen(false)
+    const selectedPath = await open({
+      title: 'Import Review Comments',
+      filters: [{ name: 'Scrivus Comments', extensions: ['scrivuscomments'] }],
+    })
+    if (!selectedPath || Array.isArray(selectedPath)) return
+    setReviewPackageBusy(true)
+    try {
+      const commentsPackage = await loadReviewCommentsPackage(await readFile(selectedPath))
+      const snapshots = await readReviewSnapshots(activeProject.path)
+      const snapshot = snapshots.find(candidate => candidate.reviewId === commentsPackage.manifest.reviewId)
+      if (!snapshot) {
+        showMessage('This comments file does not match any review package created from this project.', 'Review Not Found', 'warning')
+        return
+      }
+
+      const nextComments: RevisionComment[] = [...revisionCommentsRef.current]
+      let anchored = 0
+      let unanchored = 0
+      const scenesByFile = new Map<string, SceneTab[]>()
+      const rawByFile = new Map<string, string>()
+
+      for (const imported of commentsPackage.comments) {
+        const importedSourceTabIndex = imported.reviewSourceTabIndex ?? imported.tabIndex ?? 0
+        const sceneSnapshot = snapshot.scenes.find(scene =>
+          scene.sceneId === imported.sceneId && scene.tabIndex === importedSourceTabIndex
+        )
+        const id = generateRevisionId()
+        let anchoredHtml: string | null = null
+        if (sceneSnapshot) {
+          const raw = rawByFile.get(sceneSnapshot.fileId) ?? await readSceneFile(activeProject.path, sceneSnapshot.fileId)
+          rawByFile.set(sceneSnapshot.fileId, raw)
+          const tabs = scenesByFile.get(sceneSnapshot.fileId) ?? parseSceneTabs(raw)
+          scenesByFile.set(sceneSnapshot.fileId, tabs)
+          const targetTabIndex = tabs.findIndex(tab => tab.name === sceneSnapshot.tabName)
+          const safeTabIndex = targetTabIndex >= 0
+            ? targetTabIndex
+            : sceneSnapshot.tabIndex >= 0 && sceneSnapshot.tabIndex < tabs.length
+              ? sceneSnapshot.tabIndex
+              : -1
+          const currentTab = safeTabIndex >= 0 ? tabs[safeTabIndex] : undefined
+          anchoredHtml = currentTab
+            ? insertCommentMarkersByQuote(currentTab.content, imported.quote, imported.startOffset, id)
+            : null
+          if (!anchoredHtml && currentTab?.content === sceneSnapshot.content) {
+            anchoredHtml = insertCommentMarkersByTextOffset(
+              currentTab.content,
+              imported.startOffset,
+              imported.endOffset,
+              id,
+            )
+          }
+          if (anchoredHtml && currentTab) {
+            tabs[safeTabIndex] = { ...currentTab, content: anchoredHtml }
+            scenesByFile.set(sceneSnapshot.fileId, tabs)
+          }
+        }
+        if (anchoredHtml) anchored++
+        else unanchored++
+        nextComments.push({
+          ...imported,
+          id,
+          reviewId: commentsPackage.manifest.reviewId,
+          reviewChapterTitle: sceneSnapshot?.chapterTitle ?? imported.reviewChapterTitle,
+          reviewSceneTitle: sceneSnapshot?.title ?? imported.reviewSceneTitle,
+          reviewReviewerName: commentsPackage.manifest.reviewerName || imported.reviewReviewerName,
+          unanchored: !anchoredHtml,
+          resolved: false,
+          createdAt: Date.now(),
+        })
+      }
+
+      for (const [fileId, tabs] of scenesByFile) {
+        const raw = rawByFile.get(fileId) ?? ''
+        await writeSceneFile(activeProject.path, fileId, serializeSceneTabs(tabs, raw))
+      }
+      revisionCommentsRef.current = nextComments
+      setRevisionComments(nextComments)
+      await writeRevisionFile(activeProject.path, nextComments)
+      if (activeIdRef.current !== null) await selectRevisionDoc(activeIdRef.current)
+      showMessage(
+        `Imported ${commentsPackage.comments.length} comments. ${anchored} anchored, ${unanchored} unanchored.`,
+        'Review Comments Imported',
+      )
+    } catch (error) {
+      showMessage('Review comments import failed: ' + String(error), 'Import Comments Failed', 'error')
+    } finally {
+      setReviewPackageBusy(false)
+    }
+  }
+
   // Exports the manuscript using the current compile selection and format.
   const compileProject = async (chaptersToCompile = compileChapters) => {
     if (!project) return
@@ -3451,7 +4167,7 @@ export default function App() {
       return
     }
 
-    const settings = normalizeProjectSettings(project.settings)
+    const settings = manuscriptBookSettings(project, getActiveManuscript(project))
     const bookTitle = (settings.title || project.name).trim()
     const bookSubtitle = settings.subtitle.trim()
     const bookAuthor = settings.author.trim()
@@ -3487,7 +4203,7 @@ export default function App() {
 
         const outputPath = await save({
           title: 'Export Manuscript',
-          defaultPath: `${project.name}.epub`,
+          defaultPath: manuscriptExportDefaultName('epub'),
           filters: [{ name: 'EPUB', extensions: ['epub'] }],
         })
         if (!outputPath) return
@@ -3685,7 +4401,7 @@ export default function App() {
 
       const outputPath = await save({
         title: 'Export Manuscript',
-        defaultPath: `${project.name}.docx`,
+        defaultPath: manuscriptExportDefaultName('docx'),
         filters: [{ name: 'Word Document', extensions: ['docx'] }],
       })
 
@@ -3840,16 +4556,33 @@ export default function App() {
       : loadedTree
     setNextIdValue(Math.max(Number(data.nextId) || 10, getMaxTreeId(visibleTree) + 1, 10))
     const loadedSettings = normalizeProjectSettings(data.settings as Partial<ProjectSettings> | undefined)
+    const legacyCompileSelections = (data.compileSelections as Record<string, string>) ?? {}
+    const legacyCompileIncludes = (data.compileIncludes as Record<string, boolean>) ?? {}
+    const legacyCompileCollapsed = (data.compileCollapsed as Record<string, boolean>) ?? {}
+    const manuscripts = normalizeManuscripts(
+      data.manuscripts,
+      data.name as string,
+      loadedSettings,
+      legacyCompileSelections,
+      legacyCompileIncludes,
+      legacyCompileCollapsed,
+    )
+    const activeManuscriptId = typeof data.activeManuscriptId === 'string' &&
+      manuscripts.some(manuscript => manuscript.id === data.activeManuscriptId)
+      ? data.activeManuscriptId
+      : manuscripts[0].id
     const loadedProject: Project = {
       name: data.name as string,
       path,
       tree: visibleTree,
+      manuscripts,
+      activeManuscriptId,
       styles: loadedStyles,
       settings: loadedSettings,
       lastActiveTabIndex: restoredTabIndex,
-      compileSelections: (data.compileSelections as Record<string, string>) ?? {},
-      compileIncludes: (data.compileIncludes as Record<string, boolean>) ?? {},
-      compileCollapsed: (data.compileCollapsed as Record<string, boolean>) ?? {},
+      compileSelections: legacyCompileSelections,
+      compileIncludes: legacyCompileIncludes,
+      compileCollapsed: legacyCompileCollapsed,
       writingStats: normalizeWritingStats(data.writingStats as Partial<Project['writingStats']> | undefined),
     }
     sceneWordCountsRef.current = {}
@@ -3934,31 +4667,60 @@ export default function App() {
 
   const saveProjectSettings = async (
     settings: ProjectSettings,
+    manuscripts: Manuscript[],
     nextStyles: ProjectStyles,
     dictionaryWords: string[],
-    coverAction: CoverImageAction,
+    coverActions: ManuscriptCoverImageActions,
   ) => {
     if (!projectRef.current) return
     const normalizedStyles = normalizeProjectStyles(nextStyles)
     const normalizedSettings = normalizeProjectSettings(settings)
     const normalizedDictionary = Array.from(new Set(dictionaryWords.map(word => word.trim()).filter(Boolean)))
       .sort((a, b) => a.localeCompare(b))
-
-    if (coverAction.type === 'set') {
-      try {
-        const previousCover = normalizedSettings.coverImage
-        normalizedSettings.coverImage = await copyCoverImage(projectRef.current.path, coverAction.sourcePath)
-        if (previousCover) await deleteCoverImage(projectRef.current.path, previousCover)
-      } catch (e) {
-        showMessage('Could not copy the cover image into the project: ' + String(e), 'Cover Image', 'error')
+    const currentManuscriptsById = new Map(projectRef.current.manuscripts.map(manuscript => [manuscript.id, manuscript]))
+    const normalizedManuscripts: Manuscript[] = []
+    for (const manuscript of manuscripts) {
+      const current = currentManuscriptsById.get(manuscript.id)
+      const action = coverActions[manuscript.id] ?? { type: 'keep' as const }
+      let coverImage = typeof manuscript.coverImage === 'string' ? manuscript.coverImage : ''
+      if (action.type === 'set') {
+        try {
+          const previousCover = current?.coverImage
+          coverImage = await copyCoverImage(projectRef.current.path, action.sourcePath)
+          if (previousCover) await deleteCoverImage(projectRef.current.path, previousCover)
+        } catch (e) {
+          showMessage(`Could not copy the cover image for "${manuscript.name || manuscript.title}": ${String(e)}`, 'Cover Image', 'error')
+          coverImage = current?.coverImage ?? coverImage
+        }
+      } else if (action.type === 'remove') {
+        if (current?.coverImage) await deleteCoverImage(projectRef.current.path, current.coverImage)
+        coverImage = ''
       }
-    } else if (coverAction.type === 'remove') {
-      if (normalizedSettings.coverImage) {
-        await deleteCoverImage(projectRef.current.path, normalizedSettings.coverImage)
-      }
-      normalizedSettings.coverImage = ''
+      normalizedManuscripts.push({
+        ...manuscript,
+        name: manuscript.name.trim() || current?.name || manuscript.title.trim() || 'Untitled Manuscript',
+        title: manuscript.title.trim() || manuscript.name.trim() || 'Untitled Manuscript',
+        subtitle: manuscript.subtitle,
+        author: manuscript.author,
+        coverImage,
+      })
     }
-    const updated = { ...projectRef.current, settings: normalizedSettings, styles: normalizedStyles }
+    let nextTree = treeRef.current
+    for (const manuscript of normalizedManuscripts) {
+      const current = currentManuscriptsById.get(manuscript.id)
+      if (current?.name !== manuscript.name) {
+        nextTree = renameNodeInTree(nextTree, manuscript.folderId, manuscript.name)
+      }
+    }
+    treeRef.current = nextTree
+    setTree(nextTree)
+    const updated = {
+      ...projectRef.current,
+      settings: normalizedSettings,
+      manuscripts: normalizedManuscripts,
+      tree: nextTree,
+      styles: normalizedStyles,
+    }
     projectRef.current = updated
     setProject(updated)
     setStyles(normalizedStyles)
@@ -4015,21 +4777,11 @@ export default function App() {
     }
   }
 
-  const openLoadedProject = async (data: Record<string, unknown>, path: string) => {
-    const migration = migrateProjectData(data)
-    const projectName = typeof migration.data.name === 'string' && migration.data.name.trim()
-      ? migration.data.name
-      : 'Untitled Project'
-
-    if (migration.toFormatVersion > PROJECT_FORMAT_VERSION) {
-      showMessage(
-        `This project uses Scrivus project format ${migration.toFormatVersion}, but this copy of Scrivus only supports format ${PROJECT_FORMAT_VERSION}. Please update Scrivus before opening it.`,
-        'Project Is Too New',
-        'warning',
-      )
-      return false
-    }
-
+  const finishOpeningMigratedProject = async (
+    migration: ReturnType<typeof migrateProjectData>,
+    path: string,
+    projectName: string,
+  ) => {
     const settings = normalizeProjectSettings(migration.data.settings as Partial<ProjectSettings> | undefined)
     try {
       await createProjectBackup(path, projectName, 'open', settings.backups.retentionCount)
@@ -4070,6 +4822,42 @@ export default function App() {
     return loadProjectWithRecovery(migration.data, path, projectName)
   }
 
+  const openLoadedProject = async (data: Record<string, unknown>, path: string) => {
+    const migration = migrateProjectData(data)
+    const projectName = typeof migration.data.name === 'string' && migration.data.name.trim()
+      ? migration.data.name
+      : 'Untitled Project'
+
+    if (migration.toFormatVersion > PROJECT_FORMAT_VERSION) {
+      showMessage(
+        `This project uses Scrivus project format ${migration.toFormatVersion}, but this copy of Scrivus only supports format ${PROJECT_FORMAT_VERSION}. Please update Scrivus before opening it.`,
+        'Project Is Too New',
+        'warning',
+      )
+      return false
+    }
+
+    if (migration.fromFormatVersion < PROJECT_FORMAT_VERSION) {
+      showMessage(
+        `This project uses Scrivus project format ${migration.fromFormatVersion}. Scrivus ${SCRIVUS_VERSION} will create a safety backup, then upgrade the project to format ${PROJECT_FORMAT_VERSION} before opening it.`,
+        'Upgrade Project Format?',
+        'warning',
+        {
+          label: 'Upgrade and Open',
+          onClick: () => {
+            setOpeningProject(true)
+            void waitForUiPaint()
+              .then(() => finishOpeningMigratedProject(migration, path, projectName))
+              .finally(() => setOpeningProject(false))
+          },
+        },
+      )
+      return false
+    }
+
+    return finishOpeningMigratedProject(migration, path, projectName)
+  }
+
   const loadProjectAndRemember = async (data: Record<string, unknown>, path: string) => {
     await loadProjectData(data, path)
     const projectName = typeof data.name === 'string' && data.name.trim() ? data.name : 'Untitled Project'
@@ -4079,6 +4867,7 @@ export default function App() {
 
   const openProjectFromPath = async (path: string, missingMessage: string, missingTitle: string) => {
     setOpeningProject(true)
+    setReviewPackage(null)
     await waitForUiPaint()
 
     try {
@@ -4292,8 +5081,12 @@ export default function App() {
     if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
   }
 
+  const getDefaultTargetFolderId = () => {
+    return getActiveManuscript(projectRef.current)?.folderId ?? 1
+  }
+
   const getFolderChildren = (targetFolderId?: number) => {
-    const folder = findNode(treeRef.current, targetFolderId ?? 1)
+    const folder = findNode(treeRef.current, targetFolderId ?? getDefaultTargetFolderId())
     return folder?.type === 'folder' ? folder.children : treeRef.current
   }
 
@@ -4323,7 +5116,7 @@ export default function App() {
   }
 
   const inferNewFolderRole = (targetFolderId?: number): NonNullable<FolderNode['role']> => {
-    const target = findNode(treeRef.current, targetFolderId ?? 1)
+    const target = findNode(treeRef.current, targetFolderId ?? getDefaultTargetFolderId())
     if (target?.type === 'folder' && target.role === 'act') return 'chapter'
     const folderSiblings = getFolderChildren(targetFolderId).filter((node): node is FolderNode => node.type === 'folder')
     const lastFolder = folderSiblings[folderSiblings.length - 1]
@@ -4390,7 +5183,7 @@ export default function App() {
     const id = allocateNextBinderNodeId()
     const fileId = generateFileId()
     const node: DocNode = { id, type: 'doc', label: title, title, file: fileId, metadata: createDefaultSceneMetadata() }
-    const newTree = addDocToTree(treeRef.current, 1, node)
+    const newTree = addDocToTree(treeRef.current, getDefaultTargetFolderId(), node)
     sceneWordCountsRef.current[fileId] = 0
     const defaultTabs: SceneTab[] = [{ name: 'First Draft', content: '' }]
     const defaultRaw = serializeSceneTabs(defaultTabs, '')
@@ -4549,13 +5342,150 @@ export default function App() {
     setContextMenu(null)
   }
 
+  const selectActiveManuscript = async (manuscriptId: string) => {
+    if (!projectRef.current || projectRef.current.activeManuscriptId === manuscriptId) return
+    saveActive()
+    const manuscript = projectRef.current.manuscripts.find(item => item.id === manuscriptId)
+    if (!manuscript) return
+    const updated = { ...projectRef.current, activeManuscriptId: manuscriptId }
+    projectRef.current = updated
+    setProject(updated)
+    setContextMenu(null)
+    setSelectedBinderIds(new Set())
+    selectedBinderIdsRef.current = new Set()
+    setBinderSelectionAnchorId(null)
+    saveProjectToDisk(updated, activeIdRef.current ?? undefined)
+    const docs = getActiveManuscriptDocs(updated, treeRef.current)
+    const rememberedDoc = manuscript.lastActiveId
+      ? docs.find(doc => doc.id === manuscript.lastActiveId)
+      : null
+    const nextDoc = rememberedDoc ?? docs[0] ?? null
+    if (nextDoc) {
+      if (typeof manuscript.lastActiveTabIndex === 'number') {
+        sceneActiveTabRef.current[nextDoc.id] = manuscript.lastActiveTabIndex
+      }
+      if (activeIdRef.current !== nextDoc.id) await selectDoc(nextDoc.id)
+    } else {
+      clearActiveEditor()
+    }
+    void refreshOutlineRows()
+    void computeManuscriptWordCount()
+  }
+
+  const addManuscript = () => {
+    if (!projectRef.current) return
+    const folderId = allocateNextBinderNodeId()
+    const label = `Manuscript ${projectRef.current.manuscripts.length + 1}`
+    const folder: FolderNode = { id: folderId, type: 'folder', label, open: true, children: [] }
+    const noteIndex = treeRef.current.findIndex(node => node.id === 2)
+    const newTree = noteIndex >= 0
+      ? [
+        ...treeRef.current.slice(0, noteIndex),
+        folder,
+        ...treeRef.current.slice(noteIndex),
+      ]
+      : [...treeRef.current, folder]
+    const manuscript: Manuscript = {
+      id: `manuscript-${folderId}`,
+      folderId,
+      name: label,
+      title: label,
+      subtitle: '',
+      author: projectRef.current.settings.author,
+      coverImage: '',
+      lastActiveId: null,
+      lastActiveTabIndex: 0,
+      compileSelections: {},
+      compileIncludes: {},
+      compileCollapsed: {},
+    }
+    const updated: Project = {
+      ...projectRef.current,
+      tree: newTree,
+      manuscripts: [...projectRef.current.manuscripts, manuscript],
+      activeManuscriptId: manuscript.id,
+    }
+    setTree(newTree)
+    treeRef.current = newTree
+    projectRef.current = updated
+    setProject(updated)
+    clearActiveEditor()
+    setSelectedBinderIds(new Set())
+    selectedBinderIdsRef.current = new Set()
+    setBinderSelectionAnchorId(folderId)
+    saveProjectToDisk(updated, activeIdRef.current ?? undefined)
+    setRenamingId(folderId)
+    refreshOutlineRows()
+    computeManuscriptWordCount()
+  }
+
+  const requestDeleteActiveManuscript = () => {
+    if (!projectRef.current) return
+    if (projectRef.current.manuscripts.length <= 1) {
+      showMessage('A project must have at least one manuscript.', 'Cannot Delete Manuscript', 'warning')
+      return
+    }
+    const manuscript = getActiveManuscript(projectRef.current)
+    if (manuscript) setConfirmDeleteManuscript(manuscript)
+  }
+
+  const deleteManuscript = async (manuscriptId: string) => {
+    if (!projectRef.current) return
+    const manuscript = projectRef.current.manuscripts.find(item => item.id === manuscriptId)
+    if (!manuscript || projectRef.current.manuscripts.length <= 1) return
+    const root = findNode(treeRef.current, manuscript.folderId)
+    if (!root || root.type !== 'folder') return
+    try {
+      await trashNode(projectRef.current.path, root, 0, { manuscript })
+    } catch (e) {
+      showMessage(`Could not move "${manuscript.name}" to the trash:\n${String(e)}`, 'Delete Failed', 'error')
+      return
+    }
+    const remainingManuscripts = projectRef.current.manuscripts.filter(item => item.id !== manuscriptId)
+    const nextManuscript = remainingManuscripts.find(item => item.id !== manuscriptId) ?? remainingManuscripts[0]
+    const newTree = removeNodeFromTree(treeRef.current, manuscript.folderId)
+    const updated: Project = {
+      ...projectRef.current,
+      tree: newTree,
+      manuscripts: remainingManuscripts,
+      activeManuscriptId: nextManuscript.id,
+    }
+    setTree(newTree)
+    treeRef.current = newTree
+    projectRef.current = updated
+    setProject(updated)
+    setConfirmDeleteManuscript(null)
+    setContextMenu(null)
+    setSelectedBinderIds(new Set())
+    selectedBinderIdsRef.current = new Set()
+    setBinderSelectionAnchorId(null)
+    saveProjectToDisk(updated, activeIdRef.current ?? undefined)
+    await loadTrash()
+    const docs = getActiveManuscriptDocs(updated, newTree)
+    const rememberedDoc = nextManuscript.lastActiveId
+      ? docs.find(doc => doc.id === nextManuscript.lastActiveId)
+      : null
+    const nextDoc = rememberedDoc ?? docs[0] ?? null
+    if (nextDoc) {
+      if (typeof nextManuscript.lastActiveTabIndex === 'number') {
+        sceneActiveTabRef.current[nextDoc.id] = nextManuscript.lastActiveTabIndex
+      }
+      await selectDoc(nextDoc.id)
+    } else {
+      clearActiveEditor()
+      saveProjectToDisk(updated, undefined)
+    }
+    void refreshOutlineRows()
+    void computeManuscriptWordCount()
+  }
+
   // Moves a binder node to trash instead of deleting it permanently.
   // The node is only removed from the binder once its files are safely in trash.
   const deleteNode = async (id: number) => {
     const node = findNode(treeRef.current, id)
     if (!node || !projectRef.current) return
     const parentFolder = findParentFolder(treeRef.current, id)
-    const folderId = parentFolder?.id ?? 1
+    const folderId = parentFolder?.id ?? getDefaultTargetFolderId()
     try {
       await trashNode(projectRef.current.path, node, folderId)
     } catch (e) {
@@ -4591,7 +5521,7 @@ export default function App() {
         const node = findNode(treeRef.current, id)
         if (!node) return null
         const parentFolder = findParentFolder(treeRef.current, id)
-        return { id, node, folderId: parentFolder?.id ?? 1 }
+        return { id, node, folderId: parentFolder?.id ?? getDefaultTargetFolderId() }
       })
       .filter((entry): entry is { id: number; node: TreeNode; folderId: number } => Boolean(entry))
 
@@ -4673,7 +5603,15 @@ export default function App() {
   const renameNode = (id: number, label: string) => {
     setTree(prev => {
       const newTree = renameNodeInTree(prev, id, label)
-      if (projectRef.current) saveProjectToDisk({ ...projectRef.current, tree: newTree }, activeIdRef.current ?? undefined)
+      if (projectRef.current) {
+        const manuscripts = projectRef.current.manuscripts.map(manuscript =>
+          manuscript.folderId === id ? { ...manuscript, name: label } : manuscript
+        )
+        const updatedProject = { ...projectRef.current, tree: newTree, manuscripts }
+        projectRef.current = updatedProject
+        setProject(updatedProject)
+        saveProjectToDisk(updatedProject, activeIdRef.current ?? undefined)
+      }
       return newTree
     })
     if (id === activeIdRef.current) {
@@ -4791,22 +5729,130 @@ export default function App() {
   }
 
   // Derived editor visibility state.
-  const activeNode = activeId !== null ? findNode(tree, activeId) : null
+  const activeNodeInSelectedManuscript = activeId !== null && project
+    ? getActiveManuscriptDocs(project, tree).some(doc => doc.id === activeId)
+    : false
+  const activeNode = activeId !== null && activeNodeInSelectedManuscript ? findNode(tree, activeId) : null
   const showEditor = activeNode?.type === 'doc' || isTrashPreview
   const activeSceneMetadata =
     activeNode?.type === 'doc' && !isTrashPreview
       ? normalizeSceneMetadata(activeNode.metadata)
       : null
+
+  const openProjectSearchPanel = () => {
+    if (!project || workspace !== 'editor' || focusMode) return
+    setEditMenuOpen(false)
+    setShowFnR(false)
+    setShowSearch(true)
+    setTimeout(() => searchInputRef.current?.focus(), 50)
+  }
+
+  const openFindReplacePanel = () => {
+    if (!project || workspace !== 'editor' || focusMode) return
+    setEditMenuOpen(false)
+    setShowSearch(false)
+    setShowFnR(true)
+    setTimeout(() => fnrInputRef.current?.focus(), 50)
+  }
+
+  const toggleProjectSearchPanel = () => {
+    if (!project || workspace !== 'editor' || focusMode) return
+    setEditMenuOpen(false)
+    setShowFnR(false)
+    setShowSearch(open => {
+      if (open) return false
+      setTimeout(() => searchInputRef.current?.focus(), 50)
+      return true
+    })
+  }
+
+  const toggleFindReplacePanel = () => {
+    if (!project || workspace !== 'editor' || focusMode) return
+    setEditMenuOpen(false)
+    setShowSearch(false)
+    setShowFnR(open => {
+      if (open) return false
+      setTimeout(() => fnrInputRef.current?.focus(), 50)
+      return true
+    })
+  }
+
+  const openPreferencesPanel = () => {
+    setEditMenuOpen(false)
+    setShowPreferences(true)
+  }
+
+  const openProjectSettingsPanel = () => {
+    if (!project) return
+    setEditMenuOpen(false)
+    setShowProjectSettings(true)
+  }
+
   useEffect(() => {
     if (workspace !== 'editor' || !showEditor) setFocusMode(false)
   }, [workspace, showEditor])
 
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase()
+      const ctrlOrMeta = event.ctrlKey || event.metaKey
+      if (!ctrlOrMeta) return
+
+      const target = event.target as Element | null
+      const inModal = Boolean(target?.closest('.modal-overlay'))
+      const command = (() => {
+        if (event.altKey && !event.shiftKey && key === 'p') return 'project-settings'
+        if (!event.altKey && !event.shiftKey && key === 'p') return 'preferences'
+        if (!event.altKey && !event.shiftKey && key === 'f') return 'search'
+        if (!event.altKey && !event.shiftKey && key === 'h') return 'find-replace'
+        if (!event.altKey && !event.shiftKey && key === 'n') return 'new-project'
+        if (!event.altKey && !event.shiftKey && key === 'o') return 'open-project'
+        if (!event.altKey && !event.shiftKey && key === 'w') return 'close-project'
+        if (!event.altKey && !event.shiftKey && key === 's') return 'save'
+        return null
+      })()
+      if (!command) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      if (inModal && command !== 'save') return
+
+      switch (command) {
+        case 'project-settings':
+          openProjectSettingsPanel()
+          break
+        case 'preferences':
+          openPreferencesPanel()
+          break
+        case 'search':
+          toggleProjectSearchPanel()
+          break
+        case 'find-replace':
+          toggleFindReplacePanel()
+          break
+        case 'new-project':
+          setFileMenuOpen(false)
+          startNewProject()
+          break
+        case 'open-project':
+          void openProject()
+          break
+        case 'close-project':
+          if (project) closeProject()
+          break
+        case 'save':
+          if (project) saveActive()
+          break
+      }
+    }
+
+    window.addEventListener('keydown', handler, true)
+    return () => window.removeEventListener('keydown', handler, true)
+  }, [project, workspace, focusMode, saveActive])
+
   const manuscriptSceneIds = useMemo(() => {
-    const manuscript = findNode(tree, 1)
-    return manuscript?.type === 'folder'
-      ? collectDocs(manuscript).map(doc => doc.id)
-      : []
-  }, [tree])
+    return getActiveManuscriptDocs(project, tree).map(doc => doc.id)
+  }, [project, tree])
   const activeManuscriptSceneIndex = activeId !== null && !isTrashPreview
     ? manuscriptSceneIds.indexOf(activeId)
     : -1
@@ -4816,6 +5862,89 @@ export default function App() {
   const nextSceneId = activeManuscriptSceneIndex >= 0 && activeManuscriptSceneIndex < manuscriptSceneIds.length - 1
     ? manuscriptSceneIds[activeManuscriptSceneIndex + 1]
     : null
+  const visibleBinderTree = useMemo(() => {
+    if (!project) return tree
+    const activeManuscript = getActiveManuscript(project)
+    const visibleTopLevelIds = new Set<number>([2])
+    if (activeManuscript) visibleTopLevelIds.add(activeManuscript.folderId)
+    return tree.filter(node => visibleTopLevelIds.has(node.id))
+  }, [project, tree])
+  const worldImportReplacementLabels = useMemo(() => {
+    if (!worldImportBundle) return []
+    const labels: string[] = []
+    if (worldImportSelection.loreBook && loreBook.categories.length > 0) labels.push('Lore Book')
+    if (worldImportSelection.canvas && (mindMap.nodes.length > 0 || mindMap.edges.length > 0)) labels.push('Canvas')
+    if (worldImportSelection.atlas && atlas.maps.length > 0) labels.push('Atlas')
+    if (worldImportSelection.dictionary && projectDictionary.length > 0) labels.push('Dictionary')
+    return labels
+  }, [atlas, loreBook, mindMap, projectDictionary, worldImportBundle, worldImportSelection])
+
+  useEffect(() => {
+    if (!project || revisionComments.length === 0) {
+      setOutlineCountableCommentIds(new Set())
+      return
+    }
+
+    let cancelled = false
+
+    const scanCommentAnchors = async () => {
+      const nextIds = new Set<string>()
+      const unresolvedComments = revisionComments.filter(comment => !comment.resolved)
+      const commentsByScene = new Map<number, RevisionComment[]>()
+
+      unresolvedComments.forEach(comment => {
+        if (comment.unanchored) {
+          nextIds.add(comment.id)
+          return
+        }
+        const sceneComments = commentsByScene.get(comment.sceneId) ?? []
+        sceneComments.push(comment)
+        commentsByScene.set(comment.sceneId, sceneComments)
+      })
+
+      for (const [sceneId, sceneComments] of commentsByScene) {
+        const node = findNode(treeRef.current, sceneId)
+        if (!node || node.type !== 'doc') continue
+
+        try {
+          const raw = await readSceneFile(project.path, node.file)
+          const tabs = parseSceneTabs(raw)
+          const legacyTabIndex = Math.max(tabs.length - 1, 0)
+
+          sceneComments.forEach(comment => {
+            const tabIndex = comment.tabIndex ?? legacyTabIndex
+            const content = tabs[tabIndex]?.content ?? ''
+            const safeId = escapeAttr(comment.id)
+            const startTag = `<x-comment-start data-id="${safeId}"></x-comment-start>`
+            const endTag = `<x-comment-end data-id="${safeId}"></x-comment-end>`
+            if (content.includes(startTag) && content.includes(endTag)) {
+              nextIds.add(comment.id)
+            }
+          })
+        } catch {
+          // Ignore scenes that cannot be read; they should not inflate the Outline count.
+        }
+      }
+
+      if (!cancelled) setOutlineCountableCommentIds(nextIds)
+    }
+
+    void scanCommentAnchors()
+
+    return () => {
+      cancelled = true
+    }
+  }, [project, revisionComments, tree])
+
+  const outlineSceneCommentCounts = useMemo(() => {
+    const counts: Record<number, number> = {}
+    revisionComments.forEach(comment => {
+      if (comment.resolved) return
+      if (!outlineCountableCommentIds.has(comment.id)) return
+      counts[comment.sceneId] = (counts[comment.sceneId] ?? 0) + 1
+    })
+    return counts
+  }, [outlineCountableCommentIds, revisionComments])
 
   const selectPreviousScene = () => {
     if (previousSceneId === null) return
@@ -4834,9 +5963,7 @@ export default function App() {
   // Recounts every scene under Manuscript.
   const computeManuscriptWordCount = useCallback(async () => {
     if (!projectRef.current) return
-    const manuscript = findNode(treeRef.current, 1)
-    if (!manuscript || manuscript.type !== 'folder') return
-    const docs = collectDocs(manuscript)
+    const docs = getActiveManuscriptDocs(projectRef.current, treeRef.current)
     let total = 0
     for (const doc of docs) {
       const activeTabs = getSceneCountTabs(doc)
@@ -4989,10 +6116,17 @@ export default function App() {
   const MenuBarMenus = () => (
     <AppMenus
       projectOpen={Boolean(project)}
+      reviewMode={Boolean(reviewPackage)}
       fileMenuOpen={fileMenuOpen}
+      projectMenuOpen={projectMenuOpen}
+      reviewMenuOpen={reviewMenuOpen}
+      worldMenuOpen={worldMenuOpen}
       editMenuOpen={editMenuOpen}
       helpMenuOpen={helpMenuOpen}
       fileMenuRef={fileMenuRef}
+      projectMenuRef={projectMenuRef}
+      reviewMenuRef={reviewMenuRef}
+      worldMenuRef={worldMenuRef}
       editMenuRef={editMenuRef}
       helpMenuRef={helpMenuRef}
       canUndo={Boolean(editor?.can().undo())}
@@ -5000,26 +6134,76 @@ export default function App() {
       onFileMenuToggle={() => {
         setThemeMenuOpen(false)
         setPreviewTheme(null)
+        setEditMenuOpen(false)
+        setProjectMenuOpen(false)
+        setWorldMenuOpen(false)
+        setReviewMenuOpen(false)
+        setHelpMenuOpen(false)
         setFileMenuOpen(v => !v)
+      }}
+      onProjectMenuToggle={() => {
+        setThemeMenuOpen(false)
+        setPreviewTheme(null)
+        setFileMenuOpen(false)
+        setEditMenuOpen(false)
+        setWorldMenuOpen(false)
+        setReviewMenuOpen(false)
+        setHelpMenuOpen(false)
+        setProjectMenuOpen(v => !v)
+      }}
+      onWorldMenuToggle={() => {
+        setThemeMenuOpen(false)
+        setPreviewTheme(null)
+        setFileMenuOpen(false)
+        setEditMenuOpen(false)
+        setProjectMenuOpen(false)
+        setReviewMenuOpen(false)
+        setHelpMenuOpen(false)
+        setWorldMenuOpen(v => !v)
+      }}
+      onReviewMenuToggle={() => {
+        setThemeMenuOpen(false)
+        setPreviewTheme(null)
+        setFileMenuOpen(false)
+        setEditMenuOpen(false)
+        setProjectMenuOpen(false)
+        setWorldMenuOpen(false)
+        setHelpMenuOpen(false)
+        setReviewMenuOpen(v => !v)
       }}
       onEditMenuToggle={() => {
         setThemeMenuOpen(false)
         setPreviewTheme(null)
+        setFileMenuOpen(false)
+        setProjectMenuOpen(false)
+        setWorldMenuOpen(false)
+        setReviewMenuOpen(false)
+        setHelpMenuOpen(false)
         setEditMenuOpen(v => !v)
       }}
       onHelpMenuToggle={() => {
         setThemeMenuOpen(false)
         setPreviewTheme(null)
+        setFileMenuOpen(false)
+        setEditMenuOpen(false)
+        setProjectMenuOpen(false)
+        setWorldMenuOpen(false)
+        setReviewMenuOpen(false)
         setHelpMenuOpen(v => !v)
       }}
       onNewProject={() => { setFileMenuOpen(false); startNewProject() }}
       onOpenProject={openProject}
       onNewProjectFromWordDoc={() => { setFileMenuOpen(false); void startImportWordDoc() }}
-      onCloseProject={closeProject}
-      onBackupNow={() => { setFileMenuOpen(false); runProjectBackup('manual', true) }}
-      onRestoreBackupPicker={openRestoreBackupPicker}
+      onOpenReviewPackage={() => { setFileMenuOpen(false); setReviewMenuOpen(false); void openReviewPackage() }}
+      onImportReviewComments={() => { setReviewMenuOpen(false); void importReviewComments() }}
+      onExportReviewComments={() => { setReviewMenuOpen(false); void exportReviewComments() }}
+      onImportWorldBundle={() => { setWorldMenuOpen(false); void openImportWorldBundle() }}
+      onExportWorldBundle={() => { setWorldMenuOpen(false); openExportWorldBundle() }}
+      onCloseProject={() => { setFileMenuOpen(false); closeProject() }}
+      onBackupNow={() => { setProjectMenuOpen(false); runProjectBackup('manual', true) }}
+      onRestoreBackupPicker={() => { setProjectMenuOpen(false); openRestoreBackupPicker() }}
       onRestoreBackup={() => {
-        setFileMenuOpen(false)
+        setProjectMenuOpen(false)
         showMessage(
           'This will copy the latest backup over the current project files. Scrivus will create a pre-restore backup first.',
           'Restore Latest Backup?',
@@ -5027,15 +6211,15 @@ export default function App() {
           { label: 'Restore', onClick: restoreLatestBackup },
         )
       }}
-      onCompile={() => openCompileModal()}
+      onCompile={() => { setProjectMenuOpen(false); openCompileModal() }}
       onExit={() => { void exitApp() }}
       onUndo={() => { setEditMenuOpen(false); editor?.chain().focus().undo().run() }}
       onRedo={() => { setEditMenuOpen(false); editor?.chain().focus().redo().run() }}
       onSelectAll={() => { setEditMenuOpen(false); editor?.chain().focus().selectAll().run() }}
-      onProjectSettings={() => { setEditMenuOpen(false); setShowProjectSettings(true) }}
-      onPreferences={() => { setEditMenuOpen(false); setShowPreferences(true) }}
-      onSearch={() => { setEditMenuOpen(false); setShowSearch(true); setTimeout(() => searchInputRef.current?.focus(), 50) }}
-      onFindReplace={() => { setEditMenuOpen(false); setShowFnR(true); setTimeout(() => fnrInputRef.current?.focus(), 50) }}
+      onProjectSettings={openProjectSettingsPanel}
+      onPreferences={openPreferencesPanel}
+      onSearch={openProjectSearchPanel}
+      onFindReplace={openFindReplacePanel}
       onAbout={() => { setHelpMenuOpen(false); setShowAbout(true) }}
       onCheckForUpdates={() => { void checkForUpdates() }}
     />
@@ -5049,6 +6233,9 @@ export default function App() {
     const openThemeMenu = () => {
       setFileMenuOpen(false)
       setEditMenuOpen(false)
+      setProjectMenuOpen(false)
+      setWorldMenuOpen(false)
+      setReviewMenuOpen(false)
       setHelpMenuOpen(false)
       if (themeMenuOpen) setPreviewTheme(null)
       setThemeMenuOpen(!themeMenuOpen)
@@ -5155,8 +6342,18 @@ export default function App() {
     const [dailyTarget, setDailyTarget] = useState(String(goals.dailyTargetWordCount || ''))
     const [sessionTarget, setSessionTarget] = useState(String(goals.sessionTargetWordCount || ''))
     const [sceneTarget, setSceneTarget] = useState(String(activeSceneMetadata?.targetWordCount || ''))
-    const writingStats = normalizeWritingStats(projectRef.current?.writingStats)
     const todayKey = localDateKey()
+    const [heatmapMonth, setHeatmapMonth] = useState(() => {
+      const [year, month] = todayKey.split('-').map(Number)
+      return new Date(year, month - 1, 1)
+    })
+    const [heatmapTooltip, setHeatmapTooltip] = useState<{
+      x: number
+      y: number
+      dateKey: string
+      words: number
+    } | null>(null)
+    const writingStats = normalizeWritingStats(projectRef.current?.writingStats)
     const monthKey = todayKey.slice(0, 7)
     const dailyProgress = writingStats.dailyWordDeltas[todayKey] ?? 0
     const monthlyProgress = Object.entries(writingStats.dailyWordDeltas)
@@ -5182,10 +6379,52 @@ export default function App() {
       setSceneTarget(String(activeSceneMetadata?.targetWordCount || ''))
     }, [activeSceneMetadata?.targetWordCount, goals])
 
+    useEffect(() => {
+      const closeIfTooNarrow = () => {
+        if (window.innerWidth <= 1160) setShowGoalModal(false)
+      }
+      closeIfTooNarrow()
+      window.addEventListener('resize', closeIfTooNarrow)
+      return () => window.removeEventListener('resize', closeIfTooNarrow)
+    }, [])
+
     const cleanInput = (value: string) => value.replace(/\D/g, '')
     const normalizeGoal = (value: string, max: number) => {
       const parsed = Number(value)
       return Number.isFinite(parsed) ? Math.min(max, Math.max(0, Math.round(parsed))) : 0
+    }
+    const heatmapMonthKey = `${heatmapMonth.getFullYear()}-${String(heatmapMonth.getMonth() + 1).padStart(2, '0')}`
+    const heatmapMonthLabel = heatmapMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+    const heatmapDayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+    const heatmapDaysInMonth = new Date(heatmapMonth.getFullYear(), heatmapMonth.getMonth() + 1, 0).getDate()
+    const heatmapStartDay = heatmapMonth.getDay()
+    const heatmapCellCount = Math.ceil((heatmapStartDay + heatmapDaysInMonth) / 7) * 7
+    const heatmapCells = Array.from({ length: heatmapCellCount }, (_, index) => {
+      const day = index - heatmapStartDay + 1
+      if (day < 1 || day > heatmapDaysInMonth) return null
+      const dateKey = `${heatmapMonthKey}-${String(day).padStart(2, '0')}`
+      const words = Math.max(0, writingStats.dailyWordDeltas[dateKey] ?? 0)
+      return { day, dateKey, words }
+    })
+    const interpolate = (start: number, end: number, amount: number) =>
+      Math.round(start + (end - start) * amount)
+    const heatmapColor = (words: number) => {
+      if (words <= 0) return undefined
+      const stops = [
+        [0, 63, 119],
+        [0, 190, 255],
+        [0, 235, 63],
+        [250, 245, 0],
+        [255, 119, 0],
+        [255, 0, 0],
+      ]
+      const amount = Math.min(1, Math.max(0, (words - 100) / 1900))
+      const scaled = amount * (stops.length - 1)
+      const index = Math.min(stops.length - 2, Math.floor(scaled))
+      const segmentAmount = scaled - index
+      const [r1, g1, b1] = stops[index]
+      const [r2, g2, b2] = stops[index + 1]
+      return `rgb(${interpolate(r1, r2, segmentAmount)}, ${interpolate(g1, g2, segmentAmount)}, ${interpolate(b1, b2, segmentAmount)})`
     }
 
     const saveGoals = () => {
@@ -5239,6 +6478,8 @@ export default function App() {
       <div className="modal-overlay">
         <div className="modal-box goal-modal">
           <p className="modal-title">Writing Goals</p>
+          <div className="goal-modal-grid">
+            <div className="goal-modal-panel">
           <div className="goal-progress-list">
             <GoalProgressRow
               label="Monthly"
@@ -5308,16 +6549,81 @@ export default function App() {
               />
             </label>
           </div>
+            </div>
+            <div className="goal-modal-separator" aria-hidden="true" />
+            <div className="goal-heatmap-panel">
+              <div className="goal-heatmap-header">
+                <button
+                  type="button"
+                  className="goal-heatmap-nav"
+                  onClick={() => setHeatmapMonth(month => new Date(month.getFullYear(), month.getMonth() - 1, 1))}
+                  title="Previous month"
+                  aria-label="Previous month"
+                >
+                  <i className="ti ti-chevron-left" aria-hidden="true" />
+                </button>
+                <span>{heatmapMonthLabel}</span>
+                <button
+                  type="button"
+                  className="goal-heatmap-nav"
+                  onClick={() => setHeatmapMonth(month => new Date(month.getFullYear(), month.getMonth() + 1, 1))}
+                  title="Next month"
+                  aria-label="Next month"
+                >
+                  <i className="ti ti-chevron-right" aria-hidden="true" />
+                </button>
+              </div>
+              <div className="goal-heatmap-weekdays">
+                {heatmapDayNames.map(day => <span key={day}>{day}</span>)}
+              </div>
+              <div className="goal-heatmap-grid" onMouseLeave={() => setHeatmapTooltip(null)}>
+                {heatmapCells.map((cell, index) => (
+                  <div
+                    key={cell?.dateKey ?? `empty-${index}`}
+                    className={`goal-heatmap-day${cell ? '' : ' goal-heatmap-day-empty'}${cell?.dateKey === todayKey ? ' is-today' : ''}`}
+                    style={cell ? { background: heatmapColor(cell.words) } : undefined}
+                    onMouseMove={cell
+                      ? e => setHeatmapTooltip({
+                        x: e.clientX,
+                        y: e.clientY,
+                        dateKey: cell.dateKey,
+                        words: cell.words,
+                      })
+                      : undefined}
+                  >
+                    {cell?.day}
+                  </div>
+                ))}
+              </div>
+              <div className="goal-heatmap-key">
+                <div className="goal-heatmap-gradient" aria-hidden="true" />
+                <div className="goal-heatmap-key-labels">
+                  <span>100 words</span>
+                  <span>2,000 words</span>
+                </div>
+              </div>
+            </div>
+          </div>
           <div className="modal-footer">
             <button className="welcome-btn" onClick={() => setShowGoalModal(false)}>Cancel</button>
             <button className="welcome-btn" onClick={saveGoals}>Save</button>
           </div>
+          {heatmapTooltip && (
+            <div
+              className="goal-heatmap-tooltip"
+              style={{ left: heatmapTooltip.x + 12, top: heatmapTooltip.y + 12 }}
+            >
+              <strong>{heatmapTooltip.dateKey}</strong>
+              <span>{heatmapTooltip.words.toLocaleString()} {heatmapTooltip.words === 1 ? 'word' : 'words'}</span>
+            </div>
+          )}
         </div>
       </div>
     )
   }
 
   const handleWorkspaceChange = (nextWorkspace: Workspace) => {
+    if (reviewPackage && nextWorkspace !== 'revision' && nextWorkspace !== 'outline') return
     if (workspace === 'editor' && nextWorkspace !== 'editor' && saveTimer.current) {
       clearTimeout(saveTimer.current)
       saveTimer.current = null
@@ -5351,6 +6657,19 @@ export default function App() {
     await selectDoc(id)
   }
 
+  const openOutlineCommentsScene = async (id: number) => {
+    const firstComment = revisionCommentsRef.current
+      .filter(comment => comment.sceneId === id && outlineCountableCommentIds.has(comment.id))
+      .sort((a, b) => {
+        if (a.resolved !== b.resolved) return a.resolved ? 1 : -1
+        return a.createdAt - b.createdAt
+      })[0]
+
+    setWorkspace('revision')
+    await selectRevisionDoc(id, firstComment)
+    setRevisionActiveCommentId(firstComment?.id ?? null)
+  }
+
 
   const SharedModals = () => (
     <>
@@ -5376,6 +6695,8 @@ export default function App() {
       {showProjectSettings && project && (
         <ProjectSettingsModal
           settings={normalizeProjectSettings(project.settings)}
+          manuscripts={project.manuscripts}
+          activeManuscriptId={project.activeManuscriptId}
           styles={styles}
           dictionaryWords={projectDictionary}
           projectPath={project.path}
@@ -5515,6 +6836,160 @@ export default function App() {
           </div>
         </div>
       )}
+      {confirmDeleteManuscript && (
+        <div className="modal-overlay">
+          <div className="modal-box modal-danger" style={{ width: 420 }}>
+            <p className="modal-title">Delete manuscript?</p>
+            <p className="modal-danger-text">
+              <strong style={{ color: '#cc8888' }}>{confirmDeleteManuscript.name}</strong> will be removed from this project&apos;s manuscript list. Its scenes and folders will be moved to Trash.
+            </p>
+            <div className="modal-footer">
+              <button className="welcome-btn" onClick={() => setConfirmDeleteManuscript(null)}>Cancel</button>
+              <button
+                className="welcome-btn modal-btn-danger"
+                onClick={() => deleteManuscript(confirmDeleteManuscript.id)}
+              >
+                Delete manuscript
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showExportWorld && (
+        <div className="modal-overlay">
+          <div className="modal-box world-bundle-modal">
+            <p className="modal-title">Export World</p>
+            <p className="modal-danger-text">
+              Choose which worldbuilding components to package into a `.scrivusworld` file.
+            </p>
+            <div className="world-bundle-options">
+              {([
+                ['loreBook', 'Lore Book', 'Categories, entries, templates, and Lore images'],
+                ['canvas', 'Canvas', 'Canvas nodes, connections, colors, and labels'],
+                ['atlas', 'Atlas', 'Maps, markers, categories, and map images'],
+                ['dictionary', 'Dictionary', 'Project-specific spelling dictionary'],
+              ] as const).map(([key, label, description]) => (
+                <label key={key} className="world-bundle-option">
+                  <input
+                    type="checkbox"
+                    checked={worldExportSelection[key]}
+                    onChange={event => {
+                      const checked = event.currentTarget.checked
+                      setWorldExportSelection(selection => ({ ...selection, [key]: checked }))
+                    }}
+                  />
+                  <span>
+                    <strong>{label}</strong>
+                    <small>{description}</small>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="modal-footer">
+              <button className="welcome-btn" onClick={() => setShowExportWorld(false)} disabled={worldBundleBusy}>Cancel</button>
+              <button
+                className="welcome-btn"
+                onClick={exportWorldBundle}
+                disabled={worldBundleBusy || !hasWorldBundleSelection(worldExportSelection)}
+              >
+                {worldBundleBusy ? 'Exporting...' : 'Export'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {pendingReviewChapters && (
+        <div className="modal-overlay modal-overlay-top">
+          <div className="modal-box" style={{ width: 420 }}>
+            <p className="modal-title">Create Review Package</p>
+            <p className="modal-danger-text">
+              Add an optional reviewer name or label for this review round.
+            </p>
+            <label className="modal-field">
+              <span className="modal-label">Reviewer</span>
+              <input
+                className="modal-input"
+                value={reviewerNameDraft}
+                onChange={event => setReviewerNameDraft(event.target.value)}
+                placeholder="Editor name or review label"
+                autoFocus
+                disabled={reviewPackageBusy}
+              />
+            </label>
+            <div className="modal-footer">
+              {reviewPackageBusy ? (
+                <span className="modal-progress-text">
+                  Creating review package...
+                </span>
+              ) : (
+                <>
+                <button
+                  className="welcome-btn"
+                  onClick={() => setPendingReviewChapters(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="welcome-btn"
+                  onClick={() => { void confirmCreateReviewPackage() }}
+                >
+                  Create
+                </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {worldImportBundle && (
+        <div className="modal-overlay">
+          <div className="modal-box world-bundle-modal">
+            <p className="modal-title">Import World</p>
+            <p className="modal-danger-text">
+              Choose which components to replace in this project from `{worldImportBundle.manifest.projectName}`.
+            </p>
+            <div className="world-bundle-options">
+              {([
+                ['loreBook', 'Lore Book', 'Categories, entries, templates, and Lore images'],
+                ['canvas', 'Canvas', 'Canvas nodes, connections, colors, and labels'],
+                ['atlas', 'Atlas', 'Maps, markers, categories, and map images'],
+                ['dictionary', 'Dictionary', 'Project-specific spelling dictionary'],
+              ] as const).map(([key, label, description]) => (
+                <label key={key} className="world-bundle-option">
+                  <input
+                    type="checkbox"
+                    disabled={!worldImportBundle.available[key]}
+                    checked={worldImportSelection[key] && worldImportBundle.available[key]}
+                    onChange={event => {
+                      const checked = event.currentTarget.checked
+                      setWorldImportSelection(selection => ({ ...selection, [key]: checked }))
+                    }}
+                  />
+                  <span>
+                    <strong>{label}</strong>
+                    <small>{worldImportBundle.available[key] ? description : 'Not included in this world bundle'}</small>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {worldImportReplacementLabels.length > 0 && (
+              <p className="modal-danger-text world-bundle-warning">
+                Importing will replace existing {worldImportReplacementLabels.join(', ')} data in this project.
+              </p>
+            )}
+            <div className="modal-footer">
+              <button className="welcome-btn" onClick={() => setWorldImportBundle(null)} disabled={worldBundleBusy}>Cancel</button>
+              <button
+                className="welcome-btn modal-btn-danger"
+                onClick={importWorldBundle}
+                disabled={worldBundleBusy || !hasWorldBundleSelection(worldImportSelection)}
+              >
+                {worldBundleBusy ? 'Importing...' : 'Import Selected'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <AppMessageModal
         message={appMessage}
         onClose={() => setAppMessage(null)}
@@ -5579,7 +7054,7 @@ export default function App() {
         projectPath={projectRef.current?.path ?? null}
         onCancel={() => setLoreEntryEditor(null)}
         onSave={saveLoreEntry}
-        onPickImage={async (entryId, fieldId, previousImagePath) => {
+        onPickImage={async (entryId, fieldId, previousImagePaths) => {
           if (!projectRef.current) return null
           const selected = await open({
             title: 'Select image',
@@ -5587,10 +7062,20 @@ export default function App() {
           })
           if (!selected || Array.isArray(selected)) return null
           const imagePath = await copyLoreImage(projectRef.current.path, selected as string, entryId, fieldId)
-          if (previousImagePath && previousImagePath !== imagePath) {
-            await deleteLoreImage(projectRef.current.path, previousImagePath)
+          for (const previousImagePath of previousImagePaths ?? []) {
+            if (previousImagePath && previousImagePath !== imagePath) {
+              await deleteLoreImage(projectRef.current.path, previousImagePath)
+            }
           }
           return imagePath
+        }}
+        onSaveCroppedImage={(entryId, fieldId, bytes) => {
+          if (!projectRef.current) return Promise.resolve(null)
+          return saveLoreCroppedImage(projectRef.current.path, bytes, entryId, fieldId)
+        }}
+        onDeleteImage={imagePath => {
+          if (!projectRef.current) return Promise.resolve()
+          return deleteLoreImage(projectRef.current.path, imagePath)
         }}
       />
       <ConfirmDeleteLoreCategoryModal
@@ -5607,12 +7092,13 @@ export default function App() {
       {showCompile && (
         <CompileModal
           loading={compileLoading}
+          busy={reviewPackageBusy}
           chapters={compileChapters}
           format={compileFormat}
           frontMatter={compileFrontMatter}
           includeActHeadings={compileIncludeActHeadings}
           includeSceneTitles={compileIncludeSceneTitles}
-          collapsed={projectRef.current?.compileCollapsed ?? {}}
+          collapsed={getActiveManuscript(projectRef.current)?.compileCollapsed ?? projectRef.current?.compileCollapsed ?? {}}
           style={compileStyle}
           projectStyles={styles}
           onClose={() => setShowCompile(false)}
@@ -5629,6 +7115,7 @@ export default function App() {
             setShowStyles(true)
           }}
           onExport={compileProject}
+          onCreateReviewPackage={createReviewPackageFromCompile}
         />
       )}
     </>
@@ -5656,40 +7143,43 @@ export default function App() {
         </div>
         <SharedModals />
 
-        <i className="ti ti-feather welcome-icon" aria-hidden="true" />
-        <p className="welcome-label">No project open</p>
-        <div className={`welcome-action-stack${recentProjects.length ? ' welcome-actions-spaced' : ''}`}>
-          <div className="welcome-actions">
-            <button className="welcome-btn" onClick={startNewProject}>
-              <i className="ti ti-folder-plus" aria-hidden="true" /> New project
-            </button>
-            <button className="welcome-btn" onClick={openProject}>
-              <i className="ti ti-folder-open" aria-hidden="true" /> Open project
-            </button>
-          </div>
-          <div className="welcome-actions welcome-actions-secondary">
-            <button className="welcome-btn" onClick={startImportWordDoc}>
-              <i className="ti ti-file-import" aria-hidden="true" /> Import from Word Doc
-            </button>
-          </div>
-        </div>
-        {recentProjects.length > 0 && (
-          <div className="welcome-recent">
-            <p className="welcome-recent-heading">Recent projects</p>
-            <div className="welcome-recent-list">
-              {recentProjects.map(r => (
-                <button key={r.path} className="welcome-recent-item" onClick={() => openProjectByPath(r.path)}>
-                  <i className="ti ti-book welcome-recent-icon" aria-hidden="true" />
-                  <div className="welcome-recent-text">
-                    <p className="welcome-recent-name">{r.name}</p>
-                    <p className="welcome-recent-path">{r.path}</p>
-                  </div>
-                </button>
-              ))}
+        <div className="welcome-scroll">
+          <i className="ti ti-feather welcome-icon" aria-hidden="true" />
+          <p className="welcome-label">No project open</p>
+          <div className={`welcome-action-stack${recentProjects.length ? ' welcome-actions-spaced' : ''}`}>
+            <div className="welcome-actions">
+              <button className="welcome-btn" onClick={startNewProject}>
+                <i className="ti ti-folder-plus" aria-hidden="true" /> New project
+              </button>
+              <button className="welcome-btn" onClick={openProject}>
+                <i className="ti ti-folder-open" aria-hidden="true" /> Open project
+              </button>
+              <button className="welcome-btn" onClick={startImportWordDoc}>
+                <i className="ti ti-file-import" aria-hidden="true" /> Import from Word Doc
+              </button>
+              <button className="welcome-btn" onClick={() => { void openReviewPackage() }}>
+                <i className="ti ti-file-check" aria-hidden="true" /> Open review package
+              </button>
             </div>
           </div>
-        )}
-        <WelcomeUpdateNotice />
+          {recentProjects.length > 0 && (
+            <div className="welcome-recent">
+              <p className="welcome-recent-heading">Recent projects</p>
+              <div className="welcome-recent-list">
+                {recentProjects.map(r => (
+                  <button key={r.path} className="welcome-recent-item" onClick={() => openProjectByPath(r.path)}>
+                    <i className="ti ti-book welcome-recent-icon" aria-hidden="true" />
+                    <div className="welcome-recent-text">
+                      <p className="welcome-recent-name">{r.name}</p>
+                      <p className="welcome-recent-path">{r.path}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <WelcomeUpdateNotice />
+        </div>
       </div>
     )
   }
@@ -5704,8 +7194,10 @@ export default function App() {
     <div id="app" className={focusMode ? 'editor-focus-mode' : undefined} style={{ position: 'relative' }}>
       <div id="menubar">
         <MenuBarMenus />
-        <span className="project-title">{project.name}</span>
-        <span style={{ fontSize: 11, color: 'var(--text-muted)', paddingRight: 8 }}>{saveLabel}</span>
+        <span className="project-title">{reviewPackage ? `${project.name} - Review Mode` : project.name}</span>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)', paddingRight: 8 }}>
+          {reviewPackage ? (reviewPackageBusy ? 'working...' : '') : saveLabel}
+        </span>
         <ThemeMenu />
       </div>
 
@@ -5713,9 +7205,12 @@ export default function App() {
         binderOpen={binderOpen}
         workspace={workspace}
         projectOpen={!!project}
+        reviewMode={Boolean(reviewPackage)}
         showFnR={showFnR}
         showSearch={showSearch}
-        tree={tree}
+        tree={visibleBinderTree}
+        manuscripts={project.manuscripts}
+        activeManuscriptId={project.activeManuscriptId}
         activeId={activeId}
         bookmarkedSceneId={activeId}
         selectedIds={selectedBinderIds}
@@ -5734,6 +7229,9 @@ export default function App() {
         }}
         onExpandAllFolders={() => setAllBinderFoldersOpen(true)}
         onCollapseAllFolders={() => setAllBinderFoldersOpen(false)}
+        onActiveManuscriptChange={selectActiveManuscript}
+        onAddManuscript={addManuscript}
+        onDeleteActiveManuscript={requestDeleteActiveManuscript}
         onToggleFindReplace={() => {
           if (showFnR) {
             setShowFnR(false)
@@ -5824,6 +7322,7 @@ export default function App() {
       <WorkspaceShell
         workspace={workspace}
         onWorkspaceChange={handleWorkspaceChange}
+        reviewMode={Boolean(reviewPackage)}
         editorState={{
           showEditor,
           editor,
@@ -5884,10 +7383,12 @@ export default function App() {
           rows: outlineRows,
           manuscriptWordCount,
           readingWpm,
+          sceneCommentCounts: outlineSceneCommentCounts,
           collapsedFolderIds: outlineCollapsedFolderIds,
           onCollapsedFolderIdsChange: setOutlineCollapsedFolderIds,
           onOpenScene: openOutlineScene,
-          onSceneStatusChange: updateOutlineSceneStatus,
+          onOpenCommentsScene: openOutlineCommentsScene,
+          onSceneStatusChange: reviewPackage ? () => { } : updateOutlineSceneStatus,
         }}
         mindMapState={{
           map: mindMap,
@@ -5984,7 +7485,7 @@ export default function App() {
         />
       )}
       <InspectorPanel
-        open={inspectorOpen}
+        open={inspectorOpen && !reviewPackage}
         panelLockActive={sidePanelsLocked}
         workspace={workspace}
         project={project}
@@ -6062,6 +7563,7 @@ export default function App() {
         menu={contextMenu}
         workspace={workspace}
         selectedCount={contextMenu ? getSelectedBinderActionIds(contextMenu.node.id).length : 0}
+        manuscripts={project.manuscripts}
         onRename={handleBinderContextRename}
         onDuplicate={handleBinderContextDuplicate}
         onBulkRename={handleBinderContextBulkRename}

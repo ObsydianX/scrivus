@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useState, type ReactNode, type RefObject } from 'react'
 import { escapeAttr } from '../text'
 import type { RevisionComment, SceneTab } from '../types'
 import { DocumentTitleBar } from './EditorChrome'
@@ -169,6 +169,30 @@ export function RevisionView({
   const activeTabName = tabs[activeTabIndex]?.name?.trim()
   const titleBarText = activeTabName && tabs.length > 1 ? `${title} - ${activeTabName}` : title
   const zoomScale = zoom / 100
+  const activeCommentKey = activeComments.map(comment => comment.id).join('|')
+
+  useEffect(() => {
+    if (!activeCommentId) return
+    const scroll = scrollRef.current
+    if (!scroll) return
+
+    const frame = requestAnimationFrame(() => {
+      const marks = Array.from(scroll.querySelectorAll<HTMLElement>('[data-comment-id]'))
+      const mark = marks.find(element => element.dataset.commentId === activeCommentId)
+      if (!mark) return
+
+      const scrollRect = scroll.getBoundingClientRect()
+      const markRect = mark.getBoundingClientRect()
+      const markCenter = markRect.top + markRect.height / 2
+      const scrollCenter = scrollRect.top + scrollRect.height / 2
+      scroll.scrollTo({
+        top: scroll.scrollTop + markCenter - scrollCenter,
+        behavior: 'smooth',
+      })
+    })
+
+    return () => cancelAnimationFrame(frame)
+  }, [activeCommentId, activeCommentKey, activeTabIndex, content, scrollRef])
 
   if (!activeId) {
     return (
@@ -239,7 +263,12 @@ export function RevisionView({
                 const mark = target.closest('[data-comment-id]') as HTMLElement | null
                 if (mark) {
                   const cid = mark.dataset.commentId ?? null
-                  onActiveCommentChange(cid)
+                  if (cid && cid === activeCommentId) {
+                    onActiveCommentChange(null)
+                    requestAnimationFrame(() => onActiveCommentChange(cid))
+                  } else {
+                    onActiveCommentChange(cid)
+                  }
                 }
               }}
             />
@@ -359,7 +388,14 @@ export function RevisionCommentsPane({
           <div
             key={c.id}
             className={`revision-comment${activeCommentId === c.id ? ' revision-comment--active' : ''}${c.resolved ? ' revision-comment--resolved' : ''}`}
-            onClick={() => onActiveCommentChange(c.id === activeCommentId ? null : c.id)}
+            onClick={() => {
+              if (c.id === activeCommentId) {
+                onActiveCommentChange(null)
+                requestAnimationFrame(() => onActiveCommentChange(c.id))
+              } else {
+                onActiveCommentChange(c.id)
+              }
+            }}
           >
             <div className="revision-comment-meta">
               <span className="revision-comment-date">
@@ -367,7 +403,14 @@ export function RevisionCommentsPane({
                   month: 'short', day: 'numeric',
                 })}
               </span>
+              {c.reviewReviewerName && <span className="revision-comment-reviewer">{c.reviewReviewerName}</span>}
+              {c.unanchored && <span className="revision-comment-unanchored">Unanchored</span>}
             </div>
+            {(c.reviewChapterTitle || c.reviewSceneTitle) && (
+              <div className="revision-comment-context">
+                {[c.reviewChapterTitle, c.reviewSceneTitle].filter(Boolean).join(' / ')}
+              </div>
+            )}
             <div className="revision-comment-quote">
               <i className="ti ti-quote" aria-hidden="true" />
               {c.quote.length > 100 ? c.quote.slice(0, 100) + '...' : c.quote}

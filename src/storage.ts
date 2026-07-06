@@ -7,6 +7,7 @@ import {
   DEFAULT_STYLES,
   PROJECT_FORMAT_VERSION,
   SCRIVUS_VERSION,
+  normalizeManuscripts,
   normalizeAtlas,
   normalizeMindMap,
   normalizeProjectSettings,
@@ -22,11 +23,32 @@ import type {
   FolderNode,
   LoreBook,
   MindMap,
+  Manuscript,
   Project,
   ProjectStyles,
   RevisionComment,
   TreeNode,
 } from './types'
+
+export type ReviewSnapshotScene = {
+  sceneId: number
+  fileId: string
+  title: string
+  chapterTitle: string
+  tabIndex: number
+  tabName: string
+  content: string
+}
+
+export type ReviewSnapshot = {
+  reviewId: string
+  projectName: string
+  reviewerName: string
+  createdAt: string
+  manuscriptId: string
+  manuscriptTitle: string
+  scenes: ReviewSnapshotScene[]
+}
 
 // Writes to a temp file in the same directory, then renames it over the target,
 // so a crash or power loss mid-write can never leave a truncated file behind.
@@ -38,6 +60,17 @@ async function atomicWriteTextFile(filePath: string, content: string) {
 
 export async function saveProjectToDisk(project: Project, activeId?: number, activeTabIndex?: number) {
   const nextId = Math.max(getNextIdValue(), getMaxTreeId(project.tree) + 1, 10)
+  const manuscripts = normalizeManuscripts(
+    project.manuscripts,
+    project.name,
+    project.settings,
+    project.compileSelections,
+    project.compileIncludes,
+    project.compileCollapsed,
+  )
+  const activeManuscriptId = manuscripts.some(manuscript => manuscript.id === project.activeManuscriptId)
+    ? project.activeManuscriptId
+    : manuscripts[0].id
   const projectJson = {
     name: project.name,
     scrivusVersion: SCRIVUS_VERSION,
@@ -48,6 +81,8 @@ export async function saveProjectToDisk(project: Project, activeId?: number, act
     lastActiveTabIndex: activeTabIndex ?? project.lastActiveTabIndex ?? 0,
     styles: project.styles,
     settings: normalizeProjectSettings(project.settings ?? DEFAULT_PROJECT_SETTINGS),
+    manuscripts,
+    activeManuscriptId,
     compileSelections: project.compileSelections ?? {},
     compileIncludes: project.compileIncludes ?? {},
     compileCollapsed: project.compileCollapsed ?? {},
@@ -248,6 +283,28 @@ export async function writeRevisionFile(projectPath: string, comments: RevisionC
   }
 }
 
+export async function readReviewSnapshots(projectPath: string): Promise<ReviewSnapshot[]> {
+  try {
+    const filePath = await join(projectPath, 'reviews.json')
+    const fileExists = await exists(filePath)
+    if (!fileExists) return []
+    const raw = await readTextFile(filePath)
+    const data = JSON.parse(raw)
+    return Array.isArray(data.reviews) ? data.reviews : []
+  } catch {
+    return []
+  }
+}
+
+export async function writeReviewSnapshots(projectPath: string, reviews: ReviewSnapshot[]) {
+  try {
+    const filePath = await join(projectPath, 'reviews.json')
+    await atomicWriteTextFile(filePath, JSON.stringify({ reviews }, null, 2))
+  } catch {
+    // silently fail
+  }
+}
+
 export async function readCanvasFile(projectPath: string): Promise<MindMap> {
   try {
     const filePath = await join(projectPath, 'canvas.json')
@@ -354,6 +411,18 @@ export async function copyLoreImage(projectPath: string, sourcePath: string, ent
   return `lorebook/images/${destName}`.replace(/\\/g, '/')
 }
 
+export async function saveLoreCroppedImage(projectPath: string, bytes: Uint8Array, entryId: string, fieldId: string): Promise<string> {
+  const unique = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
+  const safeEntryId = entryId.replace(/[^a-zA-Z0-9_-]/g, '_') || 'entry'
+  const safeFieldId = fieldId.replace(/[^a-zA-Z0-9_-]/g, '_') || 'field'
+  const destName = `${safeEntryId}_${safeFieldId}_${unique}_crop.png`
+  const imagesDir = await join(projectPath, 'lorebook', 'images')
+  await mkdir(imagesDir, { recursive: true })
+  const destPath = await join(imagesDir, destName)
+  await writeFile(destPath, bytes)
+  return `lorebook/images/${destName}`.replace(/\\/g, '/')
+}
+
 export async function deleteLoreImage(projectPath: string, imagePath: string) {
   try {
     if (!imagePath.startsWith('lorebook/images/')) return
@@ -367,7 +436,12 @@ export async function deleteLoreImage(projectPath: string, imagePath: string) {
 
 // Throws on failure. Callers must only remove the node from the binder tree
 // after this resolves, otherwise the scenes become unreachable from the UI.
-export async function trashNode(projectPath: string, node: TreeNode, originalFolderId: number) {
+export async function trashNode(
+  projectPath: string,
+  node: TreeNode,
+  originalFolderId: number,
+  options: { manuscript?: Manuscript } = {},
+) {
   const trashDir = await join(projectPath, 'trash')
   await mkdir(trashDir, { recursive: true })
 
@@ -392,6 +466,7 @@ export async function trashNode(projectPath: string, node: TreeNode, originalFol
       originalChildren: node.type === 'folder'
         ? (node as FolderNode).children.map(c => c.id)
         : [],
+      manuscript: options.manuscript,
     }))
   } catch (error) {
     // Best-effort rollback so scenes are not stranded in trash/ without a sidecar.

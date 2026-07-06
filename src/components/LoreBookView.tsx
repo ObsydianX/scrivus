@@ -1,6 +1,12 @@
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { DEFAULT_LORE_IMAGE_CROP, getLoreFieldText, getLoreImageCrop, getLoreImageFullWidth, getLoreImageIgnoreEntryCrop, getLoreImagePath } from '../loreImages'
+import {
+  getLoreFieldText,
+  getLoreImageDisplayPath,
+  getLoreImageFullWidth,
+  getLoreImageIgnoreEntryCrop,
+  getLoreImagePath,
+} from '../loreImages'
 import type { LoreBook, LoreCategory, LoreEntry } from '../types'
 import type { LoreBacklink } from '../loreBacklinks'
 
@@ -187,6 +193,31 @@ export function LoreBookView({
     const activeFields = cat.template.filter(f => !f.removed)
     const activeEntry = expandedEntryId ? cat.entries.find(entry => entry.id === expandedEntryId) ?? null : null
     const categoryEntryOrder = entryGroups.flatMap(group => group.entries)
+    const navigateLoreHome = () => {
+      onExpandedEntryChange(null)
+      onActiveCategoryChange(null)
+      onLoreViewChange('home')
+    }
+    const navigateLoreCategory = () => {
+      onActiveCategoryChange(cat.id)
+      onExpandedEntryChange(null)
+      onLoreViewChange('category')
+    }
+    const renderCategoryBreadcrumb = (includeCategory: boolean) => (
+      <div id="lorebook-category-title" className="lorebook-breadcrumb" aria-label="Lore Book location">
+        <button type="button" className="lorebook-breadcrumb-btn" onClick={navigateLoreHome}>
+          Home
+        </button>
+        {includeCategory && (
+          <>
+            <span className="lorebook-breadcrumb-separator" aria-hidden="true">/</span>
+            <button type="button" className="lorebook-breadcrumb-btn" onClick={navigateLoreCategory}>
+              {cat.name || 'Unnamed category'}
+            </button>
+          </>
+        )}
+      </div>
+    )
 
     if (loreView === 'entry') {
       if (!activeEntry) {
@@ -196,7 +227,7 @@ export function LoreBookView({
               <button className="lorebook-back-btn" onClick={() => onLoreViewChange('category')}>
                 <i className="ti ti-arrow-left" aria-hidden="true" />
               </button>
-              <span id="lorebook-category-title">{cat.name}</span>
+              {renderCategoryBreadcrumb(true)}
             </div>
             <div className="lorebook-entry-view-empty">Entry not found.</div>
           </div>
@@ -225,7 +256,7 @@ export function LoreBookView({
             <button className="lorebook-back-btn" onClick={() => onLoreViewChange('category')}>
               <i className="ti ti-arrow-left" aria-hidden="true" />
             </button>
-            <span id="lorebook-category-title">{cat.name}</span>
+            {renderCategoryBreadcrumb(true)}
             <div className="lorebook-entry-nav" aria-label="Entry navigation">
               <button
                 type="button"
@@ -292,9 +323,10 @@ export function LoreBookView({
                 if (field.type === 'image') {
                   const path = getLoreImagePath(value)
                   if (!path) return null
-                  const crop = getLoreImageIgnoreEntryCrop(value) ? DEFAULT_LORE_IMAGE_CROP : getLoreImageCrop(value)
                   const fullWidth = getLoreImageFullWidth(value)
-                  const src = getProjectImageSrc(path)
+                  const showOriginal = getLoreImageIgnoreEntryCrop(value)
+                  const displayPath = showOriginal ? path : getLoreImageDisplayPath(value)
+                  const src = getProjectImageSrc(displayPath)
                   return (
                     <div key={field.id} className="lorebook-entry-field">
                       {field.label && <span className="lorebook-field-label">{field.label}</span>}
@@ -307,11 +339,6 @@ export function LoreBookView({
                           src={src}
                           className="lorebook-entry-image"
                           alt={field.label ?? 'image'}
-                          style={{
-                            '--lore-image-zoom': crop.zoom,
-                            '--lore-image-pan-x': `${crop.x}px`,
-                            '--lore-image-pan-y': `${crop.y}px`,
-                          } as CSSProperties}
                         />
                       </button>
                     </div>
@@ -383,7 +410,7 @@ export function LoreBookView({
           <button className="lorebook-back-btn" onClick={() => onLoreViewChange('home')}>
             <i className="ti ti-arrow-left" aria-hidden="true" />
           </button>
-          <span id="lorebook-category-title">{cat.name}</span>
+          {renderCategoryBreadcrumb(false)}
           <button className="lorebook-edit-btn" onClick={() => onEditCategory(cat)}>
             <i className="ti ti-edit" aria-hidden="true" />
           </button>
@@ -400,8 +427,7 @@ export function LoreBookView({
                   .filter(field => field.type === 'image')
                   .map(field => entry.fields[field.id])
                   .find(value => Boolean(getLoreImagePath(value)))
-                const previewPath = getLoreImagePath(previewImage)
-                const previewCrop = getLoreImageCrop(previewImage)
+                const previewPath = getLoreImageDisplayPath(previewImage)
                 return (
                   <div
                     key={entry.id}
@@ -422,11 +448,6 @@ export function LoreBookView({
                             src={getProjectImageSrc(previewPath)}
                             alt=""
                             draggable={false}
-                            style={{
-                              '--lore-image-zoom': previewCrop.zoom,
-                              '--lore-image-pan-x': `${previewCrop.x}px`,
-                              '--lore-image-pan-y': `${previewCrop.y}px`,
-                            } as CSSProperties}
                           />
                         )}
                       </span>
@@ -495,8 +516,7 @@ export function LoreBookView({
                     .filter(field => !field.removed && field.type === 'image')
                     .map(field => entry.fields[field.id])
                     .find(value => Boolean(getLoreImagePath(value)))
-                  const pinnedImagePath = getLoreImagePath(pinnedImage)
-                  const pinnedImageCrop = getLoreImageCrop(pinnedImage)
+                  const pinnedImageDisplayPath = getLoreImageDisplayPath(pinnedImage)
                   return (
                     <div
                       key={`${category.id}:${entry.id}`}
@@ -515,17 +535,12 @@ export function LoreBookView({
                       }}
                       title={`${entry.name || 'Unnamed entry'} - ${category.name}`}
                     >
-                      <span className={`lorebook-pinned-image${pinnedImagePath ? ' has-image' : ''}`} aria-hidden="true">
-                        {pinnedImagePath && (
+                      <span className={`lorebook-pinned-image${pinnedImageDisplayPath ? ' has-image' : ''}`} aria-hidden="true">
+                        {pinnedImageDisplayPath && (
                           <img
-                            src={getProjectImageSrc(pinnedImagePath)}
+                            src={getProjectImageSrc(pinnedImageDisplayPath)}
                             alt=""
                             draggable={false}
-                            style={{
-                              '--lore-image-zoom': pinnedImageCrop.zoom,
-                              '--lore-image-pan-x': `${pinnedImageCrop.x}px`,
-                              '--lore-image-pan-y': `${pinnedImageCrop.y}px`,
-                            } as CSSProperties}
                           />
                         )}
                       </span>

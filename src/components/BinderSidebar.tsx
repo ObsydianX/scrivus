@@ -1,5 +1,5 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
-import type { DropTarget, SceneStatus, TreeNode } from '../types'
+import type { DropTarget, Manuscript, SceneStatus, TreeNode } from '../types'
 import { normalizeSceneMetadata } from '../constants'
 
 type MutableRef<T> = {
@@ -11,6 +11,7 @@ type TrashItem = {
   label: string
   node: TreeNode
   originalFolderId: number
+  manuscript?: Manuscript
 }
 
 type ConfirmBinDeleteTarget = {
@@ -39,9 +40,12 @@ type BinderSidebarProps = {
   panelLockActive: boolean
   workspace: 'editor' | 'revision' | 'outline' | 'lorebook' | 'mindmap' | 'atlas'
   projectOpen: boolean
+  reviewMode?: boolean
   showFnR: boolean
   showSearch: boolean
   tree: TreeNode[]
+  manuscripts: Manuscript[]
+  activeManuscriptId: string
   activeId: number | null
   bookmarkedSceneId: number | null
   selectedIds: Set<number>
@@ -56,6 +60,9 @@ type BinderSidebarProps = {
   onBinderOpenChange: (open: boolean) => void
   onToggleFindReplace: () => void
   onToggleSearch: () => void
+  onActiveManuscriptChange: (id: string) => void
+  onAddManuscript: () => void
+  onDeleteActiveManuscript: () => void
   onExpandAllFolders: () => void
   onCollapseAllFolders: () => void
   onDragIdChange: (id: number | null) => void
@@ -78,7 +85,7 @@ type BinderSidebarProps = {
   onAddFolder: (folderId?: number) => void
   onDrop: (targetId: number) => void
   onPreviewTrashScene: (node: Extract<TreeNode, { type: 'doc' }>) => void
-  onRestoreFromTrash: (sidecarId: string, node: TreeNode, originalFolderId: number, parentSidecarId?: string) => void
+  onRestoreFromTrash: (sidecarId: string, node: TreeNode, originalFolderId: number, parentSidecarId?: string, manuscript?: Manuscript) => void
 }
 
 type InlineRenameInputProps = {
@@ -118,9 +125,12 @@ export function BinderSidebar({
   panelLockActive,
   workspace,
   projectOpen,
+  reviewMode = false,
   showFnR,
   showSearch,
   tree,
+  manuscripts,
+  activeManuscriptId,
   activeId,
   bookmarkedSceneId,
   selectedIds,
@@ -135,6 +145,9 @@ export function BinderSidebar({
   onBinderOpenChange,
   onToggleFindReplace,
   onToggleSearch,
+  onActiveManuscriptChange,
+  onAddManuscript,
+  onDeleteActiveManuscript,
   onExpandAllFolders,
   onCollapseAllFolders,
   onDragIdChange,
@@ -161,7 +174,7 @@ export function BinderSidebar({
 }: BinderSidebarProps) {
   const rowPointerDownRef = useRef<{ id: number; x: number; y: number } | null>(null)
 
-  const renderTrashItem = (sidecarId: string, node: TreeNode, originalFolderId: number, depth: number): React.ReactNode => {
+  const renderTrashItem = (sidecarId: string, node: TreeNode, originalFolderId: number, depth: number, manuscript?: Manuscript): React.ReactNode => {
     const isExpanded = trashExpanded.has(`${sidecarId}-${node.id}`)
     const toggleExpand = (e: React.MouseEvent) => {
       e.stopPropagation()
@@ -191,7 +204,7 @@ export function BinderSidebar({
             : <span style={{ width: 16, flexShrink: 0 }} />
           }
           <span className="item-icon">
-            <i className={`ti ti-${node.type === 'folder' ? 'folder' : 'file-text'}`} aria-hidden="true" />
+            <i className={`ti ti-${manuscript ? 'book-2' : node.type === 'folder' ? 'folder' : 'file-text'}`} aria-hidden="true" />
           </span>
           <span className="item-label">{node.label}</span>
           <span className="item-actions" onClick={e => e.stopPropagation()}>
@@ -200,7 +213,7 @@ export function BinderSidebar({
               onClick={e => {
                 e.stopPropagation()
                 const isChildNode = node.id !== trashItems.find(i => i.sidecarId === sidecarId)?.node.id
-                onRestoreFromTrash(sidecarId, node, originalFolderId, isChildNode ? sidecarId : undefined)
+                onRestoreFromTrash(sidecarId, node, originalFolderId, isChildNode ? sidecarId : undefined, isChildNode ? undefined : manuscript)
               }}
             >
               <i className="ti ti-restore" aria-hidden="true" />
@@ -222,7 +235,14 @@ export function BinderSidebar({
 
   const renderNodes = (nodes: TreeNode[], depth: number, inDraggedSubtree = false): React.ReactNode => {
     return nodes.map(n => {
-      const isProtected = n.id === 1 || n.id === 2
+      const manuscriptRoot = manuscripts.find(manuscript => manuscript.folderId === n.id)
+      const isManuscriptRoot = Boolean(manuscriptRoot)
+      const isProtected = n.id === 2
+      const isRootContainer = isProtected || isManuscriptRoot
+      const canSelectForBulk = !isProtected && !isManuscriptRoot
+      const canRename = !isProtected
+      const canMove = !isProtected && !isManuscriptRoot
+      const canDelete = !isProtected && !isManuscriptRoot
       const isDragging = dragId === n.id
       const isSelected = selectedIds.has(n.id)
       const isDragSource = inDraggedSubtree || isDragging || (dragId !== null && isSelected)
@@ -231,15 +251,15 @@ export function BinderSidebar({
       const isDropAfter = dropTarget?.type === 'after' && dropTarget.id === n.id
       const folderRole = getFolderRole(n)
       const activateNode = (shiftKey: boolean, ctrlKey: boolean, metaKey: boolean) => {
-        if (!isProtected && shiftKey) {
+        if (canSelectForBulk && shiftKey) {
           onSelectNode(n.id, 'range')
           return
         }
-        if (!isProtected && (ctrlKey || metaKey)) {
+        if (canSelectForBulk && (ctrlKey || metaKey)) {
           onSelectNode(n.id, 'toggle')
           return
         }
-        onClearSelection(isProtected ? undefined : n.id)
+        onClearSelection(canSelectForBulk ? n.id : undefined)
         if (n.type === 'doc') {
           if (workspace === 'revision') onSelectRevisionDoc(n.id)
           else onSelectDoc(n.id)
@@ -253,8 +273,8 @@ export function BinderSidebar({
           {isDropBefore && !isProtected && <div className="drop-line" />}
           <div
             className={`tree-item${activeId === n.id ? ' active' : ''}${isSelected ? ' selected' : ''}${isDropFolder ? ' drag-over-folder' : ''}`}
-            draggable={!isProtected && renamingId !== n.id}
-            onDragStart={(!isProtected && renamingId !== n.id) ? e => {
+            draggable={canMove && renamingId !== n.id}
+            onDragStart={(canMove && renamingId !== n.id) ? e => {
               e.stopPropagation()
               rowPointerDownRef.current = null
               dragIdRef.current = n.id
@@ -263,7 +283,7 @@ export function BinderSidebar({
               e.dataTransfer.effectAllowed = 'move'
               document.getElementById('tree')?.classList.add('dragging')
             } : undefined}
-            onDragEnd={(!isProtected && renamingId !== n.id) ? () => {
+            onDragEnd={(canMove && renamingId !== n.id) ? () => {
               document.getElementById('tree')?.classList.remove('dragging')
               onDragIdChange(null)
               onDropTargetChange(null)
@@ -274,14 +294,14 @@ export function BinderSidebar({
               e.stopPropagation()
               // Rows inside the dragged selection are not valid drop targets;
               // skipping preventDefault keeps the browser from allowing a drop here.
-              if (isDragSource) {
+              if (reviewMode || isDragSource) {
                 dropTargetRef.current = null
                 onDropTargetChange(null)
                 return
               }
               e.preventDefault()
               if (dragIdRef.current === n.id) return
-              if (isProtected && n.type === 'folder') {
+              if (isRootContainer && n.type === 'folder') {
                 dropTargetRef.current = { type: 'inside', id: n.id }
                 onDropTargetChange({ type: 'inside', id: n.id })
                 return
@@ -301,7 +321,7 @@ export function BinderSidebar({
               dropTargetRef.current = next
               onDropTargetChange(next)
             }}
-            onDrop={e => { e.preventDefault(); e.stopPropagation(); onDrop(n.id) }}
+            onDrop={reviewMode ? undefined : e => { e.preventDefault(); e.stopPropagation(); onDrop(n.id) }}
             onPointerDown={e => {
               if (e.button !== 0) return
               if ((e.target as HTMLElement).closest('.item-actions, .inline-rename, button, input')) return
@@ -317,13 +337,14 @@ export function BinderSidebar({
               activateNode(e.shiftKey, e.ctrlKey, e.metaKey)
             }}
             onDoubleClick={() => {
-              if (n.id === 1 || n.id === 2) return
+              if (!canRename) return
               onRenamingIdChange(n.id)
             }}
             onContextMenu={e => {
               e.preventDefault()
               e.stopPropagation()
-              if (!isProtected && !selectedIds.has(n.id)) onClearSelection(n.id)
+              if (reviewMode) return
+              if (canSelectForBulk && !selectedIds.has(n.id)) onClearSelection(n.id)
               onContextMenuChange({ x: e.clientX, y: e.clientY, node: n, depth })
             }}
           >
@@ -334,6 +355,7 @@ export function BinderSidebar({
             }
             <span className="item-icon">
               <i className={`ti ti-${n.id === 1 ? 'book-2' :
+                isManuscriptRoot ? 'book-2' :
                 n.id === 2 ? 'notebook' :
                   n.type === 'folder' ? (folderRole === 'act' ? 'books' : 'folder') :
                     'file-text'
@@ -363,7 +385,7 @@ export function BinderSidebar({
             }
             {n.type === 'folder' && (
               <span className="item-actions" onClick={e => e.stopPropagation()}>
-                {workspace === 'editor' && (
+                {workspace === 'editor' && !reviewMode && (
                   <>
                     <button title="New scene" onClick={e => { e.stopPropagation(); onAddDoc(n.id) }}>
                       <i className="ti ti-file-plus" aria-hidden="true" />
@@ -373,11 +395,15 @@ export function BinderSidebar({
                     </button>
                   </>
                 )}
-                {!isProtected && (
+                {canRename && !reviewMode && (
                   <>
                     <button title="Rename" onClick={e => { e.stopPropagation(); onRenamingIdChange(n.id) }}>
                       <i className="ti ti-pencil" aria-hidden="true" />
                     </button>
+                  </>
+                )}
+                {canDelete && !reviewMode && (
+                  <>
                     <button title="Delete" onClick={e => {
                       e.stopPropagation()
                       onConfirmBinDeleteChange({ id: n.id, label: n.label })
@@ -388,7 +414,7 @@ export function BinderSidebar({
                 )}
               </span>
             )}
-            {n.type === 'doc' && !isProtected && (
+            {n.type === 'doc' && !isProtected && !reviewMode && (
               <span className="item-actions" onClick={e => e.stopPropagation()}>
                 <button title="Rename" onClick={e => { e.stopPropagation(); onRenamingIdChange(n.id) }}>
                   <i className="ti ti-pencil" aria-hidden="true" />
@@ -427,7 +453,7 @@ export function BinderSidebar({
             title="Find and replace"
             className={showFnR ? 'active' : ''}
             onClick={onToggleFindReplace}
-            disabled={!projectOpen}
+            disabled={!projectOpen || reviewMode}
           >
             <i className="ti ti-replace" aria-hidden="true" />
           </button>
@@ -435,7 +461,7 @@ export function BinderSidebar({
             title="Search project"
             className={showSearch ? 'active' : ''}
             onClick={onToggleSearch}
-            disabled={!projectOpen}
+            disabled={!projectOpen || reviewMode}
           >
             <i className="ti ti-search" aria-hidden="true" />
           </button>
@@ -472,10 +498,36 @@ export function BinderSidebar({
       </div>
 
       {binderOpen && <div id="tree">
+        {manuscripts.length > 0 && !reviewMode && (
+          <div className="manuscript-switcher">
+            <select
+              value={activeManuscriptId}
+              onChange={e => onActiveManuscriptChange(e.target.value)}
+              title="Active manuscript"
+              aria-label="Active manuscript"
+            >
+              {manuscripts.map(manuscript => (
+                <option key={manuscript.id} value={manuscript.id}>{manuscript.name || manuscript.title || 'Untitled Manuscript'}</option>
+              ))}
+            </select>
+            <button title="New manuscript" aria-label="New manuscript" onClick={onAddManuscript}>
+              <i className="ti ti-books" aria-hidden="true" />
+            </button>
+            <button
+              title={manuscripts.length <= 1 ? 'At least one manuscript is required' : 'Delete selected manuscript'}
+              aria-label="Delete selected manuscript"
+              disabled={manuscripts.length <= 1}
+              onClick={onDeleteActiveManuscript}
+            >
+              <i className="ti ti-books-off" aria-hidden="true" />
+            </button>
+          </div>
+        )}
         {renderNodes(tree, 0)}
         <div
           style={{ flex: 1, minHeight: 40 }}
           onDragOver={e => {
+            if (reviewMode) return
             e.preventDefault()
             const lastNode = tree[tree.length - 1]
             if (lastNode) {
@@ -483,9 +535,9 @@ export function BinderSidebar({
               onDropTargetChange({ type: 'after', id: lastNode.id })
             }
           }}
-          onDrop={e => { e.preventDefault(); onDrop(-1) }}
+          onDrop={reviewMode ? undefined : e => { e.preventDefault(); onDrop(-1) }}
         />
-        <div
+        {!reviewMode && <div
           className="tree-item"
           onClick={e => {
             if ((e.target as HTMLElement).closest('.item-actions')) return
@@ -513,12 +565,12 @@ export function BinderSidebar({
               </button>
             </span>
           )}
-        </div>
-        {trashOpen && (
+        </div>}
+        {!reviewMode && trashOpen && (
           <div>
             {trashItems.length === 0
               ? <div className="trash-empty">Empty</div>
-              : trashItems.map(item => renderTrashItem(item.sidecarId, item.node, item.originalFolderId, 1))
+              : trashItems.map(item => renderTrashItem(item.sidecarId, item.node, item.originalFolderId, 1, item.manuscript))
             }
           </div>
         )}

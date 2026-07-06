@@ -122,9 +122,11 @@ type OutlineWorkspaceState = {
   rows: OutlineRow[]
   manuscriptWordCount: number
   readingWpm: number
+  sceneCommentCounts: Record<number, number>
   collapsedFolderIds: Set<number>
   onCollapsedFolderIdsChange: (ids: Set<number>) => void
   onOpenScene: (id: number) => void
+  onOpenCommentsScene: (id: number) => void
   onSceneStatusChange: (id: number, status: SceneStatus) => void
 }
 
@@ -177,6 +179,7 @@ type RevisionWorkspaceState = {
 type WorkspaceShellProps = {
   workspace: Workspace
   onWorkspaceChange: (workspace: Workspace) => void
+  reviewMode?: boolean
   editorState: EditorWorkspaceState
   tabState: TabWorkspaceState
   statusState: StatusWorkspaceState
@@ -277,6 +280,7 @@ function EditorSplitView({
 export function WorkspaceShell({
   workspace,
   onWorkspaceChange,
+  reviewMode = false,
   editorState,
   tabState,
   statusState,
@@ -346,9 +350,11 @@ export function WorkspaceShell({
   rows,
   manuscriptWordCount: outlineManuscriptWordCount,
   readingWpm: outlineReadingWpm,
+  sceneCommentCounts,
   collapsedFolderIds: outlineCollapsedFolderIds,
   onCollapsedFolderIdsChange: onOutlineCollapsedFolderIdsChange,
   onOpenScene,
+  onOpenCommentsScene,
   onSceneStatusChange,
   } = outlineState
   const {
@@ -409,14 +415,14 @@ export function WorkspaceShell({
   return (
     <div id="editor-area" className={focusMode && workspace === 'editor' ? 'focus-mode' : undefined}>
       <div id="workspace-bar">
-        <button
+        {!reviewMode && <button
           className={workspace === 'editor' ? 'active' : ''}
           onClick={() => onWorkspaceChange('editor')}
           title="Editor"
         >
           <i className="ti ti-edit" aria-hidden="true" />
           <span>Editor</span>
-        </button>
+        </button>}
         <button
           className={workspace === 'revision' ? 'active' : ''}
           onClick={() => onWorkspaceChange('revision')}
@@ -433,30 +439,30 @@ export function WorkspaceShell({
           <i className="ti ti-list-details" aria-hidden="true" />
           <span>Outline</span>
         </button>
-        <button
+        {!reviewMode && <button
           className={workspace === 'lorebook' ? 'active' : ''}
           onClick={() => onWorkspaceChange('lorebook')}
           title="Lore Book"
         >
           <i className="ti ti-book-2" aria-hidden="true" />
           <span>Lore Book</span>
-        </button>
-        <button
+        </button>}
+        {!reviewMode && <button
           className={workspace === 'mindmap' ? 'active' : ''}
           onClick={() => onWorkspaceChange('mindmap')}
           title="Canvas"
         >
           <i className="ti ti-git-fork" aria-hidden="true" />
           <span>Canvas</span>
-        </button>
-        <button
+        </button>}
+        {!reviewMode && <button
           className={workspace === 'atlas' ? 'active' : ''}
           onClick={() => onWorkspaceChange('atlas')}
           title="Atlas"
         >
           <i className="ti ti-map-2" aria-hidden="true" />
           <span>Atlas</span>
-        </button>
+        </button>}
       </div>
 
       {workspace === 'editor' && showEditor && (
@@ -522,10 +528,13 @@ export function WorkspaceShell({
           rows={rows}
           manuscriptWordCount={outlineManuscriptWordCount}
           readingWpm={outlineReadingWpm}
+          sceneCommentCounts={sceneCommentCounts}
           collapsedFolderIds={outlineCollapsedFolderIds}
           onCollapsedFolderIdsChange={onOutlineCollapsedFolderIdsChange}
           onOpenScene={onOpenScene}
+          onOpenCommentsScene={onOpenCommentsScene}
           onSceneStatusChange={onSceneStatusChange}
+          readOnly={reviewMode}
         />
       )}
       {workspace === 'revision' && (
@@ -547,10 +556,6 @@ export function WorkspaceShell({
                 chapterWordCount={chapterWordCount}
                 manuscriptWordCount={manuscriptWordCount}
                 readingWpm={readingWpm}
-                sprint={sprint}
-                sprintWords={sprintWords}
-                onSprintStart={onSprintStart}
-                onSprintStop={onSprintStop}
                 zoom={zoom}
                 zoomOpen={zoomOpen}
                 zoomPresets={zoomPresets}

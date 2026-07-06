@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
-import { DEFAULT_BACKUP_SETTINGS, DEFAULT_STYLES, normalizeProjectSettings, normalizeProjectStyles } from '../constants'
-import type { BackupSettings, BodyStyle, EditorStyle, ProjectSettings, ProjectStyles, ThemeId } from '../types'
+import { DEFAULT_BACKUP_SETTINGS, DEFAULT_MANUSCRIPT_ID, DEFAULT_STYLES, normalizeProjectSettings, normalizeProjectStyles } from '../constants'
+import type { BackupSettings, BodyStyle, EditorStyle, Manuscript, ProjectSettings, ProjectStyles, ThemeId } from '../types'
 
 // What to do with the project cover image when the settings are saved.
 export type CoverImageAction =
   | { type: 'keep' }
   | { type: 'set'; sourcePath: string }
   | { type: 'remove' }
+export type ManuscriptCoverImageActions = Record<string, CoverImageAction>
 
 export function ProjectSettingsModal({
   settings,
+  manuscripts,
+  activeManuscriptId,
   styles,
   dictionaryWords,
   projectPath,
@@ -21,6 +24,8 @@ export function ProjectSettingsModal({
   onSave,
 }: {
   settings: ProjectSettings
+  manuscripts: Manuscript[]
+  activeManuscriptId: string
   styles: ProjectStyles
   dictionaryWords: string[]
   projectPath: string | null
@@ -28,30 +33,50 @@ export function ProjectSettingsModal({
   onTabChange: (tab: 'book' | 'styles' | 'backups' | 'dictionary') => void
   onPickCoverImage: () => Promise<string | null>
   onCancel: () => void
-  onSave: (settings: ProjectSettings, styles: ProjectStyles, dictionaryWords: string[], coverAction: CoverImageAction) => void
+  onSave: (settings: ProjectSettings, manuscripts: Manuscript[], styles: ProjectStyles, dictionaryWords: string[], coverActions: ManuscriptCoverImageActions) => void
 }) {
   const [local, setLocal] = useState<ProjectSettings>(() => normalizeProjectSettings(settings))
+  const [localManuscripts, setLocalManuscripts] = useState<Manuscript[]>(manuscripts)
+  const [activeBookManuscriptId, setActiveBookManuscriptId] = useState(activeManuscriptId)
   const [localStyles, setLocalStyles] = useState<ProjectStyles>(() => normalizeProjectStyles(styles))
   const [localDictionary, setLocalDictionary] = useState<string[]>(dictionaryWords)
   const [dictionaryInput, setDictionaryInput] = useState('')
   const [styleTab, setStyleTab] = useState<'chapter' | 'body' | 'editor'>('chapter')
-  const [coverAction, setCoverAction] = useState<CoverImageAction>({ type: 'keep' })
+  const [coverActions, setCoverActions] = useState<ManuscriptCoverImageActions>({})
 
   useEffect(() => {
     setLocal(normalizeProjectSettings(settings))
+    setLocalManuscripts(manuscripts)
+    setActiveBookManuscriptId(manuscripts.some(manuscript => manuscript.id === activeManuscriptId)
+      ? activeManuscriptId
+      : manuscripts[0]?.id ?? DEFAULT_MANUSCRIPT_ID)
     setLocalStyles(normalizeProjectStyles(styles))
     setLocalDictionary(dictionaryWords)
     setDictionaryInput('')
-    setCoverAction({ type: 'keep' })
-  }, [settings, styles, dictionaryWords])
+    setCoverActions({})
+  }, [settings, manuscripts, activeManuscriptId, styles, dictionaryWords])
 
-  const coverPreviewSrc = coverAction.type === 'set'
-    ? convertFileSrc(coverAction.sourcePath)
-    : coverAction.type === 'remove'
+  const activeManuscript = localManuscripts.find(manuscript => manuscript.id === activeBookManuscriptId) ?? localManuscripts[0] ?? null
+  const activeCoverAction = activeManuscript ? coverActions[activeManuscript.id] ?? { type: 'keep' as const } : { type: 'keep' as const }
+  const coverPreviewSrc = activeCoverAction.type === 'set'
+    ? convertFileSrc(activeCoverAction.sourcePath)
+    : activeCoverAction.type === 'remove'
       ? null
-      : local.coverImage && projectPath
-        ? convertFileSrc(`${projectPath}/${local.coverImage}`.replace(/\\/g, '/'))
+      : activeManuscript?.coverImage && projectPath
+        ? convertFileSrc(`${projectPath}/${activeManuscript.coverImage}`.replace(/\\/g, '/'))
         : null
+
+  const patchActiveManuscript = (patch: Partial<Manuscript>) => {
+    if (!activeManuscript) return
+    setLocalManuscripts(prev => prev.map(manuscript =>
+      manuscript.id === activeManuscript.id ? { ...manuscript, ...patch } : manuscript
+    ))
+  }
+
+  const setActiveCoverAction = (action: CoverImageAction) => {
+    if (!activeManuscript) return
+    setCoverActions(prev => ({ ...prev, [activeManuscript.id]: action }))
+  }
 
   const fonts = ['Georgia', 'Times New Roman', 'Garamond', 'Palatino', 'Arial', 'Helvetica', 'Courier New']
 
@@ -141,62 +166,86 @@ export function ProjectSettingsModal({
 
         {activeTab === 'book' && (
           <div className="modal-fields">
-            <div className="modal-field">
-              <label className="modal-label">Novel title</label>
-              <input
-                className="modal-input"
-                value={local.title}
-                onChange={e => setLocal(prev => ({ ...prev, title: e.target.value }))}
-              />
+            <div className="manuscript-book-tabs" role="tablist" aria-label="Manuscripts">
+              {localManuscripts.map(manuscript => (
+                <button
+                  key={manuscript.id}
+                  type="button"
+                  className={`manuscript-book-tab${activeBookManuscriptId === manuscript.id ? ' active' : ''}`}
+                  onClick={() => setActiveBookManuscriptId(manuscript.id)}
+                >
+                  {manuscript.name || manuscript.title || 'Untitled Manuscript'}
+                </button>
+              ))}
             </div>
-            <div className="modal-field">
-              <label className="modal-label">Subtitle</label>
-              <input
-                className="modal-input"
-                value={local.subtitle}
-                onChange={e => setLocal(prev => ({ ...prev, subtitle: e.target.value }))}
-              />
-            </div>
-            <div className="modal-field">
-              <label className="modal-label">Author</label>
-              <input
-                className="modal-input"
-                value={local.author}
-                onChange={e => setLocal(prev => ({ ...prev, author: e.target.value }))}
-              />
-            </div>
-            <div className="modal-field">
-              <label className="modal-label">Cover image</label>
-              <div className="cover-image-field">
-                <div className="cover-image-preview">
-                  {coverPreviewSrc
-                    ? <img src={coverPreviewSrc} alt="Book cover preview" draggable={false} />
-                    : <i className="ti ti-photo" aria-hidden="true" />}
+            {activeManuscript && (
+              <>
+                <div className="modal-field">
+                  <label className="modal-label">Manuscript name</label>
+                  <input
+                    className="modal-input"
+                    value={activeManuscript.name}
+                    onChange={e => patchActiveManuscript({ name: e.target.value })}
+                  />
                 </div>
-                <div className="cover-image-actions">
-                  <button
-                    type="button"
-                    className="welcome-btn"
-                    onClick={async () => {
-                      const sourcePath = await onPickCoverImage()
-                      if (sourcePath) setCoverAction({ type: 'set', sourcePath })
-                    }}
-                  >
-                    Choose Image...
-                  </button>
-                  {coverPreviewSrc && (
-                    <button
-                      type="button"
-                      className="welcome-btn"
-                      onClick={() => setCoverAction(local.coverImage ? { type: 'remove' } : { type: 'keep' })}
-                    >
-                      Remove
-                    </button>
-                  )}
-                  <span className="cover-image-hint">Used as the cover for EPUB exports.</span>
+                <div className="modal-field">
+                  <label className="modal-label">Novel title</label>
+                  <input
+                    className="modal-input"
+                    value={activeManuscript.title}
+                    onChange={e => patchActiveManuscript({ title: e.target.value })}
+                  />
                 </div>
-              </div>
-            </div>
+                <div className="modal-field">
+                  <label className="modal-label">Subtitle</label>
+                  <input
+                    className="modal-input"
+                    value={activeManuscript.subtitle}
+                    onChange={e => patchActiveManuscript({ subtitle: e.target.value })}
+                  />
+                </div>
+                <div className="modal-field">
+                  <label className="modal-label">Author</label>
+                  <input
+                    className="modal-input"
+                    value={activeManuscript.author}
+                    onChange={e => patchActiveManuscript({ author: e.target.value })}
+                  />
+                </div>
+                <div className="modal-field">
+                  <label className="modal-label">Cover image</label>
+                  <div className="cover-image-field">
+                    <div className="cover-image-preview">
+                      {coverPreviewSrc
+                        ? <img src={coverPreviewSrc} alt="Book cover preview" draggable={false} />
+                        : <i className="ti ti-photo" aria-hidden="true" />}
+                    </div>
+                    <div className="cover-image-actions">
+                      <button
+                        type="button"
+                        className="welcome-btn"
+                        onClick={async () => {
+                          const sourcePath = await onPickCoverImage()
+                          if (sourcePath) setActiveCoverAction({ type: 'set', sourcePath })
+                        }}
+                      >
+                        Choose Image...
+                      </button>
+                      {coverPreviewSrc && (
+                        <button
+                          type="button"
+                          className="welcome-btn"
+                          onClick={() => setActiveCoverAction(activeManuscript.coverImage ? { type: 'remove' } : { type: 'keep' })}
+                        >
+                          Remove
+                        </button>
+                      )}
+                      <span className="cover-image-hint">Used as the cover for EPUB exports.</span>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -463,7 +512,7 @@ export function ProjectSettingsModal({
 
         <div className="modal-footer">
           <button className="welcome-btn" onClick={onCancel}>Cancel</button>
-          <button className="welcome-btn" onClick={() => onSave(normalizeProjectSettings(local), localStyles, localDictionary, coverAction)}>Save</button>
+          <button className="welcome-btn" onClick={() => onSave(normalizeProjectSettings(local), localManuscripts, localStyles, localDictionary, coverActions)}>Save</button>
         </div>
       </div>
     </div>

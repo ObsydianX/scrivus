@@ -2,13 +2,14 @@ import { exists, readDir, readTextFile, remove, rename, writeTextFile } from '@t
 import { join } from '@tauri-apps/api/path'
 import { cloneTree } from './binderMutations'
 import { collectDocs, findNode } from './tree'
-import type { DocNode, FolderNode, TreeNode } from './types'
+import type { DocNode, FolderNode, Manuscript, TreeNode } from './types'
 
 export type TrashItem = {
   sidecarId: string
   label: string
   node: TreeNode
   originalFolderId: number
+  manuscript?: Manuscript
 }
 
 export async function loadTrashItems(projectPath: string): Promise<TrashItem[]> {
@@ -29,10 +30,15 @@ export async function loadTrashItems(projectPath: string): Promise<TrashItem[]> 
           label: data.node.label,
           node: data.node,
           originalFolderId: data.originalFolderId,
+          manuscript: data.manuscript,
         })
       }
     }
-    return items
+    return items.sort((a, b) => {
+      if (a.manuscript && !b.manuscript) return -1
+      if (!a.manuscript && b.manuscript) return 1
+      return b.sidecarId.localeCompare(a.sidecarId)
+    })
   } catch {
     return []
   }
@@ -45,6 +51,8 @@ export async function restoreTrashItem({
   node,
   originalFolderId,
   parentSidecarId,
+  fallbackFolderId = 1,
+  restoreToProjectRoot = false,
 }: {
   projectPath: string
   tree: TreeNode[]
@@ -52,6 +60,8 @@ export async function restoreTrashItem({
   node: TreeNode
   originalFolderId: number
   parentSidecarId?: string
+  fallbackFolderId?: number
+  restoreToProjectRoot?: boolean
 }): Promise<{ tree: TreeNode[]; trashItems: TrashItem[] }> {
   const docs = collectDocs(node)
 
@@ -103,7 +113,7 @@ export async function restoreTrashItem({
   }
 
   const newTree = cloneTree(tree)
-  const manuscript = findNode(newTree, 1) as FolderNode | null
+  const manuscript = findNode(newTree, fallbackFolderId) as FolderNode | null
 
   if (parentFolderNode) {
     const existingFolder = findNode(newTree, parentFolderNode.id) as FolderNode | null
@@ -131,7 +141,11 @@ export async function restoreTrashItem({
     }
   } else {
     const targetFolder = findNode(newTree, originalFolderId) as FolderNode | null
-    if (targetFolder && targetFolder.type === 'folder') {
+    if (restoreToProjectRoot) {
+      const notesIndex = newTree.findIndex(item => item.id === 2)
+      if (notesIndex >= 0) newTree.splice(notesIndex, 0, node)
+      else newTree.push(node)
+    } else if (targetFolder && targetFolder.type === 'folder') {
       targetFolder.children.push(node)
     } else if (manuscript) {
       manuscript.children.push(node)

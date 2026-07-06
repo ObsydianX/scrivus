@@ -1,4 +1,4 @@
-import type { LoreFieldValue, LoreImageCrop, LoreImageValue } from './types'
+import type { LoreFieldValue, LoreImageCrop, LoreImageCropRect, LoreImageValue } from './types'
 
 export const DEFAULT_LORE_IMAGE_CROP: LoreImageCrop = {
   zoom: 1,
@@ -18,6 +18,14 @@ export function getLoreImagePath(value: LoreFieldValue | undefined) {
   return isLoreImageValue(value) ? value.path : typeof value === 'string' ? value : ''
 }
 
+export function getLoreImageCroppedPath(value: LoreFieldValue | undefined) {
+  return isLoreImageValue(value) ? value.croppedPath ?? '' : ''
+}
+
+export function getLoreImageDisplayPath(value: LoreFieldValue | undefined) {
+  return getLoreImageCroppedPath(value) || getLoreImagePath(value)
+}
+
 export function getLoreImageCrop(value: LoreFieldValue | undefined): LoreImageCrop {
   if (!isLoreImageValue(value)) return DEFAULT_LORE_IMAGE_CROP
   const crop = value.crop
@@ -27,6 +35,17 @@ export function getLoreImageCrop(value: LoreFieldValue | undefined): LoreImageCr
     x: Number.isFinite(crop.x) ? crop.x : DEFAULT_LORE_IMAGE_CROP.x,
     y: Number.isFinite(crop.y) ? crop.y : DEFAULT_LORE_IMAGE_CROP.y,
   }
+}
+
+export function getLoreImageCropRect(value: LoreFieldValue | undefined): LoreImageCropRect | null {
+  if (!isLoreImageValue(value)) return null
+  const rect = value.cropRect
+  if (!rect) return null
+  const x = Number(rect.x)
+  const y = Number(rect.y)
+  const size = Number(rect.size)
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(size) || size <= 0) return null
+  return { x, y, size }
 }
 
 export function getLoreImageFullWidth(value: LoreFieldValue | undefined) {
@@ -42,10 +61,14 @@ export function createLoreImageValue(
   crop: LoreImageCrop = DEFAULT_LORE_IMAGE_CROP,
   fullWidth = false,
   ignoreEntryCrop = false,
+  croppedPath?: string,
+  cropRect?: LoreImageCropRect | null,
 ): LoreImageValue {
   return {
     path,
+    croppedPath,
     crop: getLoreImageCrop({ path, crop }),
+    cropRect: cropRect ?? undefined,
     fullWidth,
     ignoreEntryCrop,
   }

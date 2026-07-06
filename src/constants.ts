@@ -4,6 +4,7 @@ import type {
   AtlasMarkerKind,
   AtlasMarkerVisibility,
   BackupSettings,
+  Manuscript,
   MindMap,
   MindMapNodeColor,
   MindMapNodeKind,
@@ -13,8 +14,9 @@ import type {
   WritingStats,
 } from './types'
 
-export const SCRIVUS_VERSION = '0.2.9'
-export const PROJECT_FORMAT_VERSION = 1
+export const SCRIVUS_VERSION = '0.3.0'
+export const PROJECT_FORMAT_VERSION = 2
+export const DEFAULT_MANUSCRIPT_ID = 'main'
 
 export const DEFAULT_BACKUP_SETTINGS: BackupSettings = {
   enabled: true,
@@ -51,6 +53,92 @@ export function normalizeProjectSettings(settings?: Partial<ProjectSettings> | n
     coverImage: typeof settings?.coverImage === 'string' ? settings.coverImage : '',
     backups: normalizeBackupSettings(settings?.backups),
   }
+}
+
+function cleanRecord<T>(value: unknown): Record<string, T> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, T>
+    : {}
+}
+
+export function createDefaultManuscript(
+  projectName: string,
+  folderId = 1,
+  settings?: Partial<ProjectSettings> | null,
+  name = 'Manuscript',
+  compileSelections?: unknown,
+  compileIncludes?: unknown,
+  compileCollapsed?: unknown,
+): Manuscript {
+  const normalizedSettings = normalizeProjectSettings(settings)
+  return {
+    id: DEFAULT_MANUSCRIPT_ID,
+    folderId,
+    name,
+    title: normalizedSettings.title || projectName || 'Untitled Manuscript',
+    subtitle: normalizedSettings.subtitle,
+    author: normalizedSettings.author,
+    coverImage: normalizedSettings.coverImage,
+    lastActiveId: null,
+    lastActiveTabIndex: 0,
+    compileSelections: cleanRecord<string>(compileSelections),
+    compileIncludes: cleanRecord<boolean>(compileIncludes),
+    compileCollapsed: cleanRecord<boolean>(compileCollapsed),
+  }
+}
+
+export function normalizeManuscripts(
+  manuscripts: unknown,
+  projectName: string,
+  settings?: Partial<ProjectSettings> | null,
+  compileSelections?: unknown,
+  compileIncludes?: unknown,
+  compileCollapsed?: unknown,
+): Manuscript[] {
+  const seen = new Set<string>()
+  const normalized = Array.isArray(manuscripts)
+    ? manuscripts
+      .filter(item => item && typeof item === 'object')
+      .map((item, index) => {
+        const raw = item as Partial<Manuscript>
+        const idBase = typeof raw.id === 'string' && raw.id.trim()
+          ? raw.id.trim()
+          : index === 0 ? DEFAULT_MANUSCRIPT_ID : `manuscript-${index + 1}`
+        let id = idBase
+        let suffix = 2
+        while (seen.has(id)) {
+          id = `${idBase}-${suffix}`
+          suffix += 1
+        }
+        seen.add(id)
+        return {
+          id,
+          folderId: Number.isFinite(Number(raw.folderId)) ? Number(raw.folderId) : 1,
+          name: typeof raw.name === 'string' && raw.name.trim()
+            ? raw.name
+            : id === DEFAULT_MANUSCRIPT_ID || index === 0
+              ? 'Manuscript'
+              : typeof raw.title === 'string' && raw.title.trim()
+              ? raw.title
+              : `Manuscript ${index + 1}`,
+          title: typeof raw.title === 'string' && raw.title.trim()
+            ? raw.title
+            : projectName || 'Untitled Manuscript',
+          subtitle: typeof raw.subtitle === 'string' ? raw.subtitle : '',
+          author: typeof raw.author === 'string' ? raw.author : '',
+          coverImage: typeof raw.coverImage === 'string' ? raw.coverImage : '',
+          lastActiveId: typeof raw.lastActiveId === 'number' ? raw.lastActiveId : null,
+          lastActiveTabIndex: Number.isInteger(raw.lastActiveTabIndex) ? raw.lastActiveTabIndex : 0,
+          compileSelections: cleanRecord<string>(raw.compileSelections),
+          compileIncludes: cleanRecord<boolean>(raw.compileIncludes),
+          compileCollapsed: cleanRecord<boolean>(raw.compileCollapsed),
+        }
+      })
+    : []
+
+  return normalized.length > 0
+    ? normalized
+    : [createDefaultManuscript(projectName, 1, settings, 'Manuscript', compileSelections, compileIncludes, compileCollapsed)]
 }
 
 export const DEFAULT_SCENE_METADATA: SceneMetadata = {

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
-import type { LoreBook, TreeNode } from '../types'
+import type { LoreBook, Manuscript, TreeNode } from '../types'
 
 type EditorContextMenuState = {
   x: number
@@ -140,6 +140,7 @@ export function BinderContextMenu({
   menu,
   workspace,
   selectedCount,
+  manuscripts,
   onRename,
   onDuplicate,
   onBulkRename,
@@ -151,6 +152,7 @@ export function BinderContextMenu({
   menu: { x: number; y: number; node: TreeNode; depth: number } | null
   workspace: 'editor' | 'revision' | 'outline' | 'lorebook' | 'mindmap' | 'atlas'
   selectedCount: number
+  manuscripts: Manuscript[]
   onRename: (nodeId: number) => void
   onDuplicate: (nodeId: number) => void
   onBulkRename: (nodeId: number) => void
@@ -161,7 +163,10 @@ export function BinderContextMenu({
 }) {
   if (!menu) return null
 
-  const isProtected = menu.node.id === 1 || menu.node.id === 2
+  const isNotesRoot = menu.node.id === 2
+  const isManuscriptRoot = manuscripts.some(manuscript => manuscript.folderId === menu.node.id)
+  const canRename = !isNotesRoot
+  const canDestructivelyAct = !isNotesRoot && !isManuscriptRoot
   const canAddFolder = menu.node.type === 'folder' || menu.depth >= 0
   const actionCount = Math.max(1, selectedCount)
   const folderRole = getFolderRole(menu.node)
@@ -182,19 +187,19 @@ export function BinderContextMenu({
       }}
       onClick={e => e.stopPropagation()}
     >
-      {!isProtected && (
+      {canRename && (
         <button className="ctx-menu-item" onClick={() => onRename(menu.node.id)}>
           <i className="ti ti-pencil" /> Rename
         </button>
       )}
 
-      {!isProtected && (
+      {canDestructivelyAct && (
         <button className="ctx-menu-item" onClick={() => onDuplicate(menu.node.id)}>
           <i className="ti ti-copy" /> {actionCount > 1 ? `Duplicate ${actionCount} items` : 'Duplicate'}
         </button>
       )}
 
-      {!isProtected && actionCount > 1 && (
+      {canDestructivelyAct && actionCount > 1 && (
         <button className="ctx-menu-item" onClick={() => onBulkRename(menu.node.id)}>
           <i className="ti ti-list-numbers" /> Bulk Rename...
         </button>
@@ -214,7 +219,7 @@ export function BinderContextMenu({
         </>
       )}
 
-      {!isProtected && folderRole && (
+      {canDestructivelyAct && folderRole && (
         <>
           <div style={{ height: 1, background: '#3c3c3c', margin: '4px 0' }} />
           <button
@@ -234,7 +239,7 @@ export function BinderContextMenu({
         </>
       )}
 
-      {!isProtected && (
+      {canDestructivelyAct && (
         <>
           <div style={{ height: 1, background: '#3c3c3c', margin: '4px 0' }} />
           <button className="ctx-menu-item" style={{ color: '#cc8888' }} onClick={() => onMoveToTrash(menu.node)}>

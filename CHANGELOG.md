@@ -2,6 +2,35 @@
 
 All notable Scrivus changes are tracked here.
 
+## 0.3.0
+
+- New Feature: Added support for multiple manuscripts in one project. Projects now track manuscript roots separately, the binder shows only the active manuscript plus Notes and Trash, and switching manuscripts restores the last remembered scene when possible.
+- New Feature: Added manuscript management controls to the binder, including creating new manuscripts, deleting manuscripts to Trash with confirmation, restoring deleted manuscripts, and sorting deleted manuscripts to the top of Trash.
+- New Feature: Added per-manuscript Book Info in Project Settings. Each manuscript can now have its own title, subtitle, author, and cover image, and manuscript names stay synced between the binder and Project Settings.
+- New Feature: Updated compile to use the selected manuscript's metadata, cover image, scene selections, include settings, and collapsed compile state.
+- New Feature: Added project migration for the new multi-manuscript project format, including older-project warnings and a blocking loading state after migration confirmation.
+- New Feature: Added Lore Book breadcrumb navigation, so category and entry views can jump back through Home/category navigation in addition to the back button.
+- New Feature: Expanded the Lore entry editor into a wider, document-like modal and made long text fields automatically grow to fit their content.
+- New Feature: Replaced Lore image pan/zoom sliders with a dedicated crop editor. Crops use a draggable/resizable locked square, remember the previous crop, save a cropped image at the selected source resolution, and keep the original image for full-width or uncropped entry display.
+- New Feature: Added separate Lore image options for full-width entry layout and ignoring the crop in the entry view, while still using cropped images for cards, pinned entries, and compact previews.
+- New Feature: Added World import/export packages. Users can export selected worldbuilding components to `.scrivusworld` files, including Lore Book, Canvas, Atlas, and the project dictionary, then import selected components into another project.
+- New Feature: Added review packages for editor feedback. Writers can create `.scrivusreview` files from the compile selection, reviewers open them in a locked Revision/Outline workspace, export `.scrivuscomments`, and writers can import anchored or visibly unanchored review comments.
+- New Feature: Added review progress autosave and reviewer-aware comment exports/imports, including cleaner `.scrivusreview` and `.scrivuscomments` default filenames.
+- New Feature: Added a Comments column to the Outline workspace. Scene comment counts open the scene in Revision, select the first available comment, and center the highlighted passage.
+- New Feature: Added application shortcuts and menu shortcut labels for New Project (Ctrl+N), Open Project (Ctrl+O), Close Project (Ctrl+W), Preferences (Ctrl+P), Project Settings (Ctrl+Alt+P), Search Project (Ctrl+F), and Find & Replace (Ctrl+H).
+- New Feature: Added a writing-goals heatmap calendar showing daily word totals by month, with month navigation, hover word-count details, and a 100-to-2,000 word color key.
+- Changed: Ctrl+F and Ctrl+H now use Scrivus panels instead of browser search/history shortcuts, and pressing the same shortcut again toggles the panel closed.
+- Changed: Ctrl+S now prevents the browser's save-page behavior and triggers Scrivus save handling when a project is open.
+- Changed: Reorganized the top menu bar into File, Edit, Project, World, Review, and Help menus, and updated the no-project welcome screen with matching single-column open/start actions.
+- Changed: Lore Book presence, search, find-and-replace, compile, word counts, and outline behavior now scope to the active manuscript.
+- Changed: Manuscript exports now default to the active manuscript's title/name instead of the `.scrivus` project folder name.
+- Fixes: Switching to a new or empty manuscript now clears the editor instead of leaving a scene from another manuscript visible.
+- Fixes: Restored deleted manuscripts now return to the manuscript selector as manuscripts instead of folders inside the active manuscript.
+- Fixes: Deleted manuscripts now keep the manuscript icon in Trash.
+- Fixes: Lore image files now clean up both original and generated crop images when entries or categories are deleted.
+- Fixes: Outline comment counts now ignore stale anchored-comment records when their scene markers no longer exist.
+- Fixes: Disabled browser-specific shortcuts that conflict with Scrivus shortcuts while leaving debug F5/F12 behavior alone.
+
 ## 0.2.9
 
 - New Feature: Added a pacing strip to the bottom of the Outline workspace - one bar per scene in manuscript order, grouped by chapter, sized by word count, and colored by scene status, with an average-length guide line, hover details, click-to-open, and a collapsible header.

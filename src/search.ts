@@ -78,7 +78,7 @@ export function clearProjectSearchCache(projectPath?: string) {
   }
 }
 
-export async function searchProject(projectPath: string, tree: TreeNode[], query: string): Promise<SearchResult[]> {
+export async function searchProject(projectPath: string, tree: TreeNode[], query: string, manuscriptFolderId = 1): Promise<SearchResult[]> {
   if (!query.trim()) return []
 
   const results: SearchResult[] = []
@@ -118,7 +118,7 @@ export async function searchProject(projectPath: string, tree: TreeNode[], query
     }
   }
 
-  const manuscript = findNode(tree, 1)
+  const manuscript = findNode(tree, manuscriptFolderId)
   if (manuscript && manuscript.type === 'folder') {
     await searchDocs(collectDocs(manuscript), 'Manuscript')
   }

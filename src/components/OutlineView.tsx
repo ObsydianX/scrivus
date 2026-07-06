@@ -63,6 +63,7 @@ function PacingStrip({
   const totalWords = sceneRows.reduce((sum, row) => sum + row.wordCount, 0)
   const averageWords = Math.round(totalWords / sceneRows.length)
   const averagePercent = Math.min(100, (averageWords / maxWords) * 100)
+  const compact = sceneRows.length < 12
 
   return (
     <div className="pacing-strip">
@@ -93,7 +94,7 @@ function PacingStrip({
       </div>
       {!collapsed && (
         <div className="pacing-strip-scroll">
-          <div className="pacing-strip-track">
+          <div className={`pacing-strip-track${compact ? ' pacing-strip-track-compact' : ''}`}>
             <div
               className="pacing-average-line"
               style={{ '--pacing-average': averagePercent } as CSSProperties}
@@ -103,7 +104,10 @@ function PacingStrip({
               <div
                 key={`${group.chapter}-${groupIndex}`}
                 className="pacing-group"
-                style={{ flexGrow: group.scenes.length }}
+                style={{
+                  flexGrow: compact ? undefined : group.scenes.length,
+                  '--pacing-scenes': group.scenes.length,
+                } as CSSProperties}
               >
                 <div className="pacing-group-bars">
                   {group.scenes.map(scene => (
@@ -134,7 +138,10 @@ export function OutlineView({
   collapsedFolderIds,
   onCollapsedFolderIdsChange,
   onOpenScene,
+  onOpenCommentsScene,
   onSceneStatusChange,
+  sceneCommentCounts = {},
+  readOnly = false,
 }: {
   rows: OutlineRow[]
   manuscriptWordCount: number
@@ -142,7 +149,10 @@ export function OutlineView({
   collapsedFolderIds: Set<number>
   onCollapsedFolderIdsChange: (ids: Set<number>) => void
   onOpenScene: (id: number) => void
+  onOpenCommentsScene: (id: number) => void
   onSceneStatusChange: (id: number, status: SceneStatus) => void
+  sceneCommentCounts?: Record<number, number>
+  readOnly?: boolean
 }) {
   const sceneRows = rows.filter(row => row.type === 'scene')
   const folderRows = rows.filter(row => row.type === 'chapter')
@@ -220,6 +230,7 @@ export function OutlineView({
                 <th>Scene</th>
                 <th>Chapter</th>
                 <th>Status</th>
+                <th>Comments</th>
                 <th>Words</th>
                 <th>POV</th>
                 <th>Location</th>
@@ -259,7 +270,7 @@ export function OutlineView({
                   </td>
                   <td>{row.type === 'chapter' ? getFolderLabel(row) : row.chapter}</td>
                   <td>
-                    {row.type === 'scene'
+                    {row.type === 'scene' && !readOnly
                       ? <label className={`outline-status-select-wrap outline-status-${row.status}`}>
                         <select
                           className="outline-status-select"
@@ -277,6 +288,26 @@ export function OutlineView({
                       : <span className={`outline-status outline-status-${row.status}`}>
                         {STATUS_LABELS[row.status]}
                       </span>
+                    }
+                  </td>
+                  <td className="outline-comments-cell">
+                    {row.type === 'scene'
+                      ? (() => {
+                        const count = sceneCommentCounts[row.id] ?? 0
+                        return count > 0
+                          ? (
+                            <button
+                              type="button"
+                              className="outline-comments-link"
+                              onClick={() => onOpenCommentsScene(row.id)}
+                              title={`${count.toLocaleString()} ${count === 1 ? 'comment' : 'comments'} - open in Revision`}
+                            >
+                              {count.toLocaleString()}
+                            </button>
+                          )
+                          : <span className="outline-comments-zero">0</span>
+                      })()
+                      : <span className="outline-comments-zero">-</span>
                     }
                   </td>
                   <td className="outline-number">{row.wordCount.toLocaleString()}</td>

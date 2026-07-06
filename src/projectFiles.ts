@@ -1,6 +1,6 @@
 import { exists, mkdir, readTextFile, writeFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { join } from '@tauri-apps/api/path'
-import { DEFAULT_PROJECT_SETTINGS, DEFAULT_SCENE_METADATA, DEFAULT_WRITING_STATS, normalizeAtlas, normalizeMindMap } from './constants'
+import { DEFAULT_MANUSCRIPT_ID, DEFAULT_PROJECT_SETTINGS, DEFAULT_SCENE_METADATA, DEFAULT_WRITING_STATS, createDefaultManuscript, normalizeAtlas, normalizeMindMap } from './constants'
 import defaultAtlas from './defaultProject/atlas.json'
 import defaultCanvas from './defaultProject/canvas.json'
 import defaultLoreBook from './defaultProject/lorebook.json'
@@ -118,6 +118,8 @@ export async function createProjectOnDisk({
     name: projectName,
     path: projectPath,
     tree: defaultTree,
+    manuscripts: [createDefaultManuscript(projectName, 1, DEFAULT_PROJECT_SETTINGS)],
+    activeManuscriptId: DEFAULT_MANUSCRIPT_ID,
     styles,
     settings: DEFAULT_PROJECT_SETTINGS,
     lastActiveTabIndex: 0,
@@ -161,6 +163,8 @@ export async function createImportedProjectOnDisk({
     name: projectName,
     path: projectPath,
     tree,
+    manuscripts: [createDefaultManuscript(projectName, 1, DEFAULT_PROJECT_SETTINGS)],
+    activeManuscriptId: DEFAULT_MANUSCRIPT_ID,
     styles,
     settings: DEFAULT_PROJECT_SETTINGS,
     lastActiveTabIndex: 0,
