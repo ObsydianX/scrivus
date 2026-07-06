@@ -12,9 +12,9 @@ Watch a quick overview of what Scrivus can do: [Scrivus video demo](https://www.
 
 ###
 
-[![See Version 0.2.2 Update Video](https://img.youtube.com/vi/Sr0mo_-H4Sc/maxresdefault.jpg)](https://www.youtube.com/watch?v=Sr0mo_-H4Sc)
+[![See Version 0.3.0 Update Video](https://img.youtube.com/vi/L_wak9q2KFM/maxresdefault.jpg)](https://www.youtube.com/watch?v=L_wak9q2KFM)
 
-Version 0.2.2 Update: [Scrivus video update](https://www.youtube.com/watch?v=Sr0mo_-H4Sc).
+Version 0.3.0 Update: [Scrivus video update](https://www.youtube.com/watch?v=L_wak9q2KFM).
 
 ![Scrivus editor workspace](docs/screenshots/editor.png)
 
