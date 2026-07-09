@@ -4104,7 +4104,8 @@ export default function App() {
         )
         const id = generateRevisionId()
         let anchoredHtml: string | null = null
-        if (sceneSnapshot) {
+        const keepUnanchored = imported.unanchored === true
+        if (sceneSnapshot && !keepUnanchored) {
           const raw = rawByFile.get(sceneSnapshot.fileId) ?? await readSceneFile(activeProject.path, sceneSnapshot.fileId)
           rawByFile.set(sceneSnapshot.fileId, raw)
           const tabs = scenesByFile.get(sceneSnapshot.fileId) ?? parseSceneTabs(raw)
@@ -4141,7 +4142,7 @@ export default function App() {
           reviewChapterTitle: sceneSnapshot?.chapterTitle ?? imported.reviewChapterTitle,
           reviewSceneTitle: sceneSnapshot?.title ?? imported.reviewSceneTitle,
           reviewReviewerName: commentsPackage.manifest.reviewerName || imported.reviewReviewerName,
-          unanchored: !anchoredHtml,
+          unanchored: keepUnanchored || !anchoredHtml,
           resolved: false,
           createdAt: Date.now(),
         })

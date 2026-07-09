@@ -16,6 +16,7 @@ type RevisionViewProps = {
   activeCommentId: string | null
   content: string
   title: string
+  bookmarked?: boolean
   tabs: SceneTab[]
   activeTabIndex: number
   zoom: number
@@ -152,6 +153,7 @@ export function RevisionView({
   activeCommentId,
   content,
   title,
+  bookmarked = false,
   tabs,
   activeTabIndex,
   zoom,
@@ -251,7 +253,8 @@ export function RevisionView({
             })}
           </div>
         )}
-        <DocumentTitleBar title={titleBarText} />
+        <div id="revision-toolbar-placeholder" aria-hidden="true" />
+        <DocumentTitleBar title={titleBarText} bookmarked={bookmarked} />
         <div id="revision-scroll" ref={scrollRef}>
           <div id="revision-wrap">
             <div
@@ -320,11 +323,15 @@ export function RevisionCommentsPane({
             </>
           )}
         </div>
-        {commentsOpen && <span>Comments</span>}
-        {commentsOpen && activeComments.filter(c => !c.resolved).length > 0 && (
-          <span className="revision-comments-count">
-            {activeComments.filter(c => !c.resolved).length}
-          </span>
+        {commentsOpen && (
+          <div className="revision-comments-title">
+            <span>Comments</span>
+            {activeComments.filter(c => !c.resolved).length > 0 && (
+              <span className="revision-comments-count">
+                {activeComments.filter(c => !c.resolved).length}
+              </span>
+            )}
+          </div>
         )}
       </div>
 

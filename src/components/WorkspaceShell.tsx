@@ -545,6 +545,7 @@ export function WorkspaceShell({
             activeCommentId={revisionActiveCommentId}
             content={revisionContent}
             title={revisionTitle}
+            bookmarked={titleBookmarked}
             tabs={revisionTabs}
             activeTabIndex={revisionActiveTabIndex}
             zoom={zoom}

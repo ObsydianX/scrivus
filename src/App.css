@@ -35,8 +35,8 @@ body,
   --text-main: #d4d4d4;
   --text-muted: #858585;
   --text-soft: #cccccc;
-  --border-main: #111111;
-  --border-soft: #3c3c3c;
+  --border-main: #131313;
+  --border-soft: #494949;
   --accent: #094771;
   --accent-text: #ffffff;
   --danger: #cc8888;
@@ -83,8 +83,8 @@ body,
   --text-main: #15181c;
   --text-muted: #626b76;
   --text-soft: #2d333a;
-  --border-main: #b8c0ca;
-  --border-soft: #d0d6de;
+  --border-main: #62676d;
+  --border-soft: #a6abb2;
   --accent: #46515f;
   --accent-text: #ffffff;
   --danger: #9b3434;
@@ -158,8 +158,8 @@ body,
   --text-main: #30283f;
   --text-muted: #74698a;
   --text-soft: #493f5d;
-  --border-main: #d5c8ea;
-  --border-soft: #e0d4ef;
+  --border-main: #5f5a68;
+  --border-soft: #b3aabe;
   --accent: #8a6fc9;
   --accent-text: #ffffff;
   --danger: #a44870;
@@ -183,8 +183,8 @@ body,
   --text-main: #eee7ff;
   --text-muted: #a89abb;
   --text-soft: #d9cfee;
-  --border-main: #100d17;
-  --border-soft: #493d5e;
+  --border-main: #1d1728;
+  --border-soft: #5c4d76;
   --accent: #b89cff;
   --accent-text: #1b122c;
   --danger: #ff9bbd;
@@ -208,8 +208,8 @@ body,
   --text-main: #203a31;
   --text-muted: #638277;
   --text-soft: #314f45;
-  --border-main: #bfddd1;
-  --border-soft: #cee8dd;
+  --border-main: #586861;
+  --border-soft: #a5bab1;
   --accent: #4f9d82;
   --accent-text: #ffffff;
   --danger: #a04c57;
@@ -233,8 +233,8 @@ body,
   --text-main: #dcf5ec;
   --text-muted: #8fb5a7;
   --text-soft: #c9e6dc;
-  --border-main: #091411;
-  --border-soft: #33584d;
+  --border-main: #14211d;
+  --border-soft: #407061;
   --accent: #74d3b3;
   --accent-text: #0a2119;
   --danger: #f29da3;
@@ -258,8 +258,8 @@ body,
   --text-main: #452833;
   --text-muted: #8b6874;
   --text-soft: #5c3947;
-  --border-main: #ebc8d1;
-  --border-soft: #f0d4db;
+  --border-main: #574a4e;
+  --border-soft: #c0aab0;
   --accent: #c56f8a;
   --accent-text: #ffffff;
   --danger: #9d3d4e;
@@ -283,8 +283,8 @@ body,
   --text-main: #ffe7ee;
   --text-muted: #bf98a5;
   --text-soft: #f1cbd6;
-  --border-main: #170b10;
-  --border-soft: #62404b;
+  --border-main: #281620;
+  --border-soft: #7a5060;
   --accent: #ff9ab8;
   --accent-text: #2a1018;
   --danger: #ffb07d;
@@ -308,8 +308,8 @@ body,
   --text-main: #243447;
   --text-muted: #657c96;
   --text-soft: #354b63;
-  --border-main: #c2d9ee;
-  --border-soft: #d2e4f2;
+  --border-main: #6f7b94;
+  --border-soft: #a8b6c2;
   --accent: #5f96d6;
   --accent-text: #ffffff;
   --danger: #a2475a;
@@ -333,8 +333,8 @@ body,
   --text-main: #e0efff;
   --text-muted: #91a9c5;
   --text-soft: #cbdff4;
-  --border-main: #09111d;
-  --border-soft: #344c68;
+  --border-main: #142034;
+  --border-soft: #415f82;
   --accent: #80bfff;
   --accent-text: #09213d;
   --danger: #ff9da8;
@@ -358,8 +358,8 @@ body,
   --text-main: #e7fbff;
   --text-muted: #7ca6ba;
   --text-soft: #c8f5ff;
-  --border-main: #01131d;
-  --border-soft: #17344d;
+  --border-main: #072234;
+  --border-soft: #1d4262;
   --accent: #00e5ff;
   --accent-text: #001218;
   --danger: #ff3d9a;
@@ -383,8 +383,8 @@ body,
   --text-main: #f4e9ff;
   --text-muted: #a888c8;
   --text-soft: #dfc6ff;
-  --border-main: #150521;
-  --border-soft: #452468;
+  --border-main: #060308;
+  --border-soft: #573083;
   --accent: #d45cff;
   --accent-text: #160020;
   --danger: #ff5c8a;
@@ -408,8 +408,8 @@ body,
   --text-main: #fff0df;
   --text-muted: #cf977a;
   --text-soft: #ffd8bd;
-  --border-main: #210700;
-  --border-soft: #6b2d1f;
+  --border-main: #0c0502;
+  --border-soft: #864029;
   --accent: #ff7a1a;
   --accent-text: #1d0700;
   --danger: #ff4ec7;
@@ -433,8 +433,8 @@ body,
   --text-main: #e4fffb;
   --text-muted: #7bb8b0;
   --text-soft: #c2fff6;
-  --border-main: #001f1d;
-  --border-soft: #155a54;
+  --border-main: #010808;
+  --border-soft: #1d7069;
   --accent: #39ffcc;
   --accent-text: #00201a;
   --danger: #ff579f;
@@ -458,8 +458,8 @@ body,
   --text-main: #3c342b;
   --text-muted: #82766a;
   --text-soft: #554a40;
-  --border-main: #d8cbbb;
-  --border-soft: #e5d8c7;
+  --border-main: #6e675f;
+  --border-soft: #b7ad9f;
   --accent: #8f7a5b;
   --accent-text: #ffffff;
   --danger: #9b5a52;
@@ -483,8 +483,8 @@ body,
   --text-main: #2f3b2d;
   --text-muted: #6f7f68;
   --text-soft: #43523f;
-  --border-main: #c9d8bf;
-  --border-soft: #d7e3ce;
+  --border-main: #6d7568;
+  --border-soft: #acb6a5;
   --accent: #6f8f63;
   --accent-text: #ffffff;
   --danger: #9a5c61;
@@ -508,8 +508,8 @@ body,
   --text-main: #453229;
   --text-muted: #8a6f62;
   --text-soft: #5d4236;
-  --border-main: #e5c8ba;
-  --border-soft: #efd7cb;
+  --border-main: #7a6b63;
+  --border-soft: #bfaca2;
   --accent: #b9795f;
   --accent-text: #ffffff;
   --danger: #9b4f5c;
@@ -533,8 +533,8 @@ body,
   --text-main: #3b3344;
   --text-muted: #7d7188;
   --text-soft: #53465f;
-  --border-main: #d6c8de;
-  --border-soft: #e2d6e8;
+  --border-main: #5d5761;
+  --border-soft: #b5abb9;
   --accent: #8d759f;
   --accent-text: #ffffff;
   --danger: #9a5875;
@@ -1778,6 +1778,13 @@ body,
   background: var(--panel-bg);
 }
 
+#revision-toolbar-placeholder {
+  height: 32px;
+  border-bottom: 1px solid var(--border-main);
+  background: var(--panel-bg);
+  flex-shrink: 0;
+}
+
 .editor-toolbar-group {
   display: flex;
   align-items: center;
@@ -1887,7 +1894,7 @@ body,
   display: flex;
   align-items: stretch;
   gap: 0;
-  padding: 0 10px;
+  padding: 0;
   background: var(--panel-bg);
   border-bottom: 1px solid var(--border-main);
   min-height: 34px;
@@ -2009,7 +2016,6 @@ body,
   min-width: 34px;
   margin-left: auto;
   border: none;
-  border-left: 1px solid var(--border-main);
   background: var(--panel-bg);
   color: var(--text-muted);
   cursor: pointer;
@@ -3948,6 +3954,7 @@ mark.fnr-highlight {
 
 /* Bottom word-count and reading-time bar. */
 #statusbar {
+  min-height: 32px;
   padding: 5px 24px;
   border-top: 1px solid var(--status-border);
   background: var(--status-bg);
@@ -4661,17 +4668,57 @@ mark.fnr-highlight {
 }
 
 input[type="checkbox"] {
-  accent-color: #007acc;
-}
-
-.checklist-checkbox {
-  flex-shrink: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  display: grid;
+  place-content: center;
+  width: 1.15em;
+  height: 1.15em;
+  margin: 0;
+  border: 0.15em solid var(--checkbox-border, var(--accent));
+  border-radius: 0.15em;
+  background-color: var(--input-bg);
+  color: var(--checkbox-fill, var(--accent));
   cursor: pointer;
+  font: inherit;
+  flex-shrink: 0;
+  transform: translateY(-0.075em);
 }
 
-.compile-checkbox {
-  flex-shrink: 0;
-  accent-color: #007acc;
+input[type="checkbox"]::before {
+  content: "";
+  width: 0.65em;
+  height: 0.65em;
+  transform: scale(0);
+  box-shadow: inset 1em 1em var(--checkbox-fill, var(--accent));
+  background-color: CanvasText;
+}
+
+input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+
+@media (forced-colors: active) {
+  input[type="checkbox"] {
+    border-color: currentColor;
+    color: currentColor;
+  }
+
+  input[type="checkbox"]:checked::before {
+    background-color: CanvasText;
+  }
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: max(2px, 0.15em) solid currentColor;
+  outline-offset: max(2px, 0.15em);
+}
+
+input[type="checkbox"]:disabled {
+  border-color: var(--text-muted);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .checklist-label {
@@ -8488,7 +8535,7 @@ button.welcome-update-notice:focus-visible {
 #revision-tab-bar {
   display: flex;
   align-items: stretch;
-  padding: 0 10px;
+  padding: 0;
   background: #252526;
   border-bottom: 1px solid #111;
   min-height: 34px;
@@ -8584,6 +8631,8 @@ button.welcome-update-notice:focus-visible {
   overflow-x: hidden;
   min-height: 0;
   min-width: 0;
+  width: 100%;
+  align-self: stretch;
   background: #1e1e1e;
 }
 
@@ -8608,30 +8657,37 @@ button.welcome-update-notice:focus-visible {
 /* Inner wrapper matching editor-wrap */
 #revision-wrap {
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   width: min(var(--editor-content-width, 760px), calc(100% - 48px));
   max-width: var(--editor-content-width, 760px);
   margin: 0 auto;
-  padding: 32px 0 80px;
+  padding: 32px 0 40px;
 }
 
 /* Body text — mirrors tiptap-wrap prose */
 #revision-body {
-  font-family: var(--editor-body-font, Georgia);
   font-size: var(--editor-body-size, 12pt);
+  font-family: var(--editor-body-font, Georgia), serif;
   line-height: var(--editor-body-line-height, 1.85);
-  text-align: var(--editor-body-align, justify);
-  color: #d4d4d4;
+  color: var(--text-main);
+  outline: none;
+  width: 100%;
+  min-height: 70vh;
+  word-wrap: break-word;
   user-select: text;
   cursor: text;
 }
 
 #revision-body p {
   margin: 0;
-  text-indent: var(--editor-body-indent, 2em);
+  text-align: var(--editor-body-align, left);
+  text-indent: var(--editor-body-indent, 0);
+  white-space: break-spaces;
 }
 
-#revision-body p:first-child {
-  text-indent: 0;
+#revision-body p+p {
+  text-indent: var(--editor-body-indent, 0);
 }
 
 /* Inline comment highlight */
@@ -8658,8 +8714,8 @@ button.welcome-update-notice:focus-visible {
 
 /* Fixed-width panel on the right */
 #revision-comments-pane {
-  width: 280px;
-  min-width: 280px;
+  width: 260px;
+  min-width: 260px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -8678,9 +8734,7 @@ button.welcome-update-notice:focus-visible {
 #revision-comments-header {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  min-height: 36px;
+  justify-content: space-between;
   padding: 10px 12px 6px;
   font-size: 10px;
   font-weight: 600;
@@ -8689,6 +8743,14 @@ button.welcome-update-notice:focus-visible {
   letter-spacing: 0.08em;
   flex-shrink: 0;
   user-select: none;
+}
+
+.revision-comments-title {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
 }
 
 #revision-comments-pane.collapsed #revision-comments-header {
@@ -9195,7 +9257,7 @@ button.welcome-update-notice:focus-visible {
 .revision-tab.active,
 .revision-tab:hover {
   background: var(--panel-bg-2);
-  color: var(--text-main);
+  color: var(--text-main) !important;
 }
 
 .revision-tab.active {
@@ -9326,11 +9388,6 @@ button.welcome-update-notice:focus-visible {
 }
 
 .inspector-drawer-body textarea {
-  accent-color: var(--accent);
-}
-
-input[type="checkbox"],
-.compile-checkbox {
   accent-color: var(--accent);
 }
 

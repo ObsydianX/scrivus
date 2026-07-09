@@ -308,7 +308,6 @@ export function CompileModal({
                     type="checkbox"
                     checked={frontMatter}
                     onChange={e => onFrontMatterChange(e.target.checked)}
-                    style={{ accentColor: 'var(--accent)' }}
                   />
                   Cover page
                 </label>
@@ -324,7 +323,6 @@ export function CompileModal({
                     type="checkbox"
                     checked={includeActHeadings}
                     onChange={e => onIncludeActHeadingsChange(e.target.checked)}
-                    style={{ accentColor: 'var(--accent)' }}
                   />
                   Include act headings
                 </label>
@@ -337,7 +335,6 @@ export function CompileModal({
                     type="checkbox"
                     checked={includeSceneTitles}
                     onChange={e => onIncludeSceneTitlesChange(e.target.checked)}
-                    style={{ accentColor: 'var(--accent)' }}
                   />
                   Include scene titles
                 </label>
@@ -567,7 +564,7 @@ export function CompileModal({
                             type="checkbox"
                             checked={scene.included}
                             disabled={busy}
-                            style={{ accentColor: 'var(--accent)', flexShrink: 0 }}
+                            style={{ flexShrink: 0 }}
                             onChange={e => {
                               const checked = e.target.checked
                               preserveSceneListScroll()

@@ -483,6 +483,7 @@ export function LoreEntryEditorModal({
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
   const cropImageRef = useRef<HTMLImageElement | null>(null)
   const cropDragRef = useRef<CropDragState | null>(null)
+  const cropImagePath = cropEditor?.path ?? null
 
   useEffect(() => {
     setLocal(entry)
@@ -498,23 +499,27 @@ export function LoreEntryEditorModal({
 
   useEffect(() => {
     setCropSourceUrl(null)
-    if (!projectPath || !cropEditor) {
+    if (!projectPath || !cropImagePath) {
       return
     }
     let cancelled = false
     let objectUrl: string | null = null
-    readFile(`${projectPath}/${cropEditor.path}`.replace(/\//g, '\\'))
+    readFile(`${projectPath}/${cropImagePath}`.replace(/\//g, '\\'))
       .then(bytes => {
         if (cancelled) return
-        objectUrl = URL.createObjectURL(new Blob([bytes], { type: getImageMimeType(cropEditor.path) }))
+        objectUrl = URL.createObjectURL(new Blob([bytes], { type: getImageMimeType(cropImagePath) }))
         setCropSourceUrl(objectUrl)
       })
-      .catch(() => setCropSourceUrl(null))
+      .catch(() => {
+        if (!cancelled) {
+          setCropSourceUrl(null)
+        }
+      })
     return () => {
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [cropEditor, projectPath])
+  }, [cropImagePath, projectPath])
 
   if (!category || !local) return null
 
