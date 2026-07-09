@@ -28,6 +28,12 @@ type EpubSection = {
   bodyXhtml: string
 }
 
+type TocItem = {
+  label: string
+  href: string
+  depth: number
+}
+
 function escapeXml(value: string) {
   return value
     .replace(/&/g, '&amp;')
@@ -159,13 +165,39 @@ hr {
   max-width: 100%;
   max-height: 100%;
 }
+
+.contents-page h1 {
+  text-align: center;
+  margin: 2em 0 1.5em;
+}
+
+.contents-page ol {
+  list-style: none;
+  margin: 0 0 0 1.25em;
+  padding: 0;
+}
+
+.contents-page > ol {
+  margin-left: 0;
+}
+
+.contents-page li {
+  margin: 0.45em 0;
+  text-indent: 0;
+}
+
+.contents-page a {
+  text-decoration: none;
+}
 `
 
 // Groups compile nodes into one XHTML file per chapter/act heading. Scenes
 // before any heading land in a leading section titled after the book.
-function buildSections(nodes: EpubCompileNode[], options: EpubOptions): EpubSection[] {
+function buildSections(nodes: EpubCompileNode[], options: EpubOptions): { sections: EpubSection[]; tocItems: TocItem[] } {
   const sections: EpubSection[] = []
-  let current: { title: string; role: 'act' | 'chapter' | 'lead'; parts: string[] } | null = null
+  const tocItems: TocItem[] = []
+  let sceneIndex = 1
+  let current: { title: string; role: 'act' | 'chapter' | 'lead'; depth: number; parts: string[]; tocItems: TocItem[] } | null = null
 
   const flush = () => {
     if (!current) return
@@ -179,18 +211,36 @@ function buildSections(nodes: EpubCompileNode[], options: EpubOptions): EpubSect
       title: current.title,
       bodyXhtml: chapterXhtml(current.title, heading + current.parts.join('\n')),
     })
+    if (current.role !== 'lead') {
+      tocItems.push({
+        label: current.title,
+        href: `${id}.xhtml`,
+        depth: current.depth,
+      })
+    }
+    tocItems.push(...current.tocItems.map(item => ({
+      ...item,
+      href: `${id}.xhtml#${item.href}`,
+    })))
     current = null
   }
 
   for (const node of nodes) {
     if (node.type === 'heading') {
       flush()
-      current = { title: node.label, role: node.role, parts: [] }
+      current = { title: node.label, role: node.role, depth: node.depth, parts: [], tocItems: [] }
       continue
     }
-    if (!current) current = { title: options.title, role: 'lead', parts: [] }
+    if (!current) current = { title: options.title, role: 'lead', depth: 0, parts: [], tocItems: [] }
     if (options.includeSceneTitles) {
-      current.parts.push(`<h2 class="scene-title">${escapeXml(node.label)}</h2>`)
+      const sceneId = `scene-${String(sceneIndex).padStart(3, '0')}`
+      sceneIndex += 1
+      current.parts.push(`<h2 id="${sceneId}" class="scene-title">${escapeXml(node.label)}</h2>`)
+      current.tocItems.push({
+        label: node.label,
+        href: sceneId,
+        depth: current.role === 'lead' ? current.depth : current.depth + 1,
+      })
     } else if (current.parts.length > 0) {
       current.parts.push('<p class="scene-break">* * *</p>')
     }
@@ -198,7 +248,15 @@ function buildSections(nodes: EpubCompileNode[], options: EpubOptions): EpubSect
   }
   flush()
 
-  return sections
+  if (tocItems.length === 0) {
+    tocItems.push(...sections.map(section => ({
+      label: section.title,
+      href: section.filename,
+      depth: 0,
+    })))
+  }
+
+  return { sections, tocItems }
 }
 
 function titlePageXhtml(options: EpubOptions) {
@@ -215,26 +273,84 @@ function coverXhtml(coverFilename: string) {
 </div>`)
 }
 
-function navXhtml(sections: EpubSection[], includeTitlePage: boolean) {
-  const items = [
-    ...(includeTitlePage ? ['    <li><a href="title.xhtml">Title Page</a></li>'] : []),
-    ...sections.map(section => `    <li><a href="${section.filename}">${escapeXml(section.title)}</a></li>`),
-  ].join('\n')
+function normalizeTocDepths(items: TocItem[]) {
+  const minDepth = Math.min(...items.map(item => item.depth))
+  return items.map(item => ({ ...item, depth: Math.max(0, item.depth - minDepth) }))
+}
+
+function tocList(items: TocItem[], indent = '    ') {
+  if (items.length === 0) return ''
+  const normalized = normalizeTocDepths(items)
+  const lines: string[] = [`${indent}<ol>`]
+  const stack = [0]
+
+  normalized.forEach((item, index) => {
+    const depth = Math.max(0, item.depth)
+    const nextDepth = normalized[index + 1]?.depth ?? 0
+
+    while (stack.length - 1 > depth) {
+      lines.push(`${indent}${'  '.repeat(stack.length - 1)}</ol>`)
+      lines.push(`${indent}${'  '.repeat(stack.length - 2)}</li>`)
+      stack.pop()
+    }
+
+    lines.push(`${indent}${'  '.repeat(depth + 1)}<li><a href="${item.href}">${escapeXml(item.label)}</a>`)
+    if (nextDepth > depth) {
+      lines.push(`${indent}${'  '.repeat(depth + 2)}<ol>`)
+      stack.push(nextDepth)
+    } else {
+      lines[lines.length - 1] += '</li>'
+    }
+  })
+
+  while (stack.length > 1) {
+    lines.push(`${indent}${'  '.repeat(stack.length - 1)}</ol>`)
+    lines.push(`${indent}${'  '.repeat(stack.length - 2)}</li>`)
+    stack.pop()
+  }
+
+  lines.push(`${indent}</ol>`)
+  return lines.join('\n')
+}
+
+function navXhtml(tocItems: TocItem[]) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
   <title>Contents</title>
+  <link rel="stylesheet" type="text/css" href="style.css"/>
 </head>
 <body>
-  <nav epub:type="toc" id="toc">
+  <nav epub:type="toc" id="toc" class="contents-page">
   <h1>Contents</h1>
-  <ol>
-${items}
-  </ol>
+${tocList(tocItems, '  ')}
   </nav>
 </body>
 </html>
+`
+}
+
+function ncx(tocItems: TocItem[], options: EpubOptions, uid: string) {
+  const navPoints = normalizeTocDepths(tocItems).map((item, index) => `    <navPoint id="navPoint-${index + 1}" playOrder="${index + 1}">
+      <navLabel><text>${escapeXml(item.label)}</text></navLabel>
+      <content src="${item.href}"/>
+    </navPoint>`).join('\n')
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head>
+    <meta name="dtb:uid" content="urn:uuid:${uid}"/>
+    <meta name="dtb:depth" content="${tocItems.length > 0 ? Math.max(...normalizeTocDepths(tocItems).map(item => item.depth)) + 1 : 1}"/>
+    <meta name="dtb:totalPageCount" content="0"/>
+    <meta name="dtb:maxPageNumber" content="0"/>
+  </head>
+  <docTitle><text>${escapeXml(options.title)}</text></docTitle>
+  ${options.author ? `<docAuthor><text>${escapeXml(options.author)}</text></docAuthor>` : ''}
+  <navMap>
+${navPoints}
+  </navMap>
+</ncx>
 `
 }
 
@@ -242,6 +358,7 @@ function contentOpf(sections: EpubSection[], options: EpubOptions, uid: string, 
   const modified = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
   const manifestItems = [
     '    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>',
+    '    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>',
     '    <item id="css" href="style.css" media-type="text/css"/>',
     ...(coverFilename && options.cover
       ? [
@@ -255,6 +372,7 @@ function contentOpf(sections: EpubSection[], options: EpubOptions, uid: string, 
   const spineItems = [
     ...(coverFilename ? ['    <itemref idref="cover-page"/>'] : []),
     ...(includeTitlePage ? ['    <itemref idref="title-page"/>'] : []),
+    '    <itemref idref="nav"/>',
     ...sections.map(section => `    <itemref idref="${section.id}"/>`),
   ].join('\n')
 
@@ -271,7 +389,7 @@ function contentOpf(sections: EpubSection[], options: EpubOptions, uid: string, 
   <manifest>
 ${manifestItems}
   </manifest>
-  <spine>
+  <spine toc="ncx">
 ${spineItems}
   </spine>
 </package>
@@ -287,7 +405,7 @@ const CONTAINER_XML = `<?xml version="1.0" encoding="UTF-8"?>
 `
 
 export async function buildEpub(nodes: EpubCompileNode[], options: EpubOptions): Promise<Uint8Array> {
-  const sections = buildSections(nodes, options)
+  const { sections, tocItems } = buildSections(nodes, options)
   const uid = crypto.randomUUID()
   const coverFilename = options.cover ? `cover.${options.cover.extension}` : null
   const zip = new JSZip()
@@ -296,7 +414,8 @@ export async function buildEpub(nodes: EpubCompileNode[], options: EpubOptions):
   zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' })
   zip.file('META-INF/container.xml', CONTAINER_XML)
   zip.file('OEBPS/content.opf', contentOpf(sections, options, uid, options.frontMatter, coverFilename))
-  zip.file('OEBPS/nav.xhtml', navXhtml(sections, options.frontMatter))
+  zip.file('OEBPS/nav.xhtml', navXhtml(tocItems))
+  zip.file('OEBPS/toc.ncx', ncx(tocItems, options, uid))
   zip.file('OEBPS/style.css', EPUB_CSS)
   if (options.cover && coverFilename) {
     zip.file(`OEBPS/${coverFilename}`, options.cover.bytes)
