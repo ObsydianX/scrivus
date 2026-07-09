@@ -541,6 +541,7 @@ export function AtlasView({
 
         <div
           className="atlas-map-overlay"
+          data-gradient-include=""
           aria-label="Active map selector"
           onPointerDown={event => event.stopPropagation()}
           onClick={event => event.stopPropagation()}
@@ -652,7 +653,7 @@ export function AtlasView({
         </div>
 
         {activeMap && imageSrc && (
-          <div className="atlas-map-layer" style={{ transform: mapTransform, width: activeMap.imageWidth, height: activeMap.imageHeight }}>
+          <div className="atlas-map-layer" data-gradient-exclude="" style={{ transform: mapTransform, width: activeMap.imageWidth, height: activeMap.imageHeight }}>
             <img className={activeMap.imageSampling === 'point' ? 'atlas-map-image atlas-map-image-point' : 'atlas-map-image'} src={imageSrc} alt={activeMap.name} draggable={false} />
             {activeMap.markers
               .filter(marker =>
@@ -694,6 +695,7 @@ export function AtlasView({
         {activeMap && usedMarkerKinds.length > 0 && (
           <div
             className="atlas-marker-legend"
+            data-gradient-include=""
             aria-label="Marker category visibility"
             onPointerDown={event => event.stopPropagation()}
             onClick={event => event.stopPropagation()}
@@ -726,6 +728,7 @@ export function AtlasView({
         {mapSelectorMenu && activeMap && (
           <div
             className="atlas-context-menu atlas-map-selector-menu"
+            data-gradient-include=""
             style={{ left: mapSelectorMenu.x, top: mapSelectorMenu.y }}
             onPointerDown={event => event.stopPropagation()}
             onClick={event => event.stopPropagation()}
@@ -742,7 +745,7 @@ export function AtlasView({
         )}
 
         {activeMap && (
-          <div className="atlas-scale-readout">
+          <div className="atlas-scale-readout" data-gradient-include="">
             {(activeMap.viewport.zoom * 100).toFixed(0)}%
           </div>
         )}
@@ -750,6 +753,7 @@ export function AtlasView({
         {contextMenu && (
           <div
             className="atlas-context-menu"
+            data-gradient-include=""
             style={{ left: contextMenu.x, top: contextMenu.y }}
             onPointerDown={event => event.stopPropagation()}
             onClick={event => event.stopPropagation()}
@@ -783,7 +787,7 @@ export function AtlasView({
                           <span>Link to Lore Book Entry</span>
                           <i className="ti ti-chevron-right atlas-context-chevron" aria-hidden="true" />
                         </button>
-                        <div className="atlas-context-submenu atlas-context-submenu-level-1">
+                        <div className="atlas-context-submenu atlas-context-submenu-level-1" data-gradient-include="">
                           {sortedLoreCategories.filter(category => category.entries.length > 0).map(category => (
                             <div className="atlas-context-submenu-wrap" key={category.id}>
                               <button>
@@ -791,7 +795,7 @@ export function AtlasView({
                                 <span>{category.name}</span>
                                 <i className="ti ti-chevron-right atlas-context-chevron" aria-hidden="true" />
                               </button>
-                              <div className="atlas-context-submenu atlas-context-submenu-level-2">
+                              <div className="atlas-context-submenu atlas-context-submenu-level-2" data-gradient-include="">
                                 {category.entries.map(entry => (
                                   <button key={entry.id} onClick={() => linkMarkerToLoreEntry(marker.id, category.id, entry.id)}>
                                     <i className="ti ti-book" aria-hidden="true" />
@@ -809,7 +813,7 @@ export function AtlasView({
                           <span>Create Lore Book Entry</span>
                           <i className="ti ti-chevron-right atlas-context-chevron" aria-hidden="true" />
                         </button>
-                        <div className="atlas-context-submenu atlas-context-submenu-level-1">
+                        <div className="atlas-context-submenu atlas-context-submenu-level-1" data-gradient-include="">
                           {sortedLoreCategories.map(category => (
                             <div className="atlas-context-submenu-wrap" key={category.id}>
                               <button>
@@ -817,7 +821,7 @@ export function AtlasView({
                                 <span>{category.name}</span>
                                 <i className="ti ti-chevron-right atlas-context-chevron" aria-hidden="true" />
                               </button>
-                              <div className="atlas-context-submenu atlas-context-submenu-level-2">
+                              <div className="atlas-context-submenu atlas-context-submenu-level-2" data-gradient-include="">
                                 <button onClick={() => createLoreEntryFromMarker(marker.id, category.id)}>
                                   <i className="ti ti-plus" aria-hidden="true" />
                                   <span>New Entry</span>
@@ -842,6 +846,7 @@ export function AtlasView({
         {loreActionMenu && (
           <div
             className="atlas-context-menu atlas-lore-action-menu"
+            data-gradient-include=""
             style={{ left: loreActionMenu.x, top: loreActionMenu.y }}
             onPointerDown={event => event.stopPropagation()}
             onClick={event => event.stopPropagation()}
@@ -858,7 +863,7 @@ export function AtlasView({
                     <span>{category.name}</span>
                     <i className="ti ti-chevron-right atlas-context-chevron" aria-hidden="true" />
                   </button>
-                  <div className="atlas-context-submenu atlas-context-submenu-level-1 atlas-context-submenu-scroll">
+                  <div className="atlas-context-submenu atlas-context-submenu-level-1 atlas-context-submenu-scroll" data-gradient-include="">
                     {category.entries.map(entry => (
                       <button key={entry.id} onClick={() => linkMarkerToLoreEntry(loreActionMenu.markerId, category.id, entry.id)}>
                         <i className="ti ti-book" aria-hidden="true" />
@@ -875,7 +880,7 @@ export function AtlasView({
                     <span>{category.name}</span>
                     <i className="ti ti-chevron-right atlas-context-chevron" aria-hidden="true" />
                   </button>
-                  <div className="atlas-context-submenu atlas-context-submenu-level-1 atlas-context-submenu-scroll">
+                  <div className="atlas-context-submenu atlas-context-submenu-level-1 atlas-context-submenu-scroll" data-gradient-include="">
                     <button onClick={() => createLoreEntryFromMarker(loreActionMenu.markerId, category.id)}>
                       <i className="ti ti-plus" aria-hidden="true" />
                       <span>New Entry</span>

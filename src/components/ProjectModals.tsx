@@ -547,6 +547,8 @@ export function PreferencesModal({
   incrementNewNodeNumbers,
   readingWpm,
   defaultSceneTargetWordCount,
+  gradientOverlayEnabled,
+  gradientOverlayAnimated,
   onCancel,
   onSave,
 }: {
@@ -554,13 +556,24 @@ export function PreferencesModal({
   incrementNewNodeNumbers: boolean
   readingWpm: number
   defaultSceneTargetWordCount: number
+  gradientOverlayEnabled: boolean
+  gradientOverlayAnimated: boolean
   onCancel: () => void
-  onSave: (theme: ThemeId, incrementNewNodeNumbers: boolean, readingWpm: number, defaultSceneTargetWordCount: number) => void
+  onSave: (
+    theme: ThemeId,
+    incrementNewNodeNumbers: boolean,
+    readingWpm: number,
+    defaultSceneTargetWordCount: number,
+    gradientOverlayEnabled: boolean,
+    gradientOverlayAnimated: boolean,
+  ) => void
 }) {
   const [localTheme, setLocalTheme] = useState<ThemeId>(theme)
   const [localIncrementNewNodeNumbers, setLocalIncrementNewNodeNumbers] = useState(incrementNewNodeNumbers)
   const [localReadingWpm, setLocalReadingWpm] = useState(String(readingWpm))
   const [localDefaultSceneTargetWordCount, setLocalDefaultSceneTargetWordCount] = useState(String(defaultSceneTargetWordCount || ''))
+  const [localGradientOverlayEnabled, setLocalGradientOverlayEnabled] = useState(gradientOverlayEnabled)
+  const [localGradientOverlayAnimated, setLocalGradientOverlayAnimated] = useState(gradientOverlayAnimated)
   const [activeTab, setActiveTab] = useState<'general' | 'themes'>('general')
 
   useEffect(() => {
@@ -568,7 +581,9 @@ export function PreferencesModal({
     setLocalIncrementNewNodeNumbers(incrementNewNodeNumbers)
     setLocalReadingWpm(String(readingWpm))
     setLocalDefaultSceneTargetWordCount(String(defaultSceneTargetWordCount || ''))
-  }, [theme, incrementNewNodeNumbers, readingWpm, defaultSceneTargetWordCount])
+    setLocalGradientOverlayEnabled(gradientOverlayEnabled)
+    setLocalGradientOverlayAnimated(gradientOverlayAnimated)
+  }, [theme, incrementNewNodeNumbers, readingWpm, defaultSceneTargetWordCount, gradientOverlayEnabled, gradientOverlayAnimated])
 
   const MIN_READING_WPM = 50
   const MAX_READING_WPM = 1000
@@ -677,13 +692,33 @@ export function PreferencesModal({
                     {darkThemes.map(renderThemeOption)}
                   </div>
                 </section>
+                <section className="preferences-theme-section">
+                  <h3>Gradient Overlay</h3>
+                  <label className="modal-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={localGradientOverlayEnabled}
+                      onChange={e => setLocalGradientOverlayEnabled(e.target.checked)}
+                    />
+                    Tint the app with a subtle gradient (always off in high-contrast themes)
+                  </label>
+                  <label className="modal-checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={localGradientOverlayAnimated}
+                      disabled={!localGradientOverlayEnabled}
+                      onChange={e => setLocalGradientOverlayAnimated(e.target.checked)}
+                    />
+                    Slowly drift the gradient across the window
+                  </label>
+                </section>
               </div>
             </div>
           )}
         </div>
         <div className="modal-footer">
           <button className="welcome-btn" onClick={onCancel}>Cancel</button>
-          <button className="welcome-btn" onClick={() => onSave(localTheme, localIncrementNewNodeNumbers, normalizeReadingWpmInput(), normalizeDefaultSceneTargetInput())}>Save</button>
+          <button className="welcome-btn" onClick={() => onSave(localTheme, localIncrementNewNodeNumbers, normalizeReadingWpmInput(), normalizeDefaultSceneTargetInput(), localGradientOverlayEnabled, localGradientOverlayAnimated)}>Save</button>
         </div>
       </div>
     </div>

@@ -46,6 +46,7 @@ import { BinderSidebar } from './components/BinderSidebar'
 import { CompileModal } from './components/CompileModal'
 import { BinderContextMenu, EditorContextMenu, SpellcheckContextMenu, TabContextMenu } from './components/ContextMenus'
 import { DraftDiffModal } from './components/DraftDiffModal'
+import { GradientOverlay } from './components/GradientOverlay'
 import { LorePresenceModal } from './components/LorePresenceModal'
 import { InspectorPanel } from './components/InspectorPanel'
 import {
@@ -537,6 +538,10 @@ export default function App() {
     typewriterScrolling: false,
     readingWpm: 240,
     defaultSceneTargetWordCount: 0,
+    gradientOverlay: {
+      enabled: true,
+      animated: false,
+    },
     goals: {
       monthlyTargetWordCount: 0,
       dailyTargetWordCount: 0,
@@ -573,6 +578,10 @@ export default function App() {
         defaultSceneTargetWordCount: Number.isFinite(Number(parsed.defaultSceneTargetWordCount))
           ? Math.min(999999, Math.max(0, Math.round(Number(parsed.defaultSceneTargetWordCount))))
           : DEFAULT_SETTINGS.defaultSceneTargetWordCount,
+        gradientOverlay: {
+          enabled: parsed.gradientOverlay?.enabled !== false,
+          animated: parsed.gradientOverlay?.animated === true,
+        },
         goals: {
           ...DEFAULT_SETTINGS.goals,
           ...(typeof parsed.goals === 'object' && parsed.goals ? parsed.goals : {}),
@@ -624,6 +633,8 @@ export default function App() {
   const [showLorePresence, setShowLorePresence] = useState(false)
   const [readingWpm, setReadingWpm] = useState(() => initialSettings.readingWpm)
   const [defaultSceneTargetWordCount, setDefaultSceneTargetWordCount] = useState(() => initialSettings.defaultSceneTargetWordCount)
+  const [gradientOverlayEnabled, setGradientOverlayEnabled] = useState(() => initialSettings.gradientOverlay.enabled)
+  const [gradientOverlayAnimated, setGradientOverlayAnimated] = useState(() => initialSettings.gradientOverlay.animated)
   const [goals, setGoals] = useState(() => initialSettings.goals)
   const [showGoalModal, setShowGoalModal] = useState(false)
   const [previewTheme, setPreviewTheme] = useState<ThemeId | null>(null)
@@ -4735,6 +4746,8 @@ export default function App() {
     shouldIncrementNewNodeNumbers: boolean,
     nextReadingWpm: number,
     nextDefaultSceneTargetWordCount: number,
+    nextGradientOverlayEnabled: boolean,
+    nextGradientOverlayAnimated: boolean,
   ) => {
     const normalizedReadingWpm = Math.min(1000, Math.max(50, Math.round(nextReadingWpm)))
     const normalizedDefaultSceneTargetWordCount = Math.min(999999, Math.max(0, Math.round(nextDefaultSceneTargetWordCount)))
@@ -4742,12 +4755,18 @@ export default function App() {
     setIncrementNewNodeNumbers(shouldIncrementNewNodeNumbers)
     setReadingWpm(normalizedReadingWpm)
     setDefaultSceneTargetWordCount(normalizedDefaultSceneTargetWordCount)
+    setGradientOverlayEnabled(nextGradientOverlayEnabled)
+    setGradientOverlayAnimated(nextGradientOverlayAnimated)
     saveSettings({
       ...loadSettings(),
       theme,
       incrementNewNodeNumbers: shouldIncrementNewNodeNumbers,
       readingWpm: normalizedReadingWpm,
       defaultSceneTargetWordCount: normalizedDefaultSceneTargetWordCount,
+      gradientOverlay: {
+        enabled: nextGradientOverlayEnabled,
+        animated: nextGradientOverlayAnimated,
+      },
     })
     setShowPreferences(false)
   }
@@ -7016,6 +7035,8 @@ export default function App() {
           incrementNewNodeNumbers={incrementNewNodeNumbers}
           readingWpm={readingWpm}
           defaultSceneTargetWordCount={defaultSceneTargetWordCount}
+          gradientOverlayEnabled={gradientOverlayEnabled}
+          gradientOverlayAnimated={gradientOverlayAnimated}
           onCancel={() => setShowPreferences(false)}
           onSave={savePreferences}
         />
@@ -7129,6 +7150,7 @@ export default function App() {
     return (
       <div id="app" className="app-startup" aria-label="Loading Scrivus">
         <i className="ti ti-feather welcome-icon" aria-hidden="true" />
+        {gradientOverlayEnabled && <GradientOverlay animated={gradientOverlayAnimated} />}
       </div>
     )
   }
@@ -7180,6 +7202,7 @@ export default function App() {
           )}
           <WelcomeUpdateNotice />
         </div>
+        {gradientOverlayEnabled && <GradientOverlay animated={gradientOverlayAnimated} />}
       </div>
     )
   }
@@ -7595,7 +7618,7 @@ export default function App() {
       />
       <SharedModals />
 
-      
+      {gradientOverlayEnabled && <GradientOverlay animated={gradientOverlayAnimated} />}
     </div>
   )
 
