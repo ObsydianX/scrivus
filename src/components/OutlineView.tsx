@@ -1,5 +1,6 @@
 import { useState, type CSSProperties } from 'react'
 import type { OutlineRow, SceneStatus } from '../types'
+import { RevisionStatusIcon } from './RevisionStatusIcon'
 
 const STATUS_LABELS: Record<SceneStatus | 'inProgress', string> = {
   draft: 'Draft',
@@ -272,6 +273,7 @@ export function OutlineView({
                   <td>
                     {row.type === 'scene' && !readOnly
                       ? <label className={`outline-status-select-wrap outline-status-${row.status}`}>
+                        <RevisionStatusIcon status={row.status} className="outline-status-icon" />
                         <select
                           className="outline-status-select"
                           value={row.status}
@@ -286,6 +288,7 @@ export function OutlineView({
                         </select>
                       </label>
                       : <span className={`outline-status outline-status-${row.status}`}>
+                        <RevisionStatusIcon status={row.status} className="outline-status-icon" />
                         {STATUS_LABELS[row.status]}
                       </span>
                     }

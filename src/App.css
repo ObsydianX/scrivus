@@ -75,17 +75,17 @@ body,
 }
 
 :root[data-theme='light'] {
-  --app-bg: #f6f7f8;
-  --panel-bg: #eceff2;
-  --panel-bg-2: #ffffff;
+  --app-bg: #FAFAFA;
+  --panel-bg: #e0e0e0;
+  --panel-bg-2: #f5f5f5;
   --editor-bg: #f8f9fa;
   --editor-paper: #ffffff;
-  --text-main: #15181c;
-  --text-muted: #626b76;
-  --text-soft: #2d333a;
+  --text-main: #131414;
+  --text-muted: #474b50;
+  --text-soft: #212325;
   --border-main: #62676d;
   --border-soft: #a6abb2;
-  --accent: #46515f;
+  --accent: #4d6686;
   --accent-text: #ffffff;
   --danger: #9b3434;
   --input-bg: #ffffff;
@@ -258,7 +258,7 @@ body,
   --text-main: #452833;
   --text-muted: #8b6874;
   --text-soft: #5c3947;
-  --border-main: #574a4e;
+  --border-main: #745b63;
   --border-soft: #c0aab0;
   --accent: #c56f8a;
   --accent-text: #ffffff;
@@ -358,7 +358,7 @@ body,
   --text-main: #e7fbff;
   --text-muted: #7ca6ba;
   --text-soft: #c8f5ff;
-  --border-main: #072234;
+  --border-main: #02090e;
   --border-soft: #1d4262;
   --accent: #00e5ff;
   --accent-text: #001218;
@@ -547,6 +547,29 @@ body,
   --revision-highlight-hover: rgba(141, 117, 159, 0.28);
   --revision-highlight-active: rgba(141, 117, 159, 0.38);
   --revision-highlight-border: rgba(141, 117, 159, 0.78);
+}
+
+/* Revision states keep a distinct, vivid palette while still picking up each
+   theme's accent and danger hues. Icons carry the distinction without color. */
+:root {
+  --revision-status-draft: color-mix(in oklab, var(--accent) 68%, #38bdf8 50%);
+  --revision-status-revised: color-mix(in oklab, var(--accent) 64%, #a78bfa 50%);
+  --revision-status-needsWork: color-mix(in oklab, var(--danger) 72%, #fb923c 50%);
+  --revision-status-complete: color-mix(in oklab, var(--status-bg) 66%, #22c55e 50%);
+}
+
+:root[data-theme='contrastLight'] {
+  --revision-status-draft: #005fcc;
+  --revision-status-revised: #5b21b6;
+  --revision-status-needsWork: #a00000;
+  --revision-status-complete: #08752c;
+}
+
+:root[data-theme='contrastDark'] {
+  --revision-status-draft: #53c8ff;
+  --revision-status-revised: #c4a7ff;
+  --revision-status-needsWork: #ff7b72;
+  --revision-status-complete: #55e879;
 }
 
 /* Main application container. */
@@ -954,16 +977,28 @@ body,
 
 .manuscript-switcher button {
   height: 28px;
-  border: 1px solid var(--border-soft);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
   border-radius: 4px;
-  background: var(--button-bg);
+  background: none;
   color: var(--text-muted);
   cursor: pointer;
 }
 
 .manuscript-switcher button:hover {
+  background: var(--border-soft);
   color: var(--text-main);
-  border-color: var(--accent);
+}
+
+.manuscript-switcher button:disabled,
+.manuscript-switcher button:disabled:hover {
+  cursor: default;
+  opacity: 0.38;
+  background: none;
+  color: var(--text-muted);
 }
 
 .manuscript-book-tabs {
@@ -1090,27 +1125,32 @@ body,
 }
 
 .binder-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--text-muted);
+  width: 12px;
+  height: 12px;
+  color: var(--revision-status-draft);
   flex-shrink: 0;
 }
 
+.manuscript-action-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
 .binder-status-complete {
-  background: var(--status-bg);
+  color: var(--revision-status-complete);
 }
 
 .binder-status-needsWork {
-  background: var(--danger);
+  color: var(--revision-status-needsWork);
 }
 
 .binder-status-revised {
-  background: var(--accent);
+  color: var(--revision-status-revised);
 }
 
 .tree-item.active .binder-status-dot {
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-text) 70%, transparent);
+  filter: drop-shadow(0 0 1px color-mix(in srgb, var(--accent-text) 75%, transparent));
 }
 
 /* Truncated item label. */
@@ -5843,22 +5883,25 @@ input[type="checkbox"]:disabled {
   justify-content: center;
   width: 28px;
   height: 28px;
-  border: 1px solid var(--border-soft);
+  border: none;
   border-radius: 4px;
-  background: var(--panel-bg-2);
+  background: none;
   color: var(--text-soft);
   cursor: pointer;
   padding: 0;
 }
 
 .outline-tool-btn:hover:not(:disabled) {
-  border-color: var(--accent);
+  background: var(--border-soft);
   color: var(--text-main);
 }
 
-.outline-tool-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
+.outline-tool-btn:disabled,
+.outline-tool-btn:disabled:hover {
+  cursor: default;
+  opacity: 0.38;
+  background: none;
+  color: var(--text-muted);
 }
 
 .outline-summary span {
@@ -6095,45 +6138,31 @@ input[type="checkbox"]:disabled {
   white-space: nowrap;
 }
 
-.outline-status::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--text-muted);
+.outline-status-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--revision-status-draft);
   flex-shrink: 0;
 }
 
 .outline-status-complete {
-  color: var(--status-bg);
-}
-
-.outline-status-complete::before {
-  background: var(--status-bg);
+  color: var(--revision-status-complete);
 }
 
 .outline-status-needsWork {
-  color: var(--danger);
-}
-
-.outline-status-needsWork::before {
-  background: var(--danger);
+  color: var(--revision-status-needsWork);
 }
 
 .outline-status-revised {
-  color: var(--accent);
-}
-
-.outline-status-revised::before {
-  background: var(--accent);
+  color: var(--revision-status-revised);
 }
 
 .outline-status-inProgress {
   color: var(--text-main);
 }
 
-.outline-status-inProgress::before {
-  background: var(--text-muted);
+.outline-status-inProgress .outline-status-icon {
+  color: var(--text-muted);
 }
 
 .outline-status-select-wrap {
@@ -6150,25 +6179,16 @@ input[type="checkbox"]:disabled {
   cursor: pointer;
 }
 
-.outline-status-select-wrap::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--text-muted);
-  flex-shrink: 0;
+.outline-status-select-wrap.outline-status-complete .outline-status-icon {
+  color: var(--revision-status-complete);
 }
 
-.outline-status-select-wrap.outline-status-complete::before {
-  background: var(--status-bg);
+.outline-status-select-wrap.outline-status-needsWork .outline-status-icon {
+  color: var(--revision-status-needsWork);
 }
 
-.outline-status-select-wrap.outline-status-needsWork::before {
-  background: var(--danger);
-}
-
-.outline-status-select-wrap.outline-status-revised::before {
-  background: var(--accent);
+.outline-status-select-wrap.outline-status-revised .outline-status-icon {
+  color: var(--revision-status-revised);
 }
 
 .outline-status-select {
@@ -6382,35 +6402,35 @@ input[type="checkbox"]:disabled {
 }
 
 .pacing-bar.pacing-status-draft {
-  background: var(--text-muted);
+  background: var(--revision-status-draft);
 }
 
 .pacing-bar.pacing-status-revised {
-  background: var(--accent);
+  background: var(--revision-status-revised);
 }
 
 .pacing-bar.pacing-status-needsWork {
-  background: var(--danger);
+  background: var(--revision-status-needsWork);
 }
 
 .pacing-bar.pacing-status-complete {
-  background: var(--status-bg);
+  background: var(--revision-status-complete);
 }
 
 .pacing-legend-item.pacing-status-draft::before {
-  background: var(--text-muted);
+  background: var(--revision-status-draft);
 }
 
 .pacing-legend-item.pacing-status-revised::before {
-  background: var(--accent);
+  background: var(--revision-status-revised);
 }
 
 .pacing-legend-item.pacing-status-needsWork::before {
-  background: var(--danger);
+  background: var(--revision-status-needsWork);
 }
 
 .pacing-legend-item.pacing-status-complete::before {
-  background: var(--status-bg);
+  background: var(--revision-status-complete);
 }
 
 .pacing-average-line {
@@ -6465,9 +6485,9 @@ input[type="checkbox"]:disabled {
   min-width: 32px;
   height: 32px;
   padding: 0 9px;
-  border: 1px solid var(--border-soft);
+  border: none;
   border-radius: 5px;
-  background: var(--panel-bg-2);
+  background: none;
   color: var(--text-soft);
   cursor: pointer;
   font: inherit;
@@ -6479,23 +6499,25 @@ input[type="checkbox"]:disabled {
 }
 
 .mindmap-tool-btn:hover:not(:disabled) {
-  border-color: var(--accent);
+  background: var(--border-soft);
   color: var(--text-main);
 }
 
-.mindmap-tool-btn:disabled {
+.mindmap-tool-btn:disabled,
+.mindmap-tool-btn:disabled:hover {
   color: var(--text-muted);
   cursor: default;
-  opacity: 0.58;
+  opacity: 0.38;
+  background: none;
 }
 
 .mindmap-tool-btn-primary {
   background: var(--accent);
-  border-color: var(--accent);
   color: var(--accent-text);
 }
 
 .mindmap-tool-btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 82%, var(--text-main) 18%);
   color: var(--accent-text);
 }
 
@@ -6998,9 +7020,9 @@ body.mindmap-dragging * {
   min-width: 32px;
   height: 32px;
   padding: 0 9px;
-  border: 1px solid var(--border-soft);
+  border: none;
   border-radius: 5px;
-  background: var(--panel-bg-2);
+  background: none;
   color: var(--text-soft);
   cursor: pointer;
   font: inherit;
@@ -7008,23 +7030,25 @@ body.mindmap-dragging * {
 }
 
 .atlas-tool-btn:hover:not(:disabled) {
-  border-color: var(--accent);
+  background: var(--border-soft);
   color: var(--text-main);
 }
 
-.atlas-tool-btn:disabled {
+.atlas-tool-btn:disabled,
+.atlas-tool-btn:disabled:hover {
   color: var(--text-muted);
   cursor: default;
-  opacity: 0.58;
+  opacity: 0.38;
+  background: none;
 }
 
 .atlas-tool-btn-primary {
   background: var(--accent);
-  border-color: var(--accent);
   color: var(--accent-text);
 }
 
 .atlas-tool-btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 82%, var(--text-main) 18%);
   color: var(--accent-text);
 }
 
@@ -8780,8 +8804,8 @@ button.welcome-update-notice:focus-visible {
 }
 
 .revision-comments-count {
-  background: #007acc;
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-text);
   font-size: 10px;
   font-weight: 700;
   border-radius: 20px;
@@ -8987,7 +9011,7 @@ button.welcome-update-notice:focus-visible {
 
 /* Buttons */
 .revision-btn {
-  border: 1px solid #3c3c3c;
+  border: none;
   background: #007acc;
   color: #fff;
   cursor: pointer;
@@ -9013,7 +9037,6 @@ button.welcome-update-notice:focus-visible {
 .revision-btn--ghost {
   background: none;
   color: #858585;
-  border-color: #3c3c3c;
 }
 
 .revision-btn--ghost:hover {
@@ -9028,6 +9051,7 @@ button.welcome-update-notice:focus-visible {
 
 .revision-btn--danger {
   color: #cc8888;
+  margin-left: auto;
 }
 
 .revision-btn--danger:hover {
@@ -9155,14 +9179,12 @@ button.welcome-update-notice:focus-visible {
 }
 
 .revision-btn {
-  border-color: var(--border-soft);
   background: var(--accent);
   color: var(--accent-text);
 }
 
 .revision-btn--ghost {
   background: transparent;
-  border-color: var(--border-soft);
 }
 
 .revision-btn--ghost:hover {

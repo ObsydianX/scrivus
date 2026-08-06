@@ -2,6 +2,20 @@
 
 All notable Scrivus changes are tracked here.
 
+## 0.3.1
+
+- New Feature: Added an optional theme-aware ambient gradient overlay with subtle blue-noise dithering and a separate slow-animation option in Preferences. High-contrast themes disable the effect automatically, and images and Atlas maps remain untinted for clarity.
+- Changed: EPUB exports now include a readable Contents page, hierarchical act/chapter/scene navigation when available, and NCX table-of-contents metadata for broader e-reader compatibility.
+- Changed: Replaced revision-status markers with custom progressive-fill icons, added a segmented In Progress icon, and introduced more vivid theme-aware status colors across the Binder, Outline, and pacing strip.
+- Changed: Added custom create-manuscript and delete-manuscript icons, improved their hover labels and alignment, and made the unavailable delete action visibly disabled.
+- Changed: Standardized toolbar buttons in the Binder, Outline, Canvas, and Atlas with borderless resting states, filled hover highlights, and clearer disabled styling.
+- Changed: Refined Revision comment controls with borderless actions, theme-matched comment-count badges, and separate left/right alignment for Resolve and Delete.
+- Changed: Improved Revision workspace layout and theme consistency, including title-bar bookmark state, document typography and spacing, comments-pane sizing, themed checkboxes, and stronger panel separation across themes.
+- Changed: Further refined the default Light theme and selected theme borders for clearer text and panel contrast.
+- Changed: Updated development and release builds to require Node.js 24.
+- Fixes: Review comments explicitly exported as unanchored now remain unanchored when imported instead of being automatically attached to matching text.
+- Fixes: The Lore image crop editor no longer reloads its source image while the crop selection is being adjusted.
+
 ## 0.3.0
 
 - New Feature: Added support for multiple manuscripts in one project. Projects now track manuscript roots separately, the binder shows only the active manuscript plus Notes and Trash, and switching manuscripts restores the last remembered scene when possible.

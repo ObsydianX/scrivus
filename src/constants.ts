@@ -14,7 +14,7 @@ import type {
   WritingStats,
 } from './types'
 
-export const SCRIVUS_VERSION = '0.3.0'
+export const SCRIVUS_VERSION = '0.3.1'
 export const PROJECT_FORMAT_VERSION = 2
 export const DEFAULT_MANUSCRIPT_ID = 'main'
 

@@ -1,6 +1,8 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
 import type { DropTarget, Manuscript, SceneStatus, TreeNode } from '../types'
 import { normalizeSceneMetadata } from '../constants'
+import { RevisionStatusIcon } from './RevisionStatusIcon'
+import { ManuscriptActionIcon } from './ManuscriptActionIcon'
 
 type MutableRef<T> = {
   current: T
@@ -362,9 +364,11 @@ export function BinderSidebar({
                 }`} aria-hidden="true" />
             </span>
             {n.type === 'doc' && (
-              <span
+              <RevisionStatusIcon
+                status={normalizeSceneMetadata(n.metadata).status}
                 className={`binder-status-dot binder-status-${normalizeSceneMetadata(n.metadata).status}`}
                 title={`Status: ${STATUS_LABELS[normalizeSceneMetadata(n.metadata).status]}`}
+                label={`Status: ${STATUS_LABELS[normalizeSceneMetadata(n.metadata).status]}`}
               />
             )}
             {renamingId === n.id
@@ -510,16 +514,16 @@ export function BinderSidebar({
                 <option key={manuscript.id} value={manuscript.id}>{manuscript.name || manuscript.title || 'Untitled Manuscript'}</option>
               ))}
             </select>
-            <button title="New manuscript" aria-label="New manuscript" onClick={onAddManuscript}>
-              <i className="ti ti-books" aria-hidden="true" />
+            <button title="Add new manuscript" aria-label="Add new manuscript" onClick={onAddManuscript}>
+              <ManuscriptActionIcon action="create" />
             </button>
             <button
-              title={manuscripts.length <= 1 ? 'At least one manuscript is required' : 'Delete selected manuscript'}
-              aria-label="Delete selected manuscript"
+              title={manuscripts.length <= 1 ? 'At least one manuscript is required' : 'Delete active manuscript'}
+              aria-label="Delete active manuscript"
               disabled={manuscripts.length <= 1}
               onClick={onDeleteActiveManuscript}
             >
-              <i className="ti ti-books-off" aria-hidden="true" />
+              <ManuscriptActionIcon action="delete" />
             </button>
           </div>
         )}
