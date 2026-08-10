@@ -2907,6 +2907,34 @@ body,
   margin: 4px 0;
 }
 
+.lorebook-entry-header,
+.lore-entry-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.lorebook-entry-header {
+  margin-top: 6px;
+}
+
+.lore-entry-header {
+  margin-top: 4px;
+}
+
+.lorebook-entry-header::after,
+.lore-entry-header::after {
+  content: '';
+  width: 14px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.7;
+}
+
 .lorebook-backlinks {
   display: flex;
   flex-direction: column;

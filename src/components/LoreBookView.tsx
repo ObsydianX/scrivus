@@ -318,6 +318,9 @@ export function LoreBookView({
                 if (field.type === 'divider') {
                   return <div key={field.id} className="lorebook-entry-divider" />
                 }
+                if (field.type === 'header') {
+                  return field.label ? <div key={field.id} className="lorebook-entry-header">{field.label}</div> : null
+                }
                 const value = activeEntry.fields[field.id] ?? ''
                 if (!value) return null
                 if (field.type === 'image') {

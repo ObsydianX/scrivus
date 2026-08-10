@@ -133,7 +133,8 @@ export function LoreTemplateEditorModal({
     return field.type === 'field' ? 'Unnamed field' :
       field.type === 'textarea' ? 'Unnamed description' :
         field.type === 'image' ? 'Unnamed image' :
-          'Divider'
+          field.type === 'header' ? 'Unnamed header' :
+            'Divider'
   }
 
   const hardDeleteField = (fieldId: string) => {
@@ -354,7 +355,8 @@ export function LoreTemplateEditorModal({
                       placeholder={
                         el.type === 'field' ? 'Field label...' :
                           el.type === 'textarea' ? 'Description label...' :
-                            'Image label...'
+                            el.type === 'image' ? 'Image label...' :
+                              'Header text...'
                       }
                     />
                   }
@@ -391,11 +393,12 @@ export function LoreTemplateEditorModal({
                   left: rect ? rect.left : 0,
                 }}
               >
-                {(['field', 'textarea', 'image', 'divider'] as LoreFieldType[]).map(type => (
+                {(['field', 'textarea', 'image', 'header', 'divider'] as LoreFieldType[]).map(type => (
                   <button key={type} onClick={() => { addElement(type); setAddMenuOpen(false) }}>
                     {type === 'field' ? 'Field Box' :
                       type === 'textarea' ? 'Description Box' :
-                        type === 'image' ? 'Image' : 'Divider'}
+                        type === 'image' ? 'Image' :
+                          type === 'header' ? 'Header' : 'Divider'}
                   </button>
                 ))}
               </div>
@@ -732,6 +735,9 @@ export function LoreEntryEditorModal({
           {activeFields.map(field => {
             if (field.type === 'divider') {
               return <div key={field.id} className="lore-entry-divider" />
+            }
+            if (field.type === 'header') {
+              return field.label ? <div key={field.id} className="lore-entry-header">{field.label}</div> : null
             }
             if (field.type === 'image') {
               const value = local.fields[field.id]

@@ -126,7 +126,7 @@ export type SceneMetadata = {
   synopsis: string
 }
 
-export type LoreFieldType = 'field' | 'textarea' | 'image' | 'divider'
+export type LoreFieldType = 'field' | 'textarea' | 'image' | 'header' | 'divider'
 
 export type LoreTemplateElement = {
   id: string
