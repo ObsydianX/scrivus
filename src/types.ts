@@ -126,12 +126,13 @@ export type SceneMetadata = {
   synopsis: string
 }
 
-export type LoreFieldType = 'field' | 'textarea' | 'image' | 'header' | 'divider'
+export type LoreFieldType = 'field' | 'textarea' | 'list' | 'image' | 'header' | 'divider'
 
 export type LoreTemplateElement = {
   id: string
   type: LoreFieldType
   label?: string
+  heightMode?: 'limited' | 'content'
   removed: boolean
 }
 
@@ -139,6 +140,8 @@ export type LoreSubcategory = {
   id: string
   name: string
   color?: LoreSubcategoryColor
+  parentId?: string
+  collapsedInEditor?: boolean
 }
 
 export type LoreSubcategoryColor = 'default' | 'blue' | 'green' | 'rose' | 'gold' | 'violet' | 'cyan' | 'orange' | 'red' | 'slate'
@@ -146,13 +149,15 @@ export type LoreSubcategoryColor = 'default' | 'blue' | 'green' | 'rose' | 'gold
 export type LoreEntry = {
   id: string
   name: string
+  prefix?: string
+  suffix?: string
   pinned?: boolean
   subcategoryId?: string
   keywords?: string[]
   fields: Record<string, LoreFieldValue>
 }
 
-export type LoreFieldValue = string | LoreImageValue
+export type LoreFieldValue = string | string[] | LoreImageValue
 
 export type LoreImageValue = {
   path: string
@@ -179,8 +184,18 @@ export type LoreCategory = {
   id: string
   name: string
   subcategories?: LoreSubcategory[]
+  hierarchyDisplay?: LoreHierarchyDisplay
   template: LoreTemplateElement[]
   entries: LoreEntry[]
+}
+
+export type LoreHierarchyElementType = 'subcategory' | 'image' | 'name'
+export type LoreHierarchyNameFormat = 'name' | 'prefix-name' | 'name-suffix' | 'full'
+export type LoreHierarchyDisplay = {
+  elements: { type: LoreHierarchyElementType; visible: boolean }[]
+  nameFormat: LoreHierarchyNameFormat
+  imageFieldId?: string
+  title?: string
 }
 
 export type LoreBook = {
@@ -193,13 +208,23 @@ export type ProjectSettings = {
   subtitle: string
   // Project-relative path to the book cover image (used by the EPUB export).
   coverImage: string
+  variables: Record<string, number | string>
+  variableCategories: ProjectVariableCategory[]
   backups: BackupSettings
+}
+
+export type ProjectVariableCategory = {
+  id: string
+  name: string
+  variableNames: string[]
 }
 
 export type BackupSettings = {
   enabled: boolean
   intervalMinutes: number
   retentionCount: number
+  useDefaultLocation: boolean
+  backupFolder: string
 }
 
 export type ThemeId =

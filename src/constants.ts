@@ -22,6 +22,8 @@ export const DEFAULT_BACKUP_SETTINGS: BackupSettings = {
   enabled: true,
   intervalMinutes: 15,
   retentionCount: 20,
+  useDefaultLocation: true,
+  backupFolder: '',
 }
 
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
@@ -29,6 +31,8 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   title: '',
   subtitle: '',
   coverImage: '',
+  variables: {},
+  variableCategories: [],
   backups: DEFAULT_BACKUP_SETTINGS,
 }
 
@@ -43,14 +47,61 @@ export function normalizeBackupSettings(settings?: Partial<BackupSettings> | nul
     retentionCount: Number.isFinite(retentionCount)
       ? Math.min(100, Math.max(1, Math.round(retentionCount)))
       : DEFAULT_BACKUP_SETTINGS.retentionCount,
+    useDefaultLocation: settings?.useDefaultLocation !== false,
+    backupFolder: typeof settings?.backupFolder === 'string' ? settings.backupFolder.trim() : '',
   }
 }
 
 export function normalizeProjectSettings(settings?: Partial<ProjectSettings> | null): ProjectSettings {
+  const seenVariableNames = new Set<string>()
+  const variables = settings?.variables && typeof settings.variables === 'object' && !Array.isArray(settings.variables)
+    ? Object.fromEntries(Object.entries(settings.variables)
+      .filter(([name, value]) => {
+        const normalizedName = name.toLowerCase()
+        if (seenVariableNames.has(normalizedName)) return false
+        const valid = /^[A-Za-z_][A-Za-z0-9_]*:[A-Za-z_][A-Za-z0-9_]*$/.test(name) && (
+          (typeof value === 'number' && Number.isFinite(value)) || typeof value === 'string'
+        )
+        if (valid) seenVariableNames.add(normalizedName)
+        return valid
+      })
+      .map(([name, value]) => [name, typeof value === 'number' ? value : value.trim()]))
+    : {}
+  const assignedVariables = new Set<string>()
+  const seenCategoryIds = new Set<string>()
+  const seenCategoryNames = new Set<string>()
+  const variableCategories = Array.isArray(settings?.variableCategories)
+    ? settings.variableCategories.flatMap((category, index) => {
+      if (!category || typeof category !== 'object') return []
+      const categoryName = typeof category.name === 'string' ? category.name.trim() : ''
+      const normalizedCategoryName = categoryName.toLowerCase()
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(categoryName) || seenCategoryNames.has(normalizedCategoryName)) return []
+      seenCategoryNames.add(normalizedCategoryName)
+      const rawId = typeof category.id === 'string' && category.id.trim() ? category.id.trim() : `category-${index + 1}`
+      let id = rawId
+      let suffix = 2
+      while (seenCategoryIds.has(id)) id = `${rawId}-${suffix++}`
+      seenCategoryIds.add(id)
+      const variableNames = Array.isArray(category.variableNames)
+        ? category.variableNames.filter(name => {
+          if (typeof name !== 'string' || !(name in variables) || assignedVariables.has(name)) return false
+          assignedVariables.add(name)
+          return true
+        })
+        : []
+      return [{
+        id,
+        name: categoryName,
+        variableNames,
+      }]
+    })
+    : []
   return {
     ...DEFAULT_PROJECT_SETTINGS,
     ...(settings ?? {}),
     coverImage: typeof settings?.coverImage === 'string' ? settings.coverImage : '',
+    variables,
+    variableCategories,
     backups: normalizeBackupSettings(settings?.backups),
   }
 }

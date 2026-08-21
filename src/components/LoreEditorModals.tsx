@@ -10,8 +10,13 @@ import {
   getLoreImageFullWidth,
   getLoreImageIgnoreEntryCrop,
   getLoreImagePath,
+  getLoreListItems,
 } from '../loreImages'
 import type { LoreCategory, LoreEntry, LoreFieldType, LoreSubcategoryColor, LoreTemplateElement } from '../types'
+import { hasInvalidProjectExpressions, type ProjectVariables } from '../projectExpressions'
+import { VariableAutocompleteInput } from './VariableAutocomplete'
+import type { ProjectVariableCategory } from '../types'
+import { getInvalidLoreParentIds, orderLoreSubcategories } from '../loreSubcategories'
 
 const LORE_SUBCATEGORY_COLORS: { value: LoreSubcategoryColor; label: string }[] = [
   { value: 'default', label: 'Default' },
@@ -96,11 +101,12 @@ export function LoreTemplateEditorModal({
   const removedElements = local.template.filter(f => f.removed)
   const subcategories = local.subcategories ?? []
 
-  const addElement = (type: LoreFieldType) => {
+  const addElement = (type: LoreFieldType, heightMode?: LoreTemplateElement['heightMode']) => {
     const newEl: LoreTemplateElement = {
       id: generateId(),
       type,
       label: type === 'divider' ? undefined : '',
+      heightMode,
       removed: false,
     }
     setLocal(prev => prev ? { ...prev, template: [...prev.template, newEl] } : prev)
@@ -132,8 +138,9 @@ export function LoreTemplateEditorModal({
     if (label) return label
     return field.type === 'field' ? 'Unnamed field' :
       field.type === 'textarea' ? 'Unnamed description' :
-        field.type === 'image' ? 'Unnamed image' :
-          field.type === 'header' ? 'Unnamed header' :
+        field.type === 'list' ? 'Unnamed list' :
+          field.type === 'image' ? 'Unnamed image' :
+            field.type === 'header' ? 'Unnamed header' :
             'Divider'
   }
 
@@ -196,10 +203,31 @@ export function LoreTemplateEditorModal({
     } : prev)
   }
 
+  const updateSubcategoryParent = (id: string, parentId: string) => {
+    setLocal(prev => prev ? {
+      ...prev,
+      subcategories: (prev.subcategories ?? []).map(subcategory =>
+        subcategory.id === id ? { ...subcategory, parentId: parentId || undefined } : subcategory
+      ),
+    } : prev)
+  }
+
+  const updateSubcategoryCollapsed = (id: string, collapsedInEditor: boolean) => {
+    setLocal(prev => prev ? {
+      ...prev,
+      subcategories: (prev.subcategories ?? []).map(subcategory =>
+        subcategory.id === id ? { ...subcategory, collapsedInEditor } : subcategory
+      ),
+    } : prev)
+  }
+
   const removeSubcategory = (id: string) => {
     setLocal(prev => prev ? {
       ...prev,
-      subcategories: (prev.subcategories ?? []).filter(subcategory => subcategory.id !== id),
+      // Orphaned children become top-level subcategories.
+      subcategories: (prev.subcategories ?? [])
+        .filter(subcategory => subcategory.id !== id)
+        .map(subcategory => subcategory.parentId === id ? { ...subcategory, parentId: undefined } : subcategory),
       entries: prev.entries.map(entry => entry.subcategoryId === id ? { ...entry, subcategoryId: undefined } : entry),
     } : prev)
   }
@@ -224,6 +252,7 @@ export function LoreTemplateEditorModal({
   return (
     <div className="modal-overlay" style={{ zIndex: 150 }}>
       <div className="modal-box lore-template-modal">
+        <div className="lore-template-modal-body">
         <div className="lore-template-header">
           <input
             className="lore-template-title-input"
@@ -251,6 +280,10 @@ export function LoreTemplateEditorModal({
               {subcategories.map((subcategory, index) => {
                 const isDragging = subcategoryDragIndex === index
                 const isDropTarget = subcategoryDropIndex === index
+                const isCollapsed = subcategory.collapsedInEditor === true
+                const parentName = subcategory.parentId
+                  ? subcategories.find(candidate => candidate.id === subcategory.parentId)?.name || 'Unknown subcategory'
+                  : null
                 return (
                   <div key={subcategory.id}>
                     {isDropTarget && subcategoryDragIndex !== index && (
@@ -276,7 +309,16 @@ export function LoreTemplateEditorModal({
                       <span className="lore-template-drag-handle">
                         <i className="ti ti-grip-vertical" aria-hidden="true" />
                       </span>
-                      <div className="lore-template-subcategory-fields">
+                      {isCollapsed ? (
+                        <button
+                          type="button"
+                          className="lore-template-subcategory-summary"
+                          onClick={() => updateSubcategoryCollapsed(subcategory.id, false)}
+                        >
+                          <span className={`lore-subcategory-color-swatch lore-subcategory-color-${subcategory.color ?? 'default'}`} />
+                          <span>{subcategory.name || 'Unnamed subcategory'}, {parentName ? `child of ${parentName}` : 'top level'}</span>
+                        </button>
+                      ) : <div className="lore-template-subcategory-fields">
                         <input
                           className="lore-template-label-input"
                           value={subcategory.name}
@@ -284,7 +326,24 @@ export function LoreTemplateEditorModal({
                           onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
                           placeholder="Subcategory name..."
                         />
-                        <label className="lore-template-subcategory-color">
+                        <label className="lore-template-subcategory-option">
+                          <span>Child of</span>
+                          <select
+                            className="modal-input"
+                            value={subcategory.parentId ?? ''}
+                            onChange={e => updateSubcategoryParent(subcategory.id, e.target.value)}
+                          >
+                            <option value="">Nothing (top level)</option>
+                            {orderLoreSubcategories(subcategories)
+                              .filter(candidate => !getInvalidLoreParentIds(subcategories, subcategory.id).has(candidate.id))
+                              .map(candidate => (
+                                <option key={candidate.id} value={candidate.id}>
+                                  {`${'— '.repeat(candidate.depth)}${candidate.name || 'Unnamed subcategory'}`}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+                        <label className="lore-template-subcategory-option lore-template-subcategory-color">
                           <span>Color</span>
                           <span className={`lore-subcategory-color-swatch lore-subcategory-color-${subcategory.color ?? 'default'}`} />
                           <select
@@ -298,7 +357,16 @@ export function LoreTemplateEditorModal({
                             ))}
                           </select>
                         </label>
-                      </div>
+                      </div>}
+                      <button
+                        type="button"
+                        className="lore-template-subcategory-collapse"
+                        title={isCollapsed ? 'Expand subcategory' : 'Collapse subcategory'}
+                        aria-label={isCollapsed ? 'Expand subcategory' : 'Collapse subcategory'}
+                        onClick={() => updateSubcategoryCollapsed(subcategory.id, !isCollapsed)}
+                      >
+                        <i className={`ti ${isCollapsed ? 'ti-chevron-down' : 'ti-chevron-up'}`} aria-hidden="true" />
+                      </button>
                       <button
                         className="lore-template-remove-btn"
                         title="Remove"
@@ -355,12 +423,15 @@ export function LoreTemplateEditorModal({
                       placeholder={
                         el.type === 'field' ? 'Field label...' :
                           el.type === 'textarea' ? 'Description label...' :
-                            el.type === 'image' ? 'Image label...' :
-                              'Header text...'
+                            el.type === 'list' ? 'List label...' :
+                              el.type === 'image' ? 'Image label...' :
+                                'Header text...'
                       }
                     />
                   }
-                  <span className="lore-template-type-badge">{el.type}</span>
+                  <span className="lore-template-type-badge">
+                    {el.type === 'textarea' && el.heightMode === 'content' ? 'textarea · auto height' : el.type}
+                  </span>
                   <button
                     className="lore-template-remove-btn"
                     title="Remove"
@@ -393,12 +464,17 @@ export function LoreTemplateEditorModal({
                   left: rect ? rect.left : 0,
                 }}
               >
-                {(['field', 'textarea', 'image', 'header', 'divider'] as LoreFieldType[]).map(type => (
-                  <button key={type} onClick={() => { addElement(type); setAddMenuOpen(false) }}>
-                    {type === 'field' ? 'Field Box' :
-                      type === 'textarea' ? 'Description Box' :
-                        type === 'image' ? 'Image' :
-                          type === 'header' ? 'Header' : 'Divider'}
+                {([
+                  { type: 'field', label: 'Field Box' },
+                  { type: 'textarea', label: 'Description Box' },
+                  { type: 'textarea', label: 'Description Box (Auto Height)', heightMode: 'content' },
+                  { type: 'list', label: 'List' },
+                  { type: 'image', label: 'Image' },
+                  { type: 'header', label: 'Header' },
+                  { type: 'divider', label: 'Divider' },
+                ] as { type: LoreFieldType; label: string; heightMode?: LoreTemplateElement['heightMode'] }[]).map(option => (
+                  <button key={`${option.type}:${option.heightMode ?? 'default'}`} onClick={() => { addElement(option.type, option.heightMode); setAddMenuOpen(false) }}>
+                    {option.label}
                   </button>
                 ))}
               </div>
@@ -411,7 +487,9 @@ export function LoreTemplateEditorModal({
             <p className="lore-template-removed-heading">Removed elements</p>
             {removedElements.map(el => (
               <div key={el.id} className="lore-template-element removed">
-                <span className="lore-template-type-badge">{el.type}</span>
+                <span className="lore-template-type-badge">
+                  {el.type === 'textarea' && el.heightMode === 'content' ? 'textarea · auto height' : el.type}
+                </span>
                 {el.label && <span className="lore-template-removed-label">{el.label}</span>}
                 <button
                   className="lore-template-restore-btn"
@@ -431,6 +509,7 @@ export function LoreTemplateEditorModal({
             ))}
           </div>
         )}
+        </div>
 
         <div className="modal-footer">
           <button className="modal-btn" onClick={onCancel}>Cancel</button>
@@ -461,6 +540,8 @@ export function LoreEntryEditorModal({
   category,
   entry,
   projectPath,
+  variables,
+  variableCategories,
   onCancel,
   onSave,
   onPickImage,
@@ -470,6 +551,8 @@ export function LoreEntryEditorModal({
   category: LoreCategory | null
   entry: LoreEntry | null
   projectPath: string | null
+  variables: ProjectVariables
+  variableCategories: ProjectVariableCategory[]
   onCancel: () => void
   onSave: (categoryId: string, entry: LoreEntry) => void
   onPickImage: (entryId: string, fieldId: string, previousImagePaths?: string[]) => Promise<string | null>
@@ -495,10 +578,13 @@ export function LoreEntryEditorModal({
 
   useEffect(() => {
     if (!category || !local) return
-    category.template
-      .filter(field => !field.removed && field.type === 'textarea')
-      .forEach(field => resizeLoreEntryTextarea(textareaRefs.current[field.id] ?? null))
-  }, [category, local])
+    const frame = requestAnimationFrame(() => {
+      category.template
+        .filter(field => !field.removed && field.type === 'textarea')
+        .forEach(field => resizeLoreEntryTextarea(textareaRefs.current[field.id] ?? null))
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [category, entry])
 
   useEffect(() => {
     setCropSourceUrl(null)
@@ -530,19 +616,21 @@ export function LoreEntryEditorModal({
 
   const handleImagePick = async (fieldId: string) => {
     const current = local.fields[fieldId]
+    const fullWidth = getLoreImageFullWidth(current)
+    const ignoreEntryCrop = getLoreImageIgnoreEntryCrop(current)
     const previousPaths = [getLoreImagePath(current), getLoreImageCroppedPath(current)].filter(Boolean)
     const rel = await onPickImage(local.id, fieldId, previousPaths)
     if (!rel) return
     setLocal(prev => prev ? {
       ...prev,
-      fields: { ...prev.fields, [fieldId]: createLoreImageValue(rel) },
+      fields: { ...prev.fields, [fieldId]: createLoreImageValue(rel, undefined, fullWidth, ignoreEntryCrop) },
     } : prev)
     setCropEditor({
       fieldId,
       path: rel,
       label: activeFields.find(field => field.id === fieldId)?.label ?? 'Image',
-      fullWidth: false,
-      ignoreEntryCrop: false,
+      fullWidth,
+      ignoreEntryCrop,
     })
   }
 
@@ -704,6 +792,29 @@ export function LoreEntryEditorModal({
             />
           </div>
 
+          <div className="lore-entry-name-affixes">
+            <div className="lore-entry-field-wrap">
+              <label className="lore-entry-label">Prefix</label>
+              <input
+                className="modal-input"
+                value={local.prefix ?? ''}
+                onChange={e => setLocal(prev => prev ? { ...prev, prefix: e.target.value } : prev)}
+                onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
+                placeholder="None"
+              />
+            </div>
+            <div className="lore-entry-field-wrap">
+              <label className="lore-entry-label">Suffix</label>
+              <input
+                className="modal-input"
+                value={local.suffix ?? ''}
+                onChange={e => setLocal(prev => prev ? { ...prev, suffix: e.target.value } : prev)}
+                onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
+                placeholder="None"
+              />
+            </div>
+          </div>
+
           <div className="lore-entry-field-wrap">
             <label className="lore-entry-label">Keywords</label>
             <input
@@ -725,8 +836,10 @@ export function LoreEntryEditorModal({
                 onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
               >
                 <option value="">Uncategorized</option>
-                {(category.subcategories ?? []).map(subcategory => (
-                  <option key={subcategory.id} value={subcategory.id}>{subcategory.name || 'Unnamed subcategory'}</option>
+                {orderLoreSubcategories(category.subcategories ?? []).map(subcategory => (
+                  <option key={subcategory.id} value={subcategory.id}>
+                    {`${'— '.repeat(subcategory.depth)}${subcategory.name || 'Unnamed subcategory'}`}
+                  </option>
                 ))}
               </select>
             </div>
@@ -778,37 +891,95 @@ export function LoreEntryEditorModal({
               return (
                 <div key={field.id} className="lore-entry-field-wrap">
                   {field.label && <label className="lore-entry-label">{field.label}</label>}
-                  <textarea
-                    className="modal-input lore-entry-textarea"
-                    ref={element => {
-                      textareaRefs.current[field.id] = element
-                      resizeLoreEntryTextarea(element)
+                  <VariableAutocompleteInput
+                    multiline
+                    className={`modal-input lore-entry-textarea${hasInvalidProjectExpressions(getLoreFieldText(local.fields[field.id]), variables) ? ' project-expression-input-invalid' : ''}`}
+                    inputRef={element => {
+                      const textarea = element instanceof HTMLTextAreaElement ? element : null
+                      textareaRefs.current[field.id] = textarea
+                      resizeLoreEntryTextarea(textarea)
                     }}
                     value={getLoreFieldText(local.fields[field.id])}
-                    onChange={e => {
-                      resizeLoreEntryTextarea(e.currentTarget)
+                    categories={variableCategories}
+                    variables={variables}
+                    requireBraces
+                    onInput={element => resizeLoreEntryTextarea(element instanceof HTMLTextAreaElement ? element : null)}
+                    onChange={value => {
                       setLocal(prev => prev ? {
-                        ...prev,
-                        fields: { ...prev.fields, [field.id]: e.target.value },
+                        ...prev, fields: { ...prev.fields, [field.id]: value },
                       } : prev)
                     }}
-                    onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
                     placeholder={`${field.label ?? 'Description'}...`}
                   />
+                </div>
+              )
+            }
+            if (field.type === 'list') {
+              const items = getLoreListItems(local.fields[field.id])
+              return (
+                <div key={field.id} className="lore-entry-field-wrap">
+                  {field.label && <label className="lore-entry-label">{field.label}</label>}
+                  <div className="lore-entry-list-editor">
+                    {items.length === 0 && <div className="lore-entry-list-empty">No list entries.</div>}
+                    {items.map((item, index) => (
+                      <div className="lore-entry-list-row" key={index}>
+                        <span className="lore-entry-list-dot" aria-hidden="true" />
+                        <VariableAutocompleteInput
+                          className={`modal-input${hasInvalidProjectExpressions(item, variables) ? ' project-expression-input-invalid' : ''}`}
+                          value={item}
+                          categories={variableCategories}
+                          variables={variables}
+                          requireBraces
+                          ariaLabel={`${field.label || 'List'} entry ${index + 1}`}
+                          onChange={value => setLocal(prev => {
+                            if (!prev) return prev
+                            const nextItems = [...getLoreListItems(prev.fields[field.id])]
+                            nextItems[index] = value
+                            return { ...prev, fields: { ...prev.fields, [field.id]: nextItems } }
+                          })}
+                          placeholder="List entry..."
+                        />
+                        <button
+                          type="button"
+                          className="lore-entry-list-delete"
+                          title="Delete entry"
+                          aria-label={`Delete list entry ${index + 1}`}
+                          onClick={() => setLocal(prev => prev ? {
+                            ...prev,
+                            fields: { ...prev.fields, [field.id]: getLoreListItems(prev.fields[field.id]).filter((_, itemIndex) => itemIndex !== index) },
+                          } : prev)}
+                        >
+                          <i className="ti ti-trash" aria-hidden="true" />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="welcome-btn lore-entry-list-add"
+                      onClick={() => setLocal(prev => prev ? {
+                        ...prev,
+                        fields: { ...prev.fields, [field.id]: [...getLoreListItems(prev.fields[field.id]), ''] },
+                      } : prev)}
+                    >
+                      <i className="ti ti-plus" aria-hidden="true" /> Insert New Entry
+                    </button>
+                  </div>
                 </div>
               )
             }
             return (
               <div key={field.id} className="lore-entry-field-wrap">
                 {field.label && <label className="lore-entry-label">{field.label}</label>}
-                <input
-                  className="modal-input"
+                <VariableAutocompleteInput
+                  className={`modal-input${hasInvalidProjectExpressions(getLoreFieldText(local.fields[field.id]), variables) ? ' project-expression-input-invalid' : ''}`}
                   value={getLoreFieldText(local.fields[field.id])}
-                  onChange={e => setLocal(prev => prev ? {
+                  categories={variableCategories}
+                  variables={variables}
+                  requireBraces
+                  onChange={value => setLocal(prev => prev ? {
                     ...prev,
-                    fields: { ...prev.fields, [field.id]: e.target.value },
+                    fields: { ...prev.fields, [field.id]: value },
                   } : prev)}
-                  onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
                   placeholder={`${field.label ?? 'Field'}...`}
                 />
               </div>

@@ -319,3 +319,8 @@
    ├─ publisher: Isaac Z. Schlueter
    ├─ email: i@izs.me
    ├─ url: http://blog.izs.me/
+Inter variable font
+Licensed under the SIL Open Font License 1.1.
+Copyright 2016 The Inter Project Authors.
+Full license: public/fonts/Inter-LICENSE.txt
+Repository: https://github.com/rsms/inter

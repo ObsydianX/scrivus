@@ -1,6 +1,7 @@
 import { collectDocs } from '../tree'
 import type { ProjectBackup } from '../backups'
 import type { LoreCategory, LoreEntry, TreeNode } from '../types'
+import { formatLoreEntryName } from '../loreEntryNames'
 
 export type AppMessage = {
   title: string
@@ -375,7 +376,7 @@ export function ConfirmDeleteLoreEntryModal({
       <div className="modal-box modal-danger" style={{ width: 380 }}>
         <p className="modal-title">Delete entry?</p>
         <p className="modal-danger-text">
-          <strong style={{ color: '#cc8888' }}>{entry.name}</strong> will be permanently deleted.
+          <strong style={{ color: '#cc8888' }}>{formatLoreEntryName(entry)}</strong> will be permanently deleted.
         </p>
         <div className="modal-footer">
           <button className="welcome-btn" onClick={onCancel}>Cancel</button>

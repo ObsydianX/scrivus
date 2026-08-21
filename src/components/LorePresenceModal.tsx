@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { LoreBacklink } from '../loreBacklinks'
 import type { LoreBook, OutlineRow } from '../types'
+import { formatLoreEntryName } from '../loreEntryNames'
 
 type PresenceCell = {
   mentions: number
@@ -86,7 +87,7 @@ export function LorePresenceModal({
         })
         return {
           entryId: entry.id,
-          name: entry.name || 'Unnamed entry',
+          name: formatLoreEntryName(entry),
           totalMentions,
           cells,
           firstColumn,

@@ -2,6 +2,7 @@ import { Extension, Mark, Node as TiptapNode } from '@tiptap/core'
 import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { Spellchecker } from './spellcheck'
+import { evaluateProjectExpression, type ProjectVariables } from './projectExpressions'
 
 export const FnrHighlight = Mark.create({
   name: 'fnrHighlight',
@@ -63,8 +64,49 @@ export const PageBreakNode = TiptapNode.create({
 
 export const spellcheckPluginKey = new PluginKey('spellcheck')
 export const loreLinkPluginKey = new PluginKey('loreLink')
+export const projectExpressionPluginKey = new PluginKey('projectExpression')
 const SPELLCHECK_TYPING_DELAY_MS = 700
 const SPELLCHECK_WORD_RE = /[A-Za-z]+(?:['\u2019-][A-Za-z]+)*/g
+
+export const ProjectExpressionExtension = Extension.create<{
+  getVariables: () => ProjectVariables
+}>({
+  name: 'projectExpression',
+
+  addOptions() {
+    return { getVariables: () => ({}) }
+  },
+
+  addProseMirrorPlugins() {
+    const getVariables = this.options.getVariables
+    const buildDecorations = (doc: Parameters<typeof DecorationSet.create>[0]) => {
+      const variables = getVariables()
+      const decorations: Decoration[] = []
+      doc.descendants((node, pos) => {
+        if (!node.isText || !node.text) return
+        for (const match of node.text.matchAll(/\{\{([\s\S]*?)\}\}/g)) {
+          if (evaluateProjectExpression(match[1], variables) !== null) continue
+          const start = match.index ?? 0
+          decorations.push(Decoration.inline(pos + start, pos + start + match[0].length, {
+            class: 'project-expression-invalid',
+            title: 'Invalid project expression or unknown variable',
+          }))
+        }
+      })
+      return DecorationSet.create(doc, decorations)
+    }
+
+    return [new Plugin({
+      key: projectExpressionPluginKey,
+      state: {
+        init: (_, state) => buildDecorations(state.doc),
+        apply: (tr, oldDecorations, _oldState, newState) =>
+          tr.docChanged || tr.getMeta(projectExpressionPluginKey) ? buildDecorations(newState.doc) : oldDecorations,
+      },
+      props: { decorations(state) { return this.getState(state) } },
+    })]
+  },
+})
 
 export type LoreLinkMatch = {
   keyword: string

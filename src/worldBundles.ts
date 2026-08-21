@@ -51,6 +51,7 @@ function collectLoreImagePaths(loreBook: LoreBook) {
       if (value.startsWith('lorebook/images/')) paths.push(value)
       return
     }
+    if (Array.isArray(value)) return
     if (value.path?.startsWith('lorebook/images/')) paths.push(value.path)
     if (value.croppedPath?.startsWith('lorebook/images/')) paths.push(value.croppedPath)
   }

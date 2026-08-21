@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode, type RefObject } from 'react'
 import { escapeAttr } from '../text'
 import type { RevisionComment, SceneTab } from '../types'
 import { DocumentTitleBar } from './EditorChrome'
+import { renderProjectExpressionsInHtml, type ProjectVariables } from '../projectExpressions'
 
 type RevisionPendingComment = {
   quote: string
@@ -20,6 +21,7 @@ type RevisionViewProps = {
   tabs: SceneTab[]
   activeTabIndex: number
   zoom: number
+  variables: ProjectVariables
   canSelectPreviousScene: boolean
   canSelectNextScene: boolean
   footer?: ReactNode
@@ -157,6 +159,7 @@ export function RevisionView({
   tabs,
   activeTabIndex,
   zoom,
+  variables,
   canSelectPreviousScene,
   canSelectNextScene,
   footer,
@@ -260,7 +263,7 @@ export function RevisionView({
             <div
               id="revision-body"
               style={{ fontSize: `calc(var(--editor-body-size, 12pt) * ${zoomScale})` }}
-              dangerouslySetInnerHTML={{ __html: renderRevisionAnnotatedHtml(content, activeComments, activeCommentId) }}
+              dangerouslySetInnerHTML={{ __html: renderProjectExpressionsInHtml(renderRevisionAnnotatedHtml(content, activeComments, activeCommentId), variables) }}
               onClick={e => {
                 const target = e.target as HTMLElement
                 const mark = target.closest('[data-comment-id]') as HTMLElement | null

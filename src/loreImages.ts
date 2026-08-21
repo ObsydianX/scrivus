@@ -14,6 +14,10 @@ export function getLoreFieldText(value: LoreFieldValue | undefined) {
   return typeof value === 'string' ? value : ''
 }
 
+export function getLoreListItems(value: LoreFieldValue | undefined) {
+  return Array.isArray(value) ? value.filter(item => typeof item === 'string') : []
+}
+
 export function getLoreImagePath(value: LoreFieldValue | undefined) {
   return isLoreImageValue(value) ? value.path : typeof value === 'string' ? value : ''
 }

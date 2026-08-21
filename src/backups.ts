@@ -35,15 +35,25 @@ function timestampName() {
   return new Date().toISOString().replace(/[:.]/g, '-')
 }
 
-async function backupRoot(projectPath: string, projectName: string) {
+async function backupRoot(projectPath: string, projectName: string, customBackupFolder?: string) {
+  if (customBackupFolder?.trim()) {
+    const root = customBackupFolder.trim()
+    const normalizedProjectPath = projectPath.replace(/\\/g, '/').replace(/\/$/, '').toLocaleLowerCase()
+    const normalizedRoot = root.replace(/\\/g, '/').replace(/\/$/, '').toLocaleLowerCase()
+    if (normalizedRoot === normalizedProjectPath || normalizedRoot.startsWith(`${normalizedProjectPath}/`)) {
+      throw new Error('The backup folder cannot be the project folder or a folder inside it.')
+    }
+    await mkdir(root, { recursive: true })
+    return root
+  }
   const appData = await appDataDir()
   const root = await join(appData, 'backups', `${safeProjectName(projectName)}-${hashPath(projectPath)}`)
   await mkdir(root, { recursive: true })
   return root
 }
 
-export async function getProjectBackupRoot(projectPath: string, projectName: string) {
-  return backupRoot(projectPath, projectName)
+export async function getProjectBackupRoot(projectPath: string, projectName: string, customBackupFolder?: string) {
+  return backupRoot(projectPath, projectName, customBackupFolder)
 }
 
 async function copyDirectoryContents(source: string, target: string) {
@@ -82,8 +92,8 @@ async function pruneBackups(root: string, retentionCount: number, preserveName?:
   }
 }
 
-export async function listProjectBackups(projectPath: string, projectName: string): Promise<ProjectBackup[]> {
-  const root = await backupRoot(projectPath, projectName)
+export async function listProjectBackups(projectPath: string, projectName: string, customBackupFolder?: string): Promise<ProjectBackup[]> {
+  const root = await backupRoot(projectPath, projectName, customBackupFolder)
   const entries = await readDir(root)
   const backups: ProjectBackup[] = []
 
@@ -108,8 +118,9 @@ export async function createProjectBackup(
   reason: BackupReason,
   retentionCount = 20,
   preserveBackupName?: string,
+  customBackupFolder?: string,
 ): Promise<ProjectBackup> {
-  const root = await backupRoot(projectPath, projectName)
+  const root = await backupRoot(projectPath, projectName, customBackupFolder)
   const name = `${timestampName()}__${reason}`
   const destination = await join(root, name)
 
@@ -134,12 +145,13 @@ export async function restoreLatestProjectBackup(
   projectPath: string,
   projectName: string,
   retentionCount = 20,
+  customBackupFolder?: string,
 ): Promise<ProjectBackup | null> {
-  const backups = await listProjectBackups(projectPath, projectName)
+  const backups = await listProjectBackups(projectPath, projectName, customBackupFolder)
   const latest = backups[0]
   if (!latest) return null
 
-  return restoreProjectBackup(projectPath, projectName, latest, retentionCount)
+  return restoreProjectBackup(projectPath, projectName, latest, retentionCount, customBackupFolder)
 }
 
 export async function restoreProjectBackup(
@@ -147,10 +159,11 @@ export async function restoreProjectBackup(
   projectName: string,
   backup: ProjectBackup,
   retentionCount = 20,
+  customBackupFolder?: string,
 ): Promise<ProjectBackup> {
   // Keep the backup being restored out of the retention prune: if it is the
   // oldest one at the limit, pruning would delete it before it can be copied.
-  await createProjectBackup(projectPath, projectName, 'pre-restore', retentionCount, backup.name)
+  await createProjectBackup(projectPath, projectName, 'pre-restore', retentionCount, backup.name, customBackupFolder)
   const destinationExists = await exists(projectPath)
   if (!destinationExists) await mkdir(projectPath, { recursive: true })
   await copyDirectoryContents(backup.path, projectPath)

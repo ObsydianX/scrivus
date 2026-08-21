@@ -14,6 +14,7 @@ import type {
   SceneTab,
   SceneStatus,
   SprintTimerState,
+  ProjectVariableCategory,
 } from '../types'
 import {
   DocumentTitleBar,
@@ -28,6 +29,8 @@ import { OutlineView } from './OutlineView'
 import { getActiveComments, renderRevisionAnnotatedHtml, RevisionView } from './RevisionView'
 import { countHtmlWords } from '../wordCount'
 import type { LoreBacklink } from '../loreBacklinks'
+import type { ProjectVariables } from '../projectExpressions'
+import { EditorVariableAutocomplete } from './VariableAutocomplete'
 
 export type Workspace = 'editor' | 'revision' | 'outline' | 'lorebook' | 'mindmap' | 'atlas'
 
@@ -48,6 +51,8 @@ type EditorWorkspaceState = {
   titleValue: string
   titleBookmarked: boolean
   loreLinksEnabled: boolean
+  variableCategories: ProjectVariableCategory[]
+  variables: ProjectVariables
   onFocusModeChange: (focusMode: boolean) => void
   onTypewriterScrollingChange: (enabled: boolean) => void
   onLoreLinksEnabledChange: (enabled: boolean) => void
@@ -104,14 +109,17 @@ type LoreWorkspaceState = {
   expandedEntryId: string | null
   projectPath: string | null
   backlinks: Record<string, LoreBacklink[]>
+  variables: ProjectVariables
   onLoreViewChange: (view: 'home' | 'category' | 'entry') => void
   onActiveLoreCategoryChange: (categoryId: string | null) => void
   onExpandedEntryChange: (entryId: string | null) => void
   onNewCategory: () => void
   onEditCategory: (category: LoreCategory) => void
+  onUpdateCategory: (category: LoreCategory) => void
   onDeleteCategoryRequest: (category: LoreCategory) => void
   onNewEntry: () => void
   onEditEntry: (entry: LoreEntry) => void
+  onExportEntry: (category: LoreCategory, entry: LoreEntry) => void
   onDeleteEntryRequest: (entry: LoreEntry) => void
   onToggleEntryPinned: (categoryId: string, entryId: string, pinned: boolean) => void
   onOpenScene: (id: number) => void
@@ -159,6 +167,7 @@ type RevisionWorkspaceState = {
   revisionTitle: string
   revisionTabs: SceneTab[]
   revisionActiveTabIndex: number
+  variables: ProjectVariables
   revisionPendingComment: RevisionPendingComment | null
   draftText: string
   revisionScrollRef: RefObject<HTMLDivElement | null>
@@ -300,6 +309,8 @@ export function WorkspaceShell({
   titleValue,
   titleBookmarked,
   loreLinksEnabled,
+  variableCategories: editorVariableCategories,
+  variables: editorVariables,
   onFocusModeChange,
   onTypewriterScrollingChange,
   onLoreLinksEnabledChange,
@@ -383,14 +394,17 @@ export function WorkspaceShell({
   expandedEntryId,
   projectPath,
   backlinks: loreBacklinks,
+  variables: loreVariables,
   onLoreViewChange,
   onActiveLoreCategoryChange,
   onExpandedEntryChange,
   onNewCategory,
   onEditCategory,
+  onUpdateCategory,
   onDeleteCategoryRequest,
   onNewEntry,
   onEditEntry,
+  onExportEntry,
   onDeleteEntryRequest,
   onToggleEntryPinned,
   onOpenScene: onLoreOpenScene,
@@ -404,6 +418,7 @@ export function WorkspaceShell({
   revisionTitle,
   revisionTabs,
   revisionActiveTabIndex,
+  variables: revisionVariables,
   revisionScrollRef,
   confirmDeleteRevisionComment,
   onRevisionActiveCommentChange,
@@ -509,14 +524,17 @@ export function WorkspaceShell({
           expandedEntryId={expandedEntryId}
           projectPath={projectPath}
           backlinks={loreBacklinks}
+          variables={loreVariables}
           onLoreViewChange={onLoreViewChange}
           onActiveCategoryChange={onActiveLoreCategoryChange}
           onExpandedEntryChange={onExpandedEntryChange}
           onNewCategory={onNewCategory}
           onEditCategory={onEditCategory}
+          onUpdateCategory={onUpdateCategory}
           onDeleteCategoryRequest={onDeleteCategoryRequest}
           onNewEntry={onNewEntry}
           onEditEntry={onEditEntry}
+          onExportEntry={onExportEntry}
           onDeleteEntryRequest={onDeleteEntryRequest}
           onToggleEntryPinned={onToggleEntryPinned}
           onOpenScene={onLoreOpenScene}
@@ -549,6 +567,7 @@ export function WorkspaceShell({
             tabs={revisionTabs}
             activeTabIndex={revisionActiveTabIndex}
             zoom={zoom}
+            variables={revisionVariables}
             canSelectPreviousScene={canSelectPreviousScene}
             canSelectNextScene={canSelectNextScene}
             footer={!isNarrow && revisionActiveId !== null ? (
@@ -623,6 +642,7 @@ export function WorkspaceShell({
                 )}
                 <div className="tiptap-wrap">
                   <EditorContent editor={editor} />
+                  <EditorVariableAutocomplete editor={editor} categories={editorVariableCategories} variables={editorVariables} />
                 </div>
               </div>
             </div>

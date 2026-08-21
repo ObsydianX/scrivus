@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { DEFAULT_BACKUP_SETTINGS, DEFAULT_MANUSCRIPT_ID, DEFAULT_STYLES, normalizeProjectSettings, normalizeProjectStyles } from '../constants'
 import type { BackupSettings, BodyStyle, EditorStyle, Manuscript, ProjectSettings, ProjectStyles, ThemeId } from '../types'
+import { evaluateProjectExpression, isValidProjectVariableName } from '../projectExpressions'
+import { ProjectVariablesPanel } from './ProjectVariablesPanel'
 
 // What to do with the project cover image when the settings are saved.
 export type CoverImageAction =
@@ -20,6 +22,8 @@ export function ProjectSettingsModal({
   activeTab,
   onTabChange,
   onPickCoverImage,
+  onPickBackupFolder,
+  onOpenBackupFolder,
   onCancel,
   onSave,
 }: {
@@ -29,32 +33,36 @@ export function ProjectSettingsModal({
   styles: ProjectStyles
   dictionaryWords: string[]
   projectPath: string | null
-  activeTab: 'book' | 'styles' | 'backups' | 'dictionary'
-  onTabChange: (tab: 'book' | 'styles' | 'backups' | 'dictionary') => void
+  activeTab: 'book' | 'variables' | 'styles' | 'backups' | 'dictionary'
+  onTabChange: (tab: 'book' | 'variables' | 'styles' | 'backups' | 'dictionary') => void
   onPickCoverImage: () => Promise<string | null>
+  onPickBackupFolder: () => Promise<string | null>
+  onOpenBackupFolder: (settings: BackupSettings) => Promise<void>
   onCancel: () => void
   onSave: (settings: ProjectSettings, manuscripts: Manuscript[], styles: ProjectStyles, dictionaryWords: string[], coverActions: ManuscriptCoverImageActions) => void
 }) {
   const [local, setLocal] = useState<ProjectSettings>(() => normalizeProjectSettings(settings))
   const [localManuscripts, setLocalManuscripts] = useState<Manuscript[]>(manuscripts)
-  const [activeBookManuscriptId, setActiveBookManuscriptId] = useState(activeManuscriptId)
+  const [activeBookManuscriptId, setActiveBookManuscriptId] = useState(() =>
+    manuscripts.some(manuscript => manuscript.id === activeManuscriptId)
+      ? activeManuscriptId
+      : manuscripts[0]?.id ?? DEFAULT_MANUSCRIPT_ID)
   const [localStyles, setLocalStyles] = useState<ProjectStyles>(() => normalizeProjectStyles(styles))
   const [localDictionary, setLocalDictionary] = useState<string[]>(dictionaryWords)
   const [dictionaryInput, setDictionaryInput] = useState('')
   const [styleTab, setStyleTab] = useState<'chapter' | 'body' | 'editor'>('chapter')
   const [coverActions, setCoverActions] = useState<ManuscriptCoverImageActions>({})
-
-  useEffect(() => {
-    setLocal(normalizeProjectSettings(settings))
-    setLocalManuscripts(manuscripts)
-    setActiveBookManuscriptId(manuscripts.some(manuscript => manuscript.id === activeManuscriptId)
-      ? activeManuscriptId
-      : manuscripts[0]?.id ?? DEFAULT_MANUSCRIPT_ID)
-    setLocalStyles(normalizeProjectStyles(styles))
-    setLocalDictionary(dictionaryWords)
-    setDictionaryInput('')
-    setCoverActions({})
-  }, [settings, manuscripts, activeManuscriptId, styles, dictionaryWords])
+  const [variableName, setVariableName] = useState('')
+  const [variableValue, setVariableValue] = useState('')
+  const [variableCategoryId, setVariableCategoryId] = useState('')
+  const [newVariableCategoryName, setNewVariableCategoryName] = useState('')
+  const [collapsedVariableCategories, setCollapsedVariableCategories] = useState<Set<string>>(new Set())
+  const [draggedVariableCategoryId, setDraggedVariableCategoryId] = useState<string | null>(null)
+  const [variableCategoryDropId, setVariableCategoryDropId] = useState<string | null>(null)
+  const draggedVariableCategoryIdRef = useRef<string | null>(null)
+  const [draggedVariable, setDraggedVariable] = useState<{ name: string; categoryId: string } | null>(null)
+  const [variableDropTarget, setVariableDropTarget] = useState<{ name: string; categoryId: string } | null>(null)
+  const draggedVariableRef = useRef<{ name: string; categoryId: string } | null>(null)
 
   const activeManuscript = localManuscripts.find(manuscript => manuscript.id === activeBookManuscriptId) ?? localManuscripts[0] ?? null
   const activeCoverAction = activeManuscript ? coverActions[activeManuscript.id] ?? { type: 'keep' as const } : { type: 'keep' as const }
@@ -105,6 +113,104 @@ export function ProjectSettingsModal({
     })
     setDictionaryInput('')
   }
+  const missingBackupFolder = !local.backups.useDefaultLocation && !local.backups.backupFolder.trim()
+
+  const addVariable = () => {
+    const name = variableName.trim()
+    if (!variableValue.trim()) return
+    const value = variableValue.trim()
+    if (!isValidProjectVariableName(name)) return
+    setLocal(prev => ({
+      ...prev,
+      variables: { ...prev.variables, [name]: value },
+      variableCategories: prev.variableCategories.map(category => category.id === variableCategoryId
+        ? { ...category, variableNames: [...category.variableNames.filter(variableName => variableName !== name), name] }
+        : { ...category, variableNames: category.variableNames.filter(variableName => variableName !== name) }),
+    }))
+    setVariableName('')
+    setVariableValue('')
+  }
+
+  const addVariableCategory = () => {
+    const name = newVariableCategoryName.trim()
+    if (!name) return
+    const id = `variable-category-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+    setLocal(prev => ({
+      ...prev,
+      variableCategories: [...prev.variableCategories, { id, name, variableNames: [] }],
+    }))
+    setVariableCategoryId(id)
+    setNewVariableCategoryName('')
+  }
+
+  const removeVariable = (name: string) => {
+    setLocal(prev => {
+      const variables = { ...prev.variables }
+      delete variables[name]
+      return {
+        ...prev,
+        variables,
+        variableCategories: prev.variableCategories.map(category => ({
+          ...category,
+          variableNames: category.variableNames.filter(variableName => variableName !== name),
+        })),
+      }
+    })
+  }
+
+  const moveVariableToCategory = (name: string, categoryId: string) => {
+    setLocal(prev => ({
+      ...prev,
+      variableCategories: prev.variableCategories.map(category => ({
+        ...category,
+        variableNames: category.id === categoryId
+          ? [...category.variableNames.filter(variableName => variableName !== name), name]
+          : category.variableNames.filter(variableName => variableName !== name),
+      })),
+    }))
+  }
+
+  const reorderVariableCategory = (targetId?: string) => {
+    const sourceId = draggedVariableCategoryIdRef.current
+    if (!sourceId || sourceId === targetId) return
+    setLocal(prev => {
+      const categories = [...prev.variableCategories]
+      const sourceIndex = categories.findIndex(category => category.id === sourceId)
+      if (sourceIndex < 0 || (targetId && !categories.some(category => category.id === targetId))) return prev
+      const [moved] = categories.splice(sourceIndex, 1)
+      const targetIndex = targetId ? categories.findIndex(category => category.id === targetId) : categories.length
+      categories.splice(targetIndex < 0 ? categories.length : targetIndex, 0, moved)
+      return { ...prev, variableCategories: categories }
+    })
+  }
+
+  const reorderVariable = (targetCategoryId: string, targetName?: string) => {
+    const source = draggedVariableRef.current
+    if (!source) return
+    if (targetName === source.name && targetCategoryId === source.categoryId) return
+    setLocal(prev => {
+      const categorizedNames = new Set(prev.variableCategories.flatMap(category => category.variableNames))
+      const uncategorizedNames = Object.keys(prev.variables).filter(name => !categorizedNames.has(name) && name !== source.name)
+      const categories = prev.variableCategories.map(category => ({
+        ...category,
+        variableNames: category.variableNames.filter(name => name !== source.name),
+      }))
+
+      if (targetCategoryId) {
+        const targetCategory = categories.find(category => category.id === targetCategoryId)
+        if (!targetCategory) return prev
+        const targetIndex = targetName ? targetCategory.variableNames.indexOf(targetName) : -1
+        targetCategory.variableNames.splice(targetIndex < 0 ? targetCategory.variableNames.length : targetIndex, 0, source.name)
+        return { ...prev, variableCategories: categories }
+      }
+
+      const targetIndex = targetName ? uncategorizedNames.indexOf(targetName) : -1
+      uncategorizedNames.splice(targetIndex < 0 ? uncategorizedNames.length : targetIndex, 0, source.name)
+      const orderedNames = [...uncategorizedNames, ...Object.keys(prev.variables).filter(name => !uncategorizedNames.includes(name))]
+      const variables = Object.fromEntries(orderedNames.map(name => [name, prev.variables[name]]))
+      return { ...prev, variables, variableCategories: categories }
+    })
+  }
 
   const NumberField = ({
     value,
@@ -145,11 +251,12 @@ export function ProjectSettingsModal({
 
   return (
     <div className="modal-overlay">
-      <div className="modal-box project-settings-modal">
+      <div className={`modal-box project-settings-modal${activeTab === 'variables' ? ' variables-layout' : ''}`}>
         <p className="modal-title">Project Settings</p>
         <div className="modal-tabs">
           {([
             ['book', 'Book Info'],
+            ['variables', 'Variables'],
             ['styles', 'Styles'],
             ['backups', 'Backups'],
             ['dictionary', 'Dictionary'],
@@ -424,6 +531,274 @@ export function ProjectSettingsModal({
           </div>
         )}
 
+        {activeTab === 'variables' && (
+          <ProjectVariablesPanel settings={local} onChange={updater => setLocal(updater)} />
+        )}
+
+        {false && (
+          <div className="modal-fields project-variables-panel">
+            <p className="project-variables-help">
+              Use variables in prose and Lorebook text with expressions such as <code>{'{{ year - character_age }}'}</code>.
+              Variable values can also reference other variables, such as <code>Year - HA_Age</code>. Expressions support +, -, *, /, and parentheses.
+            </p>
+            <div className="project-variable-category-add-row">
+              <input
+                className="modal-input"
+                value={newVariableCategoryName}
+                onChange={e => setNewVariableCategoryName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addVariableCategory() } }}
+                placeholder="New category name"
+                aria-label="New variable category name"
+              />
+              <button type="button" className="welcome-btn" disabled={!newVariableCategoryName.trim()} onClick={addVariableCategory}>
+                Add Category
+              </button>
+            </div>
+            <div className="project-variable-add-row">
+              <input
+                className="modal-input"
+                value={variableName}
+                onChange={e => setVariableName(e.target.value)}
+                placeholder="Variable name"
+                aria-label="Variable name"
+              />
+              <input
+                className="modal-input"
+                value={variableValue}
+                onChange={e => setVariableValue(e.target.value)}
+                placeholder="Number or expression"
+                aria-label="Variable value or expression"
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addVariable() } }}
+              />
+              <select
+                className="modal-select"
+                value={variableCategoryId}
+                onChange={e => setVariableCategoryId(e.target.value)}
+                aria-label="Variable category"
+              >
+                <option value="">Uncategorized</option>
+                {local.variableCategories.map(category => (
+                  <option key={category.id} value={category.id}>{category.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="welcome-btn"
+                disabled={!isValidProjectVariableName(variableName.trim()) || !variableValue.trim()}
+                onClick={addVariable}
+              >
+                Add
+              </button>
+            </div>
+            {Object.entries(local.variables).length === 0 && local.variableCategories.length === 0 ? (
+              <div className="dictionary-empty">No project variables defined.</div>
+            ) : (
+              <div className="project-variable-categories">
+                {[...local.variableCategories, {
+                  id: '',
+                  name: 'Uncategorized',
+                  variableNames: Object.keys(local.variables).filter(name =>
+                    !local.variableCategories.some(category => category.variableNames.includes(name))),
+                }].filter(category => category.id || category.variableNames.length > 0).map(category => {
+                  const collapsed = collapsedVariableCategories.has(category.id || '__uncategorized')
+                  const collapseId = category.id || '__uncategorized'
+                  return (
+                    <div key={collapseId}>
+                    {category.id && variableCategoryDropId === category.id && draggedVariableCategoryId !== category.id && (
+                      <div className="drop-line project-variable-category-drop-line" />
+                    )}
+                    <section
+                      className={`project-variable-category${draggedVariableCategoryId === category.id ? ' dragging' : ''}`}
+                      onDragOver={event => {
+                        if (!category.id || !draggedVariableCategoryIdRef.current) return
+                        event.preventDefault()
+                        setVariableCategoryDropId(category.id)
+                      }}
+                      onDrop={event => {
+                        if (!category.id || !draggedVariableCategoryIdRef.current) return
+                        event.preventDefault()
+                        reorderVariableCategory(category.id)
+                        setVariableCategoryDropId(null)
+                      }}
+                    >
+                      <div className="project-variable-category-header">
+                        {category.id ? (
+                          <span
+                            className="project-variable-drag-handle"
+                            draggable
+                            title="Drag to reorder category"
+                            onDragStart={event => {
+                              event.stopPropagation()
+                              draggedVariableCategoryIdRef.current = category.id
+                              setDraggedVariableCategoryId(category.id)
+                              event.dataTransfer.effectAllowed = 'move'
+                            }}
+                            onDragEnd={() => {
+                              draggedVariableCategoryIdRef.current = null
+                              setDraggedVariableCategoryId(null)
+                              setVariableCategoryDropId(null)
+                            }}
+                          >
+                            <i className="ti ti-grip-vertical" aria-hidden="true" />
+                          </span>
+                        ) : <span className="project-variable-drag-spacer" />}
+                        <button
+                          type="button"
+                          className="project-variable-category-toggle"
+                          aria-expanded={!collapsed}
+                          onClick={() => setCollapsedVariableCategories(prev => {
+                            const next = new Set(prev)
+                            if (next.has(collapseId)) next.delete(collapseId)
+                            else next.add(collapseId)
+                            return next
+                          })}
+                        >
+                          <i className={`ti ti-chevron-${collapsed ? 'right' : 'down'}`} aria-hidden="true" />
+                        </button>
+                        {category.id ? (
+                          <input
+                            className="project-variable-category-name"
+                            value={category.name}
+                            aria-label="Variable category name"
+                            onChange={e => setLocal(prev => ({
+                              ...prev,
+                              variableCategories: prev.variableCategories.map(item => item.id === category.id
+                                ? { ...item, name: e.target.value }
+                                : item),
+                            }))}
+                          />
+                        ) : <span className="project-variable-category-name-static">{category.name}</span>}
+                        <span className="project-variable-category-count">{category.variableNames.length}</span>
+                        {category.id && (
+                          <button
+                            type="button"
+                            className="project-variable-category-remove"
+                            title={`Remove ${category.name} category`}
+                            aria-label={`Remove ${category.name} category`}
+                            onClick={() => {
+                              if (variableCategoryId === category.id) setVariableCategoryId('')
+                              setLocal(prev => ({
+                                ...prev,
+                                variableCategories: prev.variableCategories.filter(item => item.id !== category.id),
+                              }))
+                            }}
+                          >
+                            <i className="ti ti-x" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                      {!collapsed && (
+                        <div className="project-variable-list">
+                          {category.variableNames.length === 0 ? (
+                            <div className="project-variable-category-empty">No variables in this category.</div>
+                          ) : category.variableNames.map(name => (
+                            <div
+                              className={`project-variable-row${draggedVariable?.name === name ? ' dragging' : ''}${variableDropTarget?.name === name && variableDropTarget.categoryId === category.id ? ' drop-target' : ''}`}
+                              key={name}
+                              onDragOver={event => {
+                                if (!draggedVariableRef.current) return
+                                event.preventDefault()
+                                event.stopPropagation()
+                                setVariableDropTarget({ name, categoryId: category.id })
+                              }}
+                              onDrop={event => {
+                                if (!draggedVariableRef.current) return
+                                event.preventDefault()
+                                event.stopPropagation()
+                                reorderVariable(category.id, name)
+                                setVariableDropTarget(null)
+                              }}
+                            >
+                              <span
+                                className="project-variable-drag-handle"
+                                draggable
+                                title="Drag to reorder or move variable"
+                                onDragStart={event => {
+                                  event.stopPropagation()
+                                  const source = { name, categoryId: category.id }
+                                  draggedVariableRef.current = source
+                                  setDraggedVariable(source)
+                                  event.dataTransfer.effectAllowed = 'move'
+                                }}
+                                onDragEnd={() => {
+                                  draggedVariableRef.current = null
+                                  setDraggedVariable(null)
+                                  setVariableDropTarget(null)
+                                }}
+                              >
+                                <i className="ti ti-grip-vertical" aria-hidden="true" />
+                              </span>
+                              <code>{name}</code>
+                              <input
+                                className={`modal-input${evaluateProjectExpression(name, local.variables) === null ? ' project-expression-input-invalid' : ''}`}
+                                value={local.variables[name]}
+                                aria-label={`${name} value or expression`}
+                                onChange={e => {
+                                  const nextValue = e.target.value
+                                  setLocal(prev => ({
+                                    ...prev,
+                                    variables: { ...prev.variables, [name]: nextValue },
+                                  }))
+                                }}
+                              />
+                              <select
+                                className="modal-select project-variable-category-select"
+                                value={category.id}
+                                aria-label={`${name} category`}
+                                onChange={e => moveVariableToCategory(name, e.target.value)}
+                              >
+                                <option value="">Uncategorized</option>
+                                {local.variableCategories.map(option => (
+                                  <option key={option.id} value={option.id}>{option.name}</option>
+                                ))}
+                              </select>
+                              <button type="button" title={`Remove ${name}`} aria-label={`Remove ${name}`} onClick={() => removeVariable(name)}>
+                                <i className="ti ti-x" aria-hidden="true" />
+                              </button>
+                            </div>
+                          ))}
+                          <div
+                            className="project-variable-drop-end"
+                            onDragOver={event => {
+                              if (!draggedVariableRef.current) return
+                              event.preventDefault()
+                              event.stopPropagation()
+                            }}
+                            onDrop={event => {
+                              if (!draggedVariableRef.current) return
+                              event.preventDefault()
+                              event.stopPropagation()
+                              reorderVariable(category.id)
+                              setVariableDropTarget(null)
+                            }}
+                          />
+                        </div>
+                      )}
+                    </section>
+                    </div>
+                  )
+                })}
+                <div
+                  className="project-variable-category-drop-end"
+                  onDragOver={event => {
+                    if (!draggedVariableCategoryIdRef.current) return
+                    event.preventDefault()
+                  }}
+                  onDrop={event => {
+                    if (!draggedVariableCategoryIdRef.current) return
+                    event.preventDefault()
+                    reorderVariableCategory()
+                    setVariableCategoryDropId(null)
+                  }}
+                />
+              </div>
+            )}
+            {variableName.trim() && !isValidProjectVariableName(variableName.trim()) && (
+              <div className="project-variable-error">Names must begin with a letter or underscore and contain only letters, numbers, and underscores.</div>
+            )}
+          </div>
+        )}
+
         {activeTab === 'dictionary' && (
           <div className="dictionary-panel">
             <div className="dictionary-add-row">
@@ -501,8 +876,44 @@ export function ProjectSettingsModal({
                 onChange={retentionCount => setBackupSettings({ retentionCount })}
               />
             </div>
+            <label className="modal-checkbox-label">
+              <input
+                type="checkbox"
+                checked={local.backups.useDefaultLocation}
+                onChange={e => setBackupSettings({ useDefaultLocation: e.target.checked })}
+              />
+              Use default backup location
+            </label>
+            <div className="modal-field">
+              <label className="modal-label">Backup Folder</label>
+              <div className="modal-inline-row">
+                <div className={`modal-input modal-path-display${!local.backups.backupFolder ? ' modal-path-empty' : ''}`}>
+                  {local.backups.backupFolder || 'No folder selected'}
+                </div>
+                <button
+                  type="button"
+                  className="welcome-btn btn-nowrap"
+                  disabled={local.backups.useDefaultLocation}
+                  onClick={async () => {
+                    const folder = await onPickBackupFolder()
+                    if (folder) setBackupSettings({ backupFolder: folder })
+                  }}
+                >
+                  Browse...
+                </button>
+              </div>
+              {missingBackupFolder && <p className="modal-danger-text">Choose a backup folder before turning off the default location.</p>}
+            </div>
             <button
-              className="welcome-btn style-reset-btn"
+              type="button"
+              className="welcome-btn backup-action-btn"
+              disabled={missingBackupFolder}
+              onClick={() => { void onOpenBackupFolder(local.backups) }}
+            >
+              Open Backups Folder
+            </button>
+            <button
+              className="welcome-btn style-reset-btn backup-action-btn"
               onClick={() => setBackupSettings(DEFAULT_BACKUP_SETTINGS)}
             >
               Reset Backups
@@ -512,7 +923,7 @@ export function ProjectSettingsModal({
 
         <div className="modal-footer">
           <button className="welcome-btn" onClick={onCancel}>Cancel</button>
-          <button className="welcome-btn" onClick={() => onSave(normalizeProjectSettings(local), localManuscripts, localStyles, localDictionary, coverActions)}>Save</button>
+          <button className="welcome-btn" disabled={missingBackupFolder} onClick={() => onSave(normalizeProjectSettings(local), localManuscripts, localStyles, localDictionary, coverActions)}>Save</button>
         </div>
       </div>
     </div>

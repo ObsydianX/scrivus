@@ -53,6 +53,7 @@ import {
   LoreEntryEditorModal,
   LoreTemplateEditorModal,
 } from './components/LoreEditorModals'
+import { createLoreEntryDocx, loreDocxImageType } from './loreEntryDocx'
 import {
   NewProjectModal,
   PreferencesModal,
@@ -104,8 +105,10 @@ import {
 import { htmlFragmentText, parseHtmlFragment } from './html'
 import { allocateNextId, getNextIdValue, setNextIdValue } from './idCounter'
 import { buildLoreBacklinks, type LoreBacklink } from './loreBacklinks'
+import { normalizeLoreSubcategories } from './loreSubcategories'
 import { escapeAttr } from './text'
 import { getLoreImageCroppedPath, getLoreImagePath } from './loreImages'
+import { renderProjectExpressionsInHtml } from './projectExpressions'
 import {
   getActiveManuscript,
   getActiveManuscriptDocs,
@@ -188,6 +191,8 @@ import {
   LoreLinkExtension,
   loreLinkPluginKey,
   PageBreakNode,
+  ProjectExpressionExtension,
+  projectExpressionPluginKey,
   SpellcheckExtension,
   spellcheckPluginKey,
   UnderlineMark,
@@ -294,7 +299,7 @@ export default function App() {
   const [showStyles, setShowStyles] = useState(false)
   const [stylesTab, setStylesTab] = useState<'chapter' | 'body'>('chapter')
   const [showProjectSettings, setShowProjectSettings] = useState(false)
-  const [projectSettingsTab, setProjectSettingsTab] = useState<'book' | 'styles' | 'backups' | 'dictionary'>('book')
+  const [projectSettingsTab, setProjectSettingsTab] = useState<'book' | 'variables' | 'styles' | 'backups' | 'dictionary'>('book')
   const [projectDictionary, setProjectDictionary] = useState<string[]>([])
   const [editMenuOpen, setEditMenuOpen] = useState(false)
   const [helpMenuOpen, setHelpMenuOpen] = useState(false)
@@ -673,6 +678,9 @@ export default function App() {
       UnderlineMark,
       PageBreakNode,
       FnrHighlight,
+      ProjectExpressionExtension.configure({
+        getVariables: () => normalizeProjectSettings(projectRef.current?.settings).variables,
+      }),
       SpellcheckExtension.configure({
         getSpellchecker: () => spellcheckerRef.current,
       }),
@@ -1811,6 +1819,10 @@ export default function App() {
         currentProject.name,
         reason,
         normalizeProjectSettings(currentProject.settings).backups.retentionCount,
+        undefined,
+        normalizeProjectSettings(currentProject.settings).backups.useDefaultLocation
+          ? undefined
+          : normalizeProjectSettings(currentProject.settings).backups.backupFolder,
       )
       if (showNotification) {
         showMessage(`Backup created:\n${backup.name}`, 'Backup Complete')
@@ -1831,6 +1843,9 @@ export default function App() {
         currentProject.path,
         currentProject.name,
         normalizeProjectSettings(currentProject.settings).backups.retentionCount,
+        normalizeProjectSettings(currentProject.settings).backups.useDefaultLocation
+          ? undefined
+          : normalizeProjectSettings(currentProject.settings).backups.backupFolder,
       )
       if (!restored) {
         showMessage('No backups were found for this project yet.', 'No Backups', 'warning')
@@ -1852,7 +1867,12 @@ export default function App() {
     if (!projectRef.current) return
     setFileMenuOpen(false)
     try {
-      const backups = await listProjectBackups(projectRef.current.path, projectRef.current.name)
+      const backupSettings = normalizeProjectSettings(projectRef.current.settings).backups
+      const backups = await listProjectBackups(
+        projectRef.current.path,
+        projectRef.current.name,
+        backupSettings.useDefaultLocation ? undefined : backupSettings.backupFolder,
+      )
       setAvailableBackups(backups)
       setSelectedBackupName(backups[0]?.name ?? null)
       setRestoreBackupOpen(true)
@@ -1874,6 +1894,9 @@ export default function App() {
         currentProject.name,
         selected,
         normalizeProjectSettings(currentProject.settings).backups.retentionCount,
+        normalizeProjectSettings(currentProject.settings).backups.useDefaultLocation
+          ? undefined
+          : normalizeProjectSettings(currentProject.settings).backups.backupFolder,
       )
       const data = await readProjectJson(currentProject.path)
       if (!data) {
@@ -2361,10 +2384,11 @@ export default function App() {
   // Saves the template editor result.
   const saveLoreTemplate = async (edited: LoreCategory) => {
     const updated = { ...loreBookRef.current }
-    const subcategoryIds = new Set((edited.subcategories ?? []).map(subcategory => subcategory.id))
+    const normalizedSubcategories = normalizeLoreSubcategories(edited.subcategories ?? [])
+    const subcategoryIds = new Set(normalizedSubcategories.map(subcategory => subcategory.id))
     const normalizedEdited = {
       ...edited,
-      subcategories: (edited.subcategories ?? []).map(subcategory => ({
+      subcategories: normalizedSubcategories.map(subcategory => ({
         ...subcategory,
         name: subcategory.name.trim() || 'Unnamed Subcategory',
       })),
@@ -2582,12 +2606,17 @@ export default function App() {
   // Saves an entry.
   const saveLoreEntry = async (categoryId: string, entry: LoreEntry) => {
     const updated = { ...loreBookRef.current }
+    const normalizedNameEntry = {
+      ...entry,
+      prefix: entry.prefix?.trim() || undefined,
+      suffix: entry.suffix?.trim() || undefined,
+    }
     updated.categories = updated.categories.map(c => {
       if (c.id !== categoryId) return c
       const subcategoryIds = new Set((c.subcategories ?? []).map(subcategory => subcategory.id))
-      const normalizedEntry = entry.subcategoryId && !subcategoryIds.has(entry.subcategoryId)
-        ? { ...entry, subcategoryId: undefined }
-        : entry
+      const normalizedEntry = normalizedNameEntry.subcategoryId && !subcategoryIds.has(normalizedNameEntry.subcategoryId)
+        ? { ...normalizedNameEntry, subcategoryId: undefined }
+        : normalizedNameEntry
       const exists = c.entries.find(e => e.id === entry.id)
       const entries = exists
         ? c.entries.map(e => e.id === entry.id ? normalizedEntry : e)
@@ -2612,6 +2641,73 @@ export default function App() {
       }),
     }
     await saveLoreBook(updated)
+  }
+
+  const updateLoreCategory = async (category: LoreCategory) => {
+    await saveLoreBook({
+      ...loreBookRef.current,
+      categories: loreBookRef.current.categories.map(item => item.id === category.id ? category : item),
+    })
+  }
+
+  const exportLoreEntry = async (category: LoreCategory, entry: LoreEntry) => {
+    const projectPath = projectRef.current?.path
+    if (!projectPath) return
+    const safeName = (entry.name || 'Lorebook Entry')
+      .replace(/[<>:"/\\|?*]+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim() || 'Lorebook Entry'
+    const outputPath = await save({
+      title: 'Export Lorebook Entry',
+      defaultPath: `${safeName}.docx`,
+      filters: [{ name: 'Word Document', extensions: ['docx'] }],
+    })
+    if (!outputPath) return
+
+    try {
+      const bytes = await createLoreEntryDocx({
+        category,
+        entry,
+        variables: normalizeProjectSettings(projectRef.current?.settings).variables,
+        loadImage: async relativePath => {
+          const sourcePath = await join(projectPath, relativePath)
+          const data = await readFile(sourcePath)
+          const { width, height } = await getImageDimensions(sourcePath)
+          const type = loreDocxImageType(relativePath)
+          if (/\.(webp|svg)$/i.test(relativePath)) {
+            const sourceUrl = URL.createObjectURL(new Blob([data], { type: /\.svg$/i.test(relativePath) ? 'image/svg+xml' : 'image/webp' }))
+            try {
+              const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+                const element = new Image()
+                element.onload = () => resolve(element)
+                element.onerror = () => reject(new Error('A Lorebook image could not be converted for Word.'))
+                element.src = sourceUrl
+              })
+              const canvas = document.createElement('canvas')
+              canvas.width = width
+              canvas.height = height
+              canvas.getContext('2d')?.drawImage(image, 0, 0)
+              const pngBlob = await new Promise<Blob>((resolve, reject) =>
+                canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('A Lorebook image could not be converted for Word.')), 'image/png')
+              )
+              return { data: new Uint8Array(await pngBlob.arrayBuffer()), width, height, type: 'png' }
+            } finally {
+              URL.revokeObjectURL(sourceUrl)
+            }
+          }
+          return { data, width, height, type }
+        },
+      })
+      await writeFile(outputPath, bytes)
+      showMessage(
+        `Exported to ${outputPath}`,
+        'Lorebook Entry Exported',
+        'info',
+        { label: 'Show in Folder', onClick: () => revealItemInDir(outputPath) },
+      )
+    } catch (error) {
+      showMessage(`Lorebook entry export failed: ${String(error)}`, 'Export Failed', 'error')
+    }
   }
 
   const addLoreKeywordFromSelection = async (categoryId: string, entryId: string, keyword: string) => {
@@ -4180,6 +4276,10 @@ export default function App() {
     }
 
     const settings = manuscriptBookSettings(project, getActiveManuscript(project))
+    const projectVariables = normalizeProjectSettings(project.settings).variables
+    const renderedNodes = nodes.map(node => node.type === 'body'
+      ? { ...node, html: renderProjectExpressionsInHtml(node.html, projectVariables) }
+      : node)
     const bookTitle = (settings.title || project.name).trim()
     const bookSubtitle = settings.subtitle.trim()
     const bookAuthor = settings.author.trim()
@@ -4204,7 +4304,7 @@ export default function App() {
           }
         }
 
-        const epubBytes = await buildEpub(nodes, {
+        const epubBytes = await buildEpub(renderedNodes, {
           title: bookTitle,
           subtitle: bookSubtitle || undefined,
           author: bookAuthor,
@@ -4230,7 +4330,7 @@ export default function App() {
 
     const paragraphs = []
     const isShunn = isShunnCompileStyle()
-    const manuscriptWords = nodes.reduce(
+    const manuscriptWords = renderedNodes.reduce(
       (total, node) => node.type === 'body' ? total + countHtmlWords(node.html) : total,
       0,
     )
@@ -4321,7 +4421,7 @@ export default function App() {
 
     // ── Body ──
     let firstHeading = true
-    for (const node of nodes) {
+    for (const node of renderedNodes) {
       if (node.type === 'heading') {
         const pageBreakBefore = !firstHeading
         firstHeading = false
@@ -4735,6 +4835,7 @@ export default function App() {
     }
     projectRef.current = updated
     setProject(updated)
+    editor?.view.dispatch(editor.state.tr.setMeta(projectExpressionPluginKey, { refresh: true }))
     setStyles(normalizedStyles)
     setProjectDictionary(normalizedDictionary)
     writeProjectDictionary(updated.path, normalizedDictionary)
@@ -4804,7 +4905,14 @@ export default function App() {
   ) => {
     const settings = normalizeProjectSettings(migration.data.settings as Partial<ProjectSettings> | undefined)
     try {
-      await createProjectBackup(path, projectName, 'open', settings.backups.retentionCount)
+      await createProjectBackup(
+        path,
+        projectName,
+        'open',
+        settings.backups.retentionCount,
+        undefined,
+        settings.backups.useDefaultLocation ? undefined : settings.backups.backupFolder,
+      )
     } catch (e) {
       showMessage(
         `Scrivus could not create a safety backup before opening this project.\n\n${String(e)}`,
@@ -4947,7 +5055,14 @@ export default function App() {
     const target = projectRecovery
     setProjectRecovery(null)
     try {
-      const restored = await restoreLatestProjectBackup(target.path, target.name)
+      const projectData = await readProjectJson(target.path)
+      const backupSettings = normalizeProjectSettings(projectData?.settings as Partial<ProjectSettings> | undefined).backups
+      const restored = await restoreLatestProjectBackup(
+        target.path,
+        target.name,
+        backupSettings.retentionCount,
+        backupSettings.useDefaultLocation ? undefined : backupSettings.backupFolder,
+      )
       if (!restored) {
         showMessage('No backups were found for this project yet.', 'No Backups', 'warning')
         return
@@ -4967,7 +5082,13 @@ export default function App() {
   const openRecoveryBackupFolder = async () => {
     if (!projectRecovery) return
     try {
-      const backupRoot = await getProjectBackupRoot(projectRecovery.path, projectRecovery.name)
+      const projectData = await readProjectJson(projectRecovery.path)
+      const backupSettings = normalizeProjectSettings(projectData?.settings as Partial<ProjectSettings> | undefined).backups
+      const backupRoot = await getProjectBackupRoot(
+        projectRecovery.path,
+        projectRecovery.name,
+        backupSettings.useDefaultLocation ? undefined : backupSettings.backupFolder,
+      )
       await revealItemInDir(backupRoot)
     } catch (e) {
       showMessage('Could not open the backup folder: ' + String(e), 'Backup Folder Failed', 'warning')
@@ -6691,7 +6812,7 @@ export default function App() {
   }
 
 
-  const SharedModals = () => (
+  const renderSharedModals = () => (
     <>
       {(openingProject || creatingProject) && (
         <div className="modal-overlay modal-overlay-blocking">
@@ -6728,6 +6849,22 @@ export default function App() {
               filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif'] }],
             })
             return !selected || Array.isArray(selected) ? null : selected
+          }}
+          onPickBackupFolder={async () => {
+            const selected = await open({ title: 'Choose Backup Folder', directory: true })
+            return !selected || Array.isArray(selected) ? null : selected
+          }}
+          onOpenBackupFolder={async backupSettings => {
+            try {
+              const backupRoot = await getProjectBackupRoot(
+                project.path,
+                project.name,
+                backupSettings.useDefaultLocation ? undefined : backupSettings.backupFolder,
+              )
+              await revealItemInDir(backupRoot)
+            } catch (e) {
+              showMessage('Could not open the backup folder: ' + String(e), 'Backup Folder Failed', 'warning')
+            }
           }}
           onCancel={() => setShowProjectSettings(false)}
           onSave={saveProjectSettings}
@@ -7074,6 +7211,8 @@ export default function App() {
         category={getActiveLoreCategory()}
         entry={loreEntryEditor}
         projectPath={projectRef.current?.path ?? null}
+        variables={normalizeProjectSettings(projectRef.current?.settings).variables}
+        variableCategories={normalizeProjectSettings(projectRef.current?.settings).variableCategories}
         onCancel={() => setLoreEntryEditor(null)}
         onSave={saveLoreEntry}
         onPickImage={async (entryId, fieldId, previousImagePaths) => {
@@ -7164,7 +7303,7 @@ export default function App() {
           <span className="project-title">Scrivus</span>
           <ThemeMenu />
         </div>
-        <SharedModals />
+        {renderSharedModals()}
 
         <div className="welcome-scroll">
           <i className="ti ti-feather welcome-icon" aria-hidden="true" />
@@ -7357,6 +7496,8 @@ export default function App() {
           titleValue,
           titleBookmarked: activeId !== null && !isTrashPreview,
           loreLinksEnabled,
+          variableCategories: normalizeProjectSettings(project.settings).variableCategories,
+          variables: normalizeProjectSettings(project.settings).variables,
           onFocusModeChange: setFocusMode,
           onTypewriterScrollingChange: setTypewriterScrolling,
           onLoreLinksEnabledChange: setLoreLinksEnabled,
@@ -7440,14 +7581,17 @@ export default function App() {
           expandedEntryId,
           projectPath: projectRef.current?.path ?? null,
           backlinks: loreBacklinks,
+          variables: normalizeProjectSettings(project.settings).variables,
           onLoreViewChange: setLoreView,
           onActiveLoreCategoryChange: setActiveLoreCategoryId,
           onExpandedEntryChange: setExpandedEntryId,
           onNewCategory: openNewCategoryEditor,
           onEditCategory: openEditCategoryEditor,
+          onUpdateCategory: updateLoreCategory,
           onDeleteCategoryRequest: setConfirmDeleteLoreCategory,
           onNewEntry: openNewEntryEditor,
           onEditEntry: openEditEntryEditor,
+          onExportEntry: exportLoreEntry,
           onDeleteEntryRequest: setConfirmDeleteLoreEntry,
           onToggleEntryPinned: toggleLoreEntryPinned,
           onOpenScene: openOutlineScene,
@@ -7461,6 +7605,7 @@ export default function App() {
           revisionTitle,
           revisionTabs,
           revisionActiveTabIndex,
+          variables: normalizeProjectSettings(project.settings).variables,
           revisionPendingComment,
           draftText,
           revisionScrollRef,
@@ -7617,7 +7762,7 @@ export default function App() {
         onPastePlainText={pastePlainTextIntoEditor}
         onSelectAll={() => runEditorContextCommand(() => editor?.chain().focus().selectAll().run())}
       />
-      <SharedModals />
+      {renderSharedModals()}
 
       {gradientOverlayEnabled && <GradientOverlay animated={gradientOverlayAnimated} />}
     </div>
