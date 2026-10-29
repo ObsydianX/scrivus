@@ -2,6 +2,17 @@
 
 All notable Scrivus changes are tracked here.
 
+## 0.3.3
+
+- New Feature: Added categorized project variables, expression evaluation, and editor autocomplete for inserting variables while writing.
+- New Feature: Expanded the Lore Book with nested subcategories, customizable hierarchy views, list fields, name affixes, and DOCX entry export.
+- New Feature: Added custom backup locations with safety checks that prevent backups from being stored inside the project folder.
+- Changed: Refreshed application styling and bundled the Inter variable font.
+- Changed: Updated dependencies and synchronized the Tiptap editor packages to version 3.32.1, resolving dependency conflicts and reported npm security vulnerabilities.
+- Fixes: Creating and opening projects now grants access to nested project folders on any user-selected drive, including secondary and removable drives. Folder access is retained after restarting Scrivus.
+- Fixes: When a safety backup is blocked by an older folder permission, Scrivus now offers a folder picker to renew access and retry opening the project.
+- Fixes: Synchronized the displayed application version and generated project metadata with the release version.
+
 ## 0.3.1
 
 - New Feature: Added an optional theme-aware ambient gradient overlay with subtle blue-noise dithering and a separate slow-animation option in Preferences. High-contrast themes disable the effect automatically, and images and Atlas maps remain untinted for clarity.

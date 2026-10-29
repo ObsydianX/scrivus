@@ -4536,6 +4536,9 @@ export default function App() {
     const selectedPath = await open({
       title: 'Choose where to save your project',
       directory: true,
+      // Project packages contain nested scenes, images, and backup directories.
+      // Persisted scope retains this user-selected access on any drive.
+      recursive: true,
     })
     if (!selectedPath || Array.isArray(selectedPath)) return
     setNewProjectParent(selectedPath as string)
@@ -4919,6 +4922,31 @@ export default function App() {
         settings.backups.useDefaultLocation ? undefined : settings.backups.backupFolder,
       )
     } catch (e) {
+      // Recent projects can still have a non-recursive grant saved by older
+      // versions. Renew it through the native picker before retrying the backup.
+      if (String(e).includes('forbidden path:')) {
+        showMessage(
+          `Scrivus needs folder access to create the safety backup. Select the project folder again to allow access to its scenes, images, and other contents.\n\n${String(e)}`,
+          'Project Folder Access Required',
+          'warning',
+          {
+            label: 'Choose Project Folder',
+            onClick: () => {
+              void (async () => {
+                const selected = await open({
+                  title: 'Allow Project Folder Access',
+                  defaultPath: path,
+                  directory: true,
+                  recursive: true,
+                })
+                if (!selected || Array.isArray(selected)) return
+                await openProjectFromPath(selected, 'That folder does not contain a Scrivus project.', 'Invalid Project')
+              })().catch(error => showMessage(String(error), 'Folder Access Failed', 'error'))
+            },
+          },
+        )
+        return false
+      }
       showMessage(
         `Scrivus could not create a safety backup before opening this project.\n\n${String(e)}`,
         'Backup Failed',
@@ -5105,7 +5133,13 @@ export default function App() {
     clearSaveTimers()
     saveActive()
     setFileMenuOpen(false)
-    const selectedPath = await open({ title: 'Open Project', directory: true })
+    const selectedPath = await open({
+      title: 'Open Project',
+      directory: true,
+      // Grant access to the entire package, including scenes and images.
+      // Persisted scope also makes recent-project access work after restart.
+      recursive: true,
+    })
     if (!selectedPath || Array.isArray(selectedPath)) return
     const path = selectedPath as string
     await openProjectFromPath(path, 'That folder does not contain a Scrivus project.', 'Invalid Project')
