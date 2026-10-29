@@ -1,3 +1,5 @@
+import type { LoreCategoryIcon } from './loreCategoryIcons'
+
 export type DocNode = {
   id: number
   type: 'doc'
@@ -126,13 +128,21 @@ export type SceneMetadata = {
   synopsis: string
 }
 
-export type LoreFieldType = 'field' | 'textarea' | 'list' | 'image' | 'header' | 'divider'
+export type LoreFieldType = 'field' | 'textarea' | 'list' | 'selection' | 'multi-selection' | 'derived' | 'child-of' | 'image' | 'header' | 'divider'
+
+export type LoreSelectionOption = {
+  id: string
+  label: string
+}
 
 export type LoreTemplateElement = {
   id: string
   type: LoreFieldType
   label?: string
   heightMode?: 'limited' | 'content'
+  options?: LoreSelectionOption[]
+  derivedSourceFieldId?: string
+  derivedValues?: Record<string, string>
   removed: boolean
 }
 
@@ -152,6 +162,7 @@ export type LoreEntry = {
   prefix?: string
   suffix?: string
   pinned?: boolean
+  parentEntryId?: string
   subcategoryId?: string
   keywords?: string[]
   fields: Record<string, LoreFieldValue>
@@ -183,6 +194,7 @@ export type LoreImageCrop = {
 export type LoreCategory = {
   id: string
   name: string
+  icon?: LoreCategoryIcon
   subcategories?: LoreSubcategory[]
   hierarchyDisplay?: LoreHierarchyDisplay
   template: LoreTemplateElement[]

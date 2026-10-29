@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { readFile } from '@tauri-apps/plugin-fs'
 import {
@@ -12,11 +12,14 @@ import {
   getLoreImagePath,
   getLoreListItems,
 } from '../loreImages'
-import type { LoreCategory, LoreEntry, LoreFieldType, LoreSubcategoryColor, LoreTemplateElement } from '../types'
+import type { LoreCategory, LoreEntry, LoreFieldType, LoreSelectionOption, LoreSubcategoryColor, LoreTemplateElement } from '../types'
 import { hasInvalidProjectExpressions, type ProjectVariables } from '../projectExpressions'
 import { VariableAutocompleteInput } from './VariableAutocomplete'
 import type { ProjectVariableCategory } from '../types'
 import { getInvalidLoreParentIds, orderLoreSubcategories } from '../loreSubcategories'
+import { getDerivedLoreValue } from '../loreDerived'
+import { getInvalidLoreEntryParentIds } from '../loreEntryParents'
+import { getLoreCategoryIconClass, LORE_CATEGORY_ICONS, type LoreCategoryIcon } from '../loreCategoryIcons'
 
 const LORE_SUBCATEGORY_COLORS: { value: LoreSubcategoryColor; label: string }[] = [
   { value: 'default', label: 'Default' },
@@ -85,15 +88,62 @@ export function LoreTemplateEditorModal({
   const [templateDropIndex, setTemplateDropIndex] = useState<number | null>(null)
   const [subcategoryDragIndex, setSubcategoryDragIndex] = useState<number | null>(null)
   const [subcategoryDropIndex, setSubcategoryDropIndex] = useState<number | null>(null)
+  const [optionDrag, setOptionDrag] = useState<{ fieldId: string; index: number } | null>(null)
+  const [optionDrop, setOptionDrop] = useState<{ fieldId: string; index: number } | null>(null)
   const templateDragIndexRef = useRef<number | null>(null)
   const subcategoryDragIndexRef = useRef<number | null>(null)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const [addMenuPosition, setAddMenuPosition] = useState<{ top: number; left: number; maxHeight: number } | null>(null)
   const [hardDeleteTarget, setHardDeleteTarget] = useState<{ fieldId: string; label: string } | null>(null)
   const addBtnRef = useRef<HTMLButtonElement>(null)
+  const addMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setLocal(category)
   }, [category])
+
+  useLayoutEffect(() => {
+    if (!addMenuOpen) {
+      setAddMenuPosition(null)
+      return
+    }
+
+    const positionMenu = () => {
+      const button = addBtnRef.current
+      const menu = addMenuRef.current
+      if (!button || !menu) return
+
+      const gap = 4
+      const boundaryPadding = 8
+      const buttonRect = button.getBoundingClientRect()
+      const modal = button.closest('.lore-template-modal')
+      const footer = modal?.querySelector<HTMLElement>(':scope > .modal-footer')
+      const modalRect = modal?.getBoundingClientRect()
+      const footerRect = footer?.getBoundingClientRect()
+      const upperBoundary = Math.max(boundaryPadding, (modalRect?.top ?? 0) + boundaryPadding)
+      const lowerBoundary = Math.min(window.innerHeight - boundaryPadding, footerRect?.top ?? window.innerHeight - boundaryPadding)
+      const spaceAbove = Math.max(0, buttonRect.top - gap - upperBoundary)
+      const spaceBelow = Math.max(0, lowerBoundary - buttonRect.bottom - gap)
+      const desiredHeight = menu.scrollHeight
+      const openAbove = desiredHeight > spaceBelow && spaceAbove > spaceBelow
+      const maxHeight = Math.max(0, openAbove ? spaceAbove : spaceBelow)
+      const renderedHeight = Math.min(desiredHeight, maxHeight)
+      const top = openAbove
+        ? buttonRect.top - gap - renderedHeight
+        : buttonRect.bottom + gap
+      const left = Math.min(buttonRect.left, window.innerWidth - menu.offsetWidth - boundaryPadding)
+
+      setAddMenuPosition({ top, left: Math.max(boundaryPadding, left), maxHeight })
+    }
+
+    positionMenu()
+    window.addEventListener('resize', positionMenu)
+    window.addEventListener('scroll', positionMenu, true)
+    return () => {
+      window.removeEventListener('resize', positionMenu)
+      window.removeEventListener('scroll', positionMenu, true)
+    }
+  }, [addMenuOpen])
 
   if (!local) return null
 
@@ -102,10 +152,11 @@ export function LoreTemplateEditorModal({
   const subcategories = local.subcategories ?? []
 
   const addElement = (type: LoreFieldType, heightMode?: LoreTemplateElement['heightMode']) => {
+    if (type === 'child-of' && local.template.some(field => !field.removed && field.type === 'child-of')) return
     const newEl: LoreTemplateElement = {
       id: generateId(),
       type,
-      label: type === 'divider' ? undefined : '',
+      label: type === 'divider' ? undefined : type === 'child-of' ? 'Child Of' : '',
       heightMode,
       removed: false,
     }
@@ -139,7 +190,11 @@ export function LoreTemplateEditorModal({
     return field.type === 'field' ? 'Unnamed field' :
       field.type === 'textarea' ? 'Unnamed description' :
         field.type === 'list' ? 'Unnamed list' :
-          field.type === 'image' ? 'Unnamed image' :
+          field.type === 'selection' ? 'Unnamed selection' :
+            field.type === 'multi-selection' ? 'Unnamed multi-selection' :
+              field.type === 'derived' ? 'Unnamed derived element' :
+                field.type === 'child-of' ? 'Child Of' :
+                  field.type === 'image' ? 'Unnamed image' :
             field.type === 'header' ? 'Unnamed header' :
             'Divider'
   }
@@ -147,13 +202,18 @@ export function LoreTemplateEditorModal({
   const hardDeleteField = (fieldId: string) => {
     setLocal(prev => {
       if (!prev) return prev
+      const removesParentRelationship = prev.template.some(field => field.id === fieldId && field.type === 'child-of')
       return {
         ...prev,
-        template: prev.template.filter(field => field.id !== fieldId),
+        template: prev.template
+          .filter(field => field.id !== fieldId)
+          .map(field => field.derivedSourceFieldId === fieldId
+            ? { ...field, derivedSourceFieldId: undefined, derivedValues: {} }
+            : field),
         entries: prev.entries.map(entry => {
           const fields = { ...entry.fields }
           delete fields[fieldId]
-          return { ...entry, fields }
+          return { ...entry, parentEntryId: removesParentRelationship ? undefined : entry.parentEntryId, fields }
         }),
       }
     })
@@ -200,6 +260,70 @@ export function LoreTemplateEditorModal({
       subcategories: (prev.subcategories ?? []).map(subcategory =>
         subcategory.id === id ? { ...subcategory, color } : subcategory
       ),
+    } : prev)
+  }
+
+  const updateSelectionOptions = (fieldId: string, updater: (options: LoreSelectionOption[]) => LoreSelectionOption[]) => {
+    setLocal(prev => prev ? {
+      ...prev,
+      template: prev.template.map(field => field.id === fieldId
+        ? { ...field, options: updater(field.options ?? []) }
+        : field),
+    } : prev)
+  }
+
+  const moveSelectionOption = (fieldId: string, fromIndex: number, toIndex: number) => {
+    updateSelectionOptions(fieldId, options => {
+      const reordered = [...options]
+      const [moved] = reordered.splice(fromIndex, 1)
+      reordered.splice(toIndex, 0, moved)
+      return reordered
+    })
+  }
+
+  const removeSelectionOption = (fieldId: string, optionId: string) => {
+    setLocal(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        template: prev.template.map(field => {
+          if (field.id === fieldId) {
+            return { ...field, options: (field.options ?? []).filter(option => option.id !== optionId) }
+          }
+          if (field.derivedSourceFieldId === fieldId && field.derivedValues) {
+            const derivedValues = { ...field.derivedValues }
+            delete derivedValues[optionId]
+            return { ...field, derivedValues }
+          }
+          return field
+        }),
+        entries: prev.entries.map(entry => {
+          const value = entry.fields[fieldId]
+          if (value === optionId) return { ...entry, fields: { ...entry.fields, [fieldId]: '' } }
+          if (Array.isArray(value) && value.includes(optionId)) {
+            return { ...entry, fields: { ...entry.fields, [fieldId]: value.filter(id => id !== optionId) } }
+          }
+          return entry
+        }),
+      }
+    })
+  }
+
+  const updateDerivedSource = (fieldId: string, sourceFieldId: string) => {
+    setLocal(prev => prev ? {
+      ...prev,
+      template: prev.template.map(field => field.id === fieldId
+        ? { ...field, derivedSourceFieldId: sourceFieldId || undefined, derivedValues: {} }
+        : field),
+    } : prev)
+  }
+
+  const updateDerivedValue = (fieldId: string, optionId: string, value: string) => {
+    setLocal(prev => prev ? {
+      ...prev,
+      template: prev.template.map(field => field.id === fieldId
+        ? { ...field, derivedValues: { ...field.derivedValues, [optionId]: value } }
+        : field),
     } : prev)
   }
 
@@ -254,6 +378,7 @@ export function LoreTemplateEditorModal({
       <div className="modal-box lore-template-modal">
         <div className="lore-template-modal-body">
         <div className="lore-template-header">
+          {getLoreCategoryIconClass(local.icon) && <i className={`ti ${getLoreCategoryIconClass(local.icon)} lore-template-category-icon-preview`} aria-hidden="true" />}
           <input
             className="lore-template-title-input"
             value={local.name}
@@ -261,6 +386,16 @@ export function LoreTemplateEditorModal({
             onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
             placeholder="Category name"
           />
+          <select
+            className="modal-input lore-template-category-icon-select"
+            value={local.icon ?? ''}
+            onChange={event => setLocal(prev => prev ? { ...prev, icon: (event.target.value || undefined) as LoreCategoryIcon | undefined } : prev)}
+            aria-label="Category icon"
+            title="Category icon"
+          >
+            <option value="">No icon</option>
+            {LORE_CATEGORY_ICONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
         </div>
 
         <div className="lore-template-entry-name">
@@ -413,22 +548,63 @@ export function LoreTemplateEditorModal({
                   <span className="lore-template-drag-handle">
                     <i className="ti ti-grip-vertical" aria-hidden="true" />
                   </span>
-                  {el.type === 'divider'
-                    ? <div className="lore-template-divider-preview" />
-                    : <input
-                      className="lore-template-label-input"
-                      value={el.label ?? ''}
-                      onChange={e => updateLabel(el.id, e.target.value)}
-                      onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
-                      placeholder={
-                        el.type === 'field' ? 'Field label...' :
-                          el.type === 'textarea' ? 'Description label...' :
-                            el.type === 'list' ? 'List label...' :
-                              el.type === 'image' ? 'Image label...' :
-                                'Header text...'
-                      }
-                    />
-                  }
+                  {el.type === 'divider' ? <div className="lore-template-divider-preview" /> : (
+                    <div className="lore-template-element-content">
+                      <input
+                        className="lore-template-label-input"
+                        value={el.label ?? ''}
+                        onChange={e => updateLabel(el.id, e.target.value)}
+                        onKeyDown={e => { if (e.key === 'z' || e.key === 'y') e.stopPropagation() }}
+                        placeholder={el.type === 'field' ? 'Field label...' : el.type === 'textarea' ? 'Description label...' : el.type === 'list' ? 'List label...' : el.type === 'selection' ? 'Selection label...' : el.type === 'multi-selection' ? 'Multi-selection label...' : el.type === 'derived' ? 'Derived element label...' : el.type === 'child-of' ? 'Child Of label...' : el.type === 'image' ? 'Image label...' : 'Header text...'}
+                      />
+                      {(el.type === 'selection' || el.type === 'multi-selection') && <div className="lore-template-selection-options">
+                        {(el.options ?? []).map((option, optionIndex) => {
+                          const dragging = optionDrag?.fieldId === el.id && optionDrag.index === optionIndex
+                          const dropTarget = optionDrop?.fieldId === el.id && optionDrop.index === optionIndex
+                          return <div key={option.id}>
+                            {dropTarget && !dragging && <div className="drop-line" />}
+                            <div
+                              className={`lore-template-selection-option${dragging ? ' dragging' : ''}`}
+                              draggable
+                              onDragStart={event => { event.stopPropagation(); setOptionDrag({ fieldId: el.id, index: optionIndex }); event.dataTransfer.effectAllowed = 'move' }}
+                              onDragEnd={() => { setOptionDrag(null); setOptionDrop(null) }}
+                              onDragOver={event => { if (optionDrag?.fieldId === el.id) { event.preventDefault(); event.stopPropagation(); setOptionDrop({ fieldId: el.id, index: optionIndex }) } }}
+                              onDrop={event => { event.preventDefault(); event.stopPropagation(); if (optionDrag?.fieldId === el.id) moveSelectionOption(el.id, optionDrag.index, optionIndex); setOptionDrag(null); setOptionDrop(null) }}
+                            >
+                              <span className="lore-template-selection-handle"><i className="ti ti-grip-vertical" aria-hidden="true" /></span>
+                              <input className="lore-template-label-input" value={option.label} placeholder="Selection entry..." onChange={event => updateSelectionOptions(el.id, options => options.map(item => item.id === option.id ? { ...item, label: event.target.value } : item))} />
+                              <button type="button" className="lore-template-selection-remove" title="Remove selection entry" onClick={() => removeSelectionOption(el.id, option.id)}><i className="ti ti-x" aria-hidden="true" /></button>
+                            </div>
+                          </div>
+                        })}
+                        <button type="button" className="lore-template-selection-add" onClick={() => updateSelectionOptions(el.id, options => [...options, { id: generateId(), label: '' }])}><i className="ti ti-plus" aria-hidden="true" /> Entry</button>
+                      </div>}
+                      {el.type === 'derived' && <div className="lore-template-derived-config">
+                        <label className="lore-template-derived-source">
+                          <span>Derived from</span>
+                          <select className="modal-input" value={el.derivedSourceFieldId ?? ''} onChange={event => updateDerivedSource(el.id, event.target.value)}>
+                            <option value="">Select an element...</option>
+                            {local.template.filter(field => !field.removed && field.type === 'selection').map(field => (
+                              <option key={field.id} value={field.id}>{field.label?.trim() || 'Unnamed selection'}</option>
+                            ))}
+                          </select>
+                        </label>
+                        {(() => {
+                          const source = local.template.find(field => !field.removed && field.type === 'selection' && field.id === el.derivedSourceFieldId)
+                          if (!source) return <span className="lore-template-derived-empty">Choose a Selection element to define its mapped values.</span>
+                          return <div className="lore-template-derived-values">
+                            {(source.options ?? []).map(option => (
+                              <label key={option.id} className="lore-template-derived-value">
+                                <span>{option.label || 'Unnamed entry'}</span>
+                                <input className="modal-input" value={el.derivedValues?.[option.id] ?? ''} onChange={event => updateDerivedValue(el.id, option.id, event.target.value)} placeholder="Automatic value..." />
+                              </label>
+                            ))}
+                            {(source.options ?? []).length === 0 && <span className="lore-template-derived-empty">The selected element has no entries.</span>}
+                          </div>
+                        })()}
+                      </div>}
+                    </div>
+                  )}
                   <span className="lore-template-type-badge">
                     {el.type === 'textarea' && el.heightMode === 'content' ? 'textarea · auto height' : el.type}
                   </span>
@@ -453,15 +629,16 @@ export function LoreTemplateEditorModal({
           >
             <i className="ti ti-plus" aria-hidden="true" /> Add element
           </button>
-          {addMenuOpen && (() => {
-            const rect = addBtnRef.current?.getBoundingClientRect()
-            return (
+          {addMenuOpen && (
               <div
+                ref={addMenuRef}
                 className="lore-template-add-menu"
                 style={{
                   position: 'fixed',
-                  top: rect ? rect.bottom + 4 : 0,
-                  left: rect ? rect.left : 0,
+                  top: addMenuPosition?.top ?? 0,
+                  left: addMenuPosition?.left ?? 0,
+                  maxHeight: addMenuPosition?.maxHeight,
+                  visibility: addMenuPosition ? 'visible' : 'hidden',
                 }}
               >
                 {([
@@ -469,17 +646,22 @@ export function LoreTemplateEditorModal({
                   { type: 'textarea', label: 'Description Box' },
                   { type: 'textarea', label: 'Description Box (Auto Height)', heightMode: 'content' },
                   { type: 'list', label: 'List' },
+                  { type: 'selection', label: 'Selection' },
+                  { type: 'multi-selection', label: 'Multi-selection' },
+                  { type: 'derived', label: 'Derived Element' },
+                  { type: 'child-of', label: 'Child Of' },
                   { type: 'image', label: 'Image' },
                   { type: 'header', label: 'Header' },
                   { type: 'divider', label: 'Divider' },
-                ] as { type: LoreFieldType; label: string; heightMode?: LoreTemplateElement['heightMode'] }[]).map(option => (
+                ] as { type: LoreFieldType; label: string; heightMode?: LoreTemplateElement['heightMode'] }[])
+                  .filter(option => option.type !== 'child-of' || !local.template.some(field => !field.removed && field.type === 'child-of'))
+                  .map(option => (
                   <button key={`${option.type}:${option.heightMode ?? 'default'}`} onClick={() => { addElement(option.type, option.heightMode); setAddMenuOpen(false) }}>
                     {option.label}
                   </button>
                 ))}
               </div>
-            )
-          })()}
+          )}
         </div>
 
         {removedElements.length > 0 && (
@@ -964,6 +1146,83 @@ export function LoreEntryEditorModal({
                       <i className="ti ti-plus" aria-hidden="true" /> Insert New Entry
                     </button>
                   </div>
+                </div>
+              )
+            }
+            if (field.type === 'selection') {
+              const selectedId = getLoreFieldText(local.fields[field.id])
+              return (
+                <div key={field.id} className="lore-entry-field-wrap">
+                  {field.label && <label className="lore-entry-label">{field.label}</label>}
+                  <select
+                    className="modal-input"
+                    value={(field.options ?? []).some(option => option.id === selectedId) ? selectedId : ''}
+                    onChange={event => setLocal(prev => prev ? {
+                      ...prev,
+                      fields: { ...prev.fields, [field.id]: event.target.value },
+                    } : prev)}
+                  >
+                    <option value="">None</option>
+                    {(field.options ?? []).map(option => (
+                      <option key={option.id} value={option.id}>{option.label || 'Unnamed entry'}</option>
+                    ))}
+                  </select>
+                </div>
+              )
+            }
+            if (field.type === 'multi-selection') {
+              const selectedIds = getLoreListItems(local.fields[field.id])
+              return (
+                <fieldset key={field.id} className="lore-entry-field-wrap lore-entry-multi-selection">
+                  {field.label && <legend className="lore-entry-label">{field.label}</legend>}
+                  {(field.options ?? []).length === 0
+                    ? <span className="lore-entry-multi-selection-empty">No choices configured.</span>
+                    : (field.options ?? []).map(option => (
+                      <label key={option.id} className="lore-entry-multi-selection-option">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(option.id)}
+                          onChange={event => setLocal(prev => {
+                            if (!prev) return prev
+                            const currentIds = getLoreListItems(prev.fields[field.id])
+                            const nextIds = event.target.checked
+                              ? [...currentIds, option.id]
+                              : currentIds.filter(id => id !== option.id)
+                            return { ...prev, fields: { ...prev.fields, [field.id]: nextIds } }
+                          })}
+                        />
+                        <span>{option.label || 'Unnamed entry'}</span>
+                      </label>
+                    ))}
+                </fieldset>
+              )
+            }
+            if (field.type === 'derived') {
+              const value = getDerivedLoreValue(category.template, field, local)
+              return (
+                <div key={field.id} className="lore-entry-field-wrap">
+                  {field.label && <label className="lore-entry-label">{field.label}</label>}
+                  <input className="modal-input lore-entry-derived-value" value={value} placeholder="Calculated automatically" readOnly aria-readonly="true" />
+                </div>
+              )
+            }
+            if (field.type === 'child-of') {
+              const invalidParentIds = getInvalidLoreEntryParentIds(category.entries, local.id)
+              const availableParents = [...category.entries]
+                .filter(candidate => !invalidParentIds.has(candidate.id))
+                .sort((a, b) => a.name.localeCompare(b.name))
+              const parentExists = availableParents.some(candidate => candidate.id === local.parentEntryId)
+              return (
+                <div key={field.id} className="lore-entry-field-wrap">
+                  <label className="lore-entry-label">{field.label?.trim() || 'Child Of'}</label>
+                  <select
+                    className="modal-input"
+                    value={parentExists ? local.parentEntryId : ''}
+                    onChange={event => setLocal(prev => prev ? { ...prev, parentEntryId: event.target.value || undefined } : prev)}
+                  >
+                    <option value="">Nothing (top level)</option>
+                    {availableParents.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name || 'Unnamed entry'}</option>)}
+                  </select>
                 </div>
               )
             }

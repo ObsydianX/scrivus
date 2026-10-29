@@ -2809,7 +2809,12 @@ export default function App() {
     const updated = { ...loreBookRef.current }
     updated.categories = updated.categories.map(c => {
       if (c.id !== categoryId) return c
-      return { ...c, entries: c.entries.filter(e => e.id !== entryId) }
+      return {
+        ...c,
+        entries: c.entries
+          .filter(e => e.id !== entryId)
+          .map(e => e.parentEntryId === entryId ? { ...e, parentEntryId: undefined } : e),
+      }
     })
     await saveLoreBook(updated)
     setConfirmDeleteLoreEntry(null)
@@ -6851,7 +6856,15 @@ export default function App() {
             return !selected || Array.isArray(selected) ? null : selected
           }}
           onPickBackupFolder={async () => {
-            const selected = await open({ title: 'Choose Backup Folder', directory: true })
+            // The dialog adds the selected directory to Tauri's runtime filesystem
+            // scope. Recursive access is required because each backup is written to
+            // a timestamped child directory. The persisted-scope plugin restores
+            // this user-granted access after Scrivus restarts.
+            const selected = await open({
+              title: 'Choose Backup Folder',
+              directory: true,
+              recursive: true,
+            })
             return !selected || Array.isArray(selected) ? null : selected
           }}
           onOpenBackupFolder={async backupSettings => {

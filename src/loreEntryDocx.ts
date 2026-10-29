@@ -11,6 +11,7 @@ import {
 import { getLoreFieldText, getLoreImageDisplayPath, getLoreImageFullWidth, getLoreImageIgnoreEntryCrop, getLoreImagePath, getLoreListItems } from './loreImages'
 import { renderProjectExpressions, type ProjectVariables } from './projectExpressions'
 import type { LoreCategory, LoreEntry, LoreFieldValue } from './types'
+import { getDerivedLoreValue } from './loreDerived'
 
 export type LoreDocxImage = {
   data: Uint8Array
@@ -160,6 +161,12 @@ export async function createLoreEntryDocx({ category, entry, variables, loadImag
       continue
     }
 
+    if (field.type === 'derived') {
+      const derivedValue = getDerivedLoreValue(category.template, field, entry)
+      if (derivedValue.trim()) children.push(...fieldParagraphs(field.label, renderProjectExpressions(derivedValue, variables)))
+      continue
+    }
+
     const value = entry.fields[field.id]
     if (!value) continue
     if (field.type === 'image') {
@@ -182,6 +189,20 @@ export async function createLoreEntryDocx({ category, entry, variables, loadImag
           spacing: { after: index === items.length - 1 ? 160 : 40, line: 276, lineRule: 'auto' },
         })))
       }
+      continue
+    }
+    if (field.type === 'selection') {
+      const selectedId = getLoreFieldText(value)
+      const selected = field.options?.find(option => option.id === selectedId)
+      if (selected?.label.trim()) children.push(...fieldParagraphs(field.label, selected.label))
+      continue
+    }
+    if (field.type === 'multi-selection') {
+      const selectedIds = getLoreListItems(value)
+      const labels = (field.options ?? [])
+        .filter(option => selectedIds.includes(option.id) && option.label.trim())
+        .map(option => option.label)
+      if (labels.length) children.push(...fieldParagraphs(field.label, labels.join(', ')))
       continue
     }
     const text = getLoreFieldText(value)

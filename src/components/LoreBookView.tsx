@@ -13,6 +13,9 @@ import type { LoreBacklink } from '../loreBacklinks'
 import { renderProjectExpressions, type ProjectVariables } from '../projectExpressions'
 import { orderLoreSubcategories } from '../loreSubcategories'
 import { formatLoreEntryName } from '../loreEntryNames'
+import { getDerivedLoreValue } from '../loreDerived'
+import { orderLoreEntriesByParent } from '../loreEntryParents'
+import { getLoreCategoryIconClass } from '../loreCategoryIcons'
 
 const BACKLINK_PAGE_SIZE = 24
 
@@ -187,20 +190,28 @@ export function LoreBookView({
     const sortedEntries = [...cat.entries].sort((a, b) => a.name.localeCompare(b.name))
     const subcategories = cat.subcategories ?? []
     const subcategoryIds = new Set(subcategories.map(subcategory => subcategory.id))
+    const hasEntryParents = cat.template.some(field => !field.removed && field.type === 'child-of')
+    const entryDepths = new Map<string, number>()
+    const orderEntryGroup = (entries: LoreEntry[]) => (hasEntryParents
+      ? orderLoreEntriesByParent(entries)
+      : entries.map(entry => ({ entry, depth: 0 }))).map(item => {
+      entryDepths.set(item.entry.id, item.depth)
+      return item.entry
+    })
     const entryGroups = [
       ...orderLoreSubcategories(subcategories).map(subcategory => ({
         id: subcategory.id,
         name: subcategory.name || 'Unnamed subcategory',
         color: subcategory.color ?? 'default',
         depth: subcategory.depth,
-        entries: sortedEntries.filter(entry => entry.subcategoryId === subcategory.id),
+        entries: orderEntryGroup(sortedEntries.filter(entry => entry.subcategoryId === subcategory.id)),
       })),
       {
         id: '__uncategorized__',
         name: 'Uncategorized',
         color: 'default',
         depth: 0,
-        entries: sortedEntries.filter(entry => !entry.subcategoryId || !subcategoryIds.has(entry.subcategoryId)),
+        entries: orderEntryGroup(sortedEntries.filter(entry => !entry.subcategoryId || !subcategoryIds.has(entry.subcategoryId))),
       },
     ].filter(group => group.entries.length > 0)
     const activeFields = cat.template.filter(f => !f.removed)
@@ -225,6 +236,7 @@ export function LoreBookView({
           <>
             <span className="lorebook-breadcrumb-separator" aria-hidden="true">/</span>
             <button type="button" className="lorebook-breadcrumb-btn" onClick={navigateLoreCategory}>
+              {getLoreCategoryIconClass(cat.icon) && <i className={`ti ${getLoreCategoryIconClass(cat.icon)} lorebook-category-icon`} aria-hidden="true" />}
               {cat.name || 'Unnamed category'}
             </button>
           </>
@@ -342,6 +354,16 @@ export function LoreBookView({
                 if (field.type === 'header') {
                   return field.label ? <div key={field.id} className="lorebook-entry-header">{field.label}</div> : null
                 }
+                if (field.type === 'derived') {
+                  const derivedValue = getDerivedLoreValue(cat.template, field, activeEntry)
+                  if (!derivedValue.trim()) return null
+                  return (
+                    <div key={field.id} className="lorebook-entry-field">
+                      {field.label && <span className="lorebook-field-label">{field.label}</span>}
+                      <span className="lorebook-field-value">{renderProjectExpressions(derivedValue, variables)}</span>
+                    </div>
+                  )
+                }
                 const value = activeEntry.fields[field.id] ?? ''
                 if (!value) return null
                 if (field.type === 'image') {
@@ -377,6 +399,30 @@ export function LoreBookView({
                       <ul className="lorebook-field-list">
                         {items.map((item, index) => <li key={index}>{renderProjectExpressions(item, variables)}</li>)}
                       </ul>
+                    </div>
+                  )
+                }
+                if (field.type === 'selection') {
+                  const selectedId = getLoreFieldText(value)
+                  const selected = (field.options ?? []).find(option => option.id === selectedId)
+                  if (!selected?.label.trim()) return null
+                  return (
+                    <div key={field.id} className="lorebook-entry-field">
+                      {field.label && <span className="lorebook-field-label">{field.label}</span>}
+                      <span className="lorebook-field-value">{selected.label}</span>
+                    </div>
+                  )
+                }
+                if (field.type === 'multi-selection') {
+                  const selectedIds = getLoreListItems(value)
+                  const labels = (field.options ?? [])
+                    .filter(option => selectedIds.includes(option.id) && option.label.trim())
+                    .map(option => option.label)
+                  if (labels.length === 0) return null
+                  return (
+                    <div key={field.id} className="lorebook-entry-field">
+                      {field.label && <span className="lorebook-field-label">{field.label}</span>}
+                      <span className="lorebook-field-value">{labels.join(', ')}</span>
                     </div>
                   )
                 }
@@ -489,7 +535,8 @@ export function LoreBookView({
                 return (
                   <div
                     key={entry.id}
-                    className="lorebook-entry-card lorebook-entry-list-item"
+                    className={`lorebook-entry-card lorebook-entry-list-item${(entryDepths.get(entry.id) ?? 0) > 0 ? ' child-entry' : ''}`}
+                    style={{ '--lore-entry-depth': entryDepths.get(entry.id) ?? 0 } as CSSProperties}
                     role="button"
                     tabIndex={0}
                     onClick={() => openEntry(entry.id)}
@@ -651,6 +698,7 @@ export function LoreBookView({
                 className="lorebook-category-btn"
                 onClick={() => { onActiveCategoryChange(cat.id); onLoreViewChange('category') }}
               >
+                {getLoreCategoryIconClass(cat.icon) && <i className={`ti ${getLoreCategoryIconClass(cat.icon)} lorebook-category-icon`} aria-hidden="true" />}
                 <span>{cat.name.toUpperCase()}</span>
                 <button
                   className="lorebook-category-edit-icon"
