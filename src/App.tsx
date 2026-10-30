@@ -234,6 +234,9 @@ import type {
   TreeNode,
 } from './types'
 import './App.css'
+import './facelift.css'
+import { CommandPalette } from './components/CommandPalette'
+import { getBinderWordCounts } from './binderWordCounts'
 
 // #endregion
 
@@ -321,6 +324,7 @@ export default function App() {
   // ── Editor stats and trash state ──
   const [wordCount, setWordCount] = useState(0)
   const [, setCharCount] = useState(0)
+  const [, refreshEditorState] = useState(0)
   const [trashItems, setTrashItems] = useState<TrashItem[]>([])
   const [trashOpen, setTrashOpen] = useState(false)
   const [trashExpanded, setTrashExpanded] = useState<Set<string>>(new Set())
@@ -824,6 +828,7 @@ export default function App() {
       // const json = editor.getJSON()
       const html = editor.getHTML().replace(/<mark data-fnr="" class="fnr-highlight">(.*?)<\/mark>/g, '$1')
       bodyHtmlRef.current = html
+      refreshEditorState(version => version + 1)
       const tabs = sceneTabsRef.current.map((tab, index) =>
         index === activeTabIndexRef.current ? { ...tab, content: html } : tab)
       setWordCount(countLatestRevisionWords(tabs))
@@ -1627,6 +1632,7 @@ export default function App() {
       const serialized = serializeSceneTabs(updatedTabs, rawFileRef.current)
       rawFileRef.current = serialized
       recordSceneWordDelta(node.file, countLatestRevisionWords(updatedTabs))
+      outlineWordCountsRef.current.set(node.id, countLatestRevisionWords(updatedTabs))
       writeSceneFile(projectRef.current.path, node.file, serialized)
       setLoreBacklinkVersion(version => version + 1)
     }
@@ -2065,6 +2071,7 @@ export default function App() {
     )
     sceneTabsRef.current = updatedTabs
     setSceneTabs(updatedTabs)
+    if (activeIdRef.current !== null) outlineWordCountsRef.current.set(activeIdRef.current, countLatestRevisionWords(updatedTabs))
     // Serialize and save immediately
     if (activeIdRef.current !== null && projectRef.current) {
       const node = findNode(treeRef.current, activeIdRef.current)
@@ -2078,6 +2085,7 @@ export default function App() {
     }
     // Load new tab
     setActiveTabIndex(index)
+    activeTabIndexRef.current = index
     if (activeIdRef.current !== null) {
       sceneActiveTabRef.current[activeIdRef.current] = index
     }
@@ -6818,7 +6826,7 @@ export default function App() {
         saveLabelTimer.current = null
       }, 1200)
     }
-    if (nextWorkspace === 'revision' && revisionActiveId !== null) {
+    if (nextWorkspace === 'revision' && revisionActiveId !== null && revisionActiveId === activeIdRef.current) {
       const tabs = sceneTabsRef.current
       const updatedTabs = tabs.map((t, i) =>
         i === activeTabIndex ? { ...t, content: bodyHtmlRef.current } : t
@@ -7401,10 +7409,29 @@ export default function App() {
   // Render: main editor workspace
   // ───────────────────────────────────────────────────────────────────────────
   return (
-    <div id="app" className={focusMode ? 'editor-focus-mode' : undefined} style={{ position: 'relative' }}>
-      <div id="menubar">
-        <MenuBarMenus />
-        <span className="project-title">{reviewPackage ? `${project.name} - Review Mode` : project.name}</span>
+    <div id="app" className={focusMode ? 'app-workspace editor-focus-mode' : 'app-workspace'} style={{ position: 'relative' }}>
+      <div id="menubar" className="workspace-header">
+        <span className="project-title" title={project.name}><i className="ti ti-feather" aria-hidden="true" />{project.name}{reviewPackage && <span className="review-mode-label">Review</span>}</span>
+        <div className="app-menus"><MenuBarMenus /></div>
+        <nav className="workspace-navigation" aria-label="Workspaces">
+          {([
+            ['editor', 'Write', 'ti-pencil'],
+            ['revision', 'Revise', 'ti-message-circle'],
+            ['outline', 'Outline', 'ti-list-details'],
+            ['lorebook', 'Lore', 'ti-book-2'],
+            ['mindmap', 'Canvas', 'ti-git-fork'],
+            ['atlas', 'Atlas', 'ti-map-2'],
+          ] as const).filter(([id]) => !reviewPackage || id === 'outline' || id === 'revision').map(([id, label, icon]) => (
+            <button key={id} type="button" className={workspace === id ? 'active' : ''} aria-label={label} aria-current={workspace === id ? 'page' : undefined} onClick={() => handleWorkspaceChange(id)} title={label}>
+              <i className={`ti ${icon}`} aria-hidden="true" /><span>{label}</span>
+            </button>
+          ))}
+        </nav>
+        <CommandPalette items={[
+          ...(['editor', 'revision', 'outline', 'lorebook', 'mindmap', 'atlas'] as const).filter(id => !reviewPackage || id === 'revision' || id === 'outline').map(id => ({ id: `workspace-${id}`, label: ({ editor: 'Write', revision: 'Revise', outline: 'Outline', lorebook: 'Lore', mindmap: 'Canvas', atlas: 'Atlas' })[id], detail: 'Workspace', icon: 'ti-layout', run: () => handleWorkspaceChange(id) })),
+          ...outlineRows.filter(row => row.type === 'scene').map(row => ({ id: `scene-${row.id}`, label: row.title, detail: `${row.chapter} · Scene · ${row.metadata?.synopsis || ''}`, icon: 'ti-file-text', run: () => { if (reviewPackage) { setWorkspace('revision'); void selectRevisionDoc(row.id) } else { void openOutlineScene(row.id) } } })),
+          ...(!reviewPackage ? loreBook.categories.flatMap(category => category.entries.map(entry => ({ id: `lore-${category.id}-${entry.id}`, label: entry.name, detail: `${category.name} · Lore · ${entry.keywords?.join(' ') || ''}`, icon: 'ti-book-2', run: () => openLoreEntryById(category.id, entry.id) }))) : []),
+        ]} />
         <span style={{ fontSize: 11, color: 'var(--text-muted)', paddingRight: 8 }}>
           {reviewPackage ? (reviewPackageBusy ? 'working...' : '') : saveLabel}
         </span>
@@ -7412,6 +7439,7 @@ export default function App() {
       </div>
 
       <BinderSidebar
+        sceneWordCounts={getBinderWordCounts(outlineRows, isTrashPreview ? null : activeId, wordCount, outlineWordCountsRef.current)}
         binderOpen={binderOpen}
         workspace={workspace}
         projectOpen={!!project}
@@ -7531,7 +7559,6 @@ export default function App() {
       />
       <WorkspaceShell
         workspace={workspace}
-        onWorkspaceChange={handleWorkspaceChange}
         reviewMode={Boolean(reviewPackage)}
         editorState={{
           showEditor,
@@ -7701,6 +7728,9 @@ export default function App() {
         />
       )}
       <InspectorPanel
+        loreBook={loreBook}
+        sceneContent={editor?.getHTML() ?? ''}
+        onOpenLoreEntry={openLoreEntryById}
         open={inspectorOpen && !reviewPackage}
         panelLockActive={sidePanelsLocked}
         workspace={workspace}
@@ -7717,7 +7747,7 @@ export default function App() {
           if (open && sidePanelsLocked) return
           setInspectorOpen(open)
         }}
-        onSceneMetadataChange={updateActiveSceneMetadata}
+        onSceneMetadataChange={(metadata, sceneId) => updateSceneMetadata(sceneId, metadata)}
         onQuickNoteChange={val => {
           quickNoteRef.current = val
           if (quickNoteTimerRef.current) clearTimeout(quickNoteTimerRef.current)

@@ -187,7 +187,6 @@ type RevisionWorkspaceState = {
 
 type WorkspaceShellProps = {
   workspace: Workspace
-  onWorkspaceChange: (workspace: Workspace) => void
   reviewMode?: boolean
   editorState: EditorWorkspaceState
   tabState: TabWorkspaceState
@@ -288,7 +287,6 @@ function EditorSplitView({
 
 export function WorkspaceShell({
   workspace,
-  onWorkspaceChange,
   reviewMode = false,
   editorState,
   tabState,
@@ -429,57 +427,6 @@ export function WorkspaceShell({
 
   return (
     <div id="editor-area" className={focusMode && workspace === 'editor' ? 'focus-mode' : undefined}>
-      <div id="workspace-bar">
-        {!reviewMode && <button
-          className={workspace === 'editor' ? 'active' : ''}
-          onClick={() => onWorkspaceChange('editor')}
-          title="Editor"
-        >
-          <i className="ti ti-edit" aria-hidden="true" />
-          <span>Editor</span>
-        </button>}
-        <button
-          className={workspace === 'revision' ? 'active' : ''}
-          onClick={() => onWorkspaceChange('revision')}
-          title="Revision"
-        >
-          <i className="ti ti-message-circle" aria-hidden="true" />
-          <span>Revision</span>
-        </button>
-        <button
-          className={workspace === 'outline' ? 'active' : ''}
-          onClick={() => onWorkspaceChange('outline')}
-          title="Outline"
-        >
-          <i className="ti ti-list-details" aria-hidden="true" />
-          <span>Outline</span>
-        </button>
-        {!reviewMode && <button
-          className={workspace === 'lorebook' ? 'active' : ''}
-          onClick={() => onWorkspaceChange('lorebook')}
-          title="Lore Book"
-        >
-          <i className="ti ti-book-2" aria-hidden="true" />
-          <span>Lore Book</span>
-        </button>}
-        {!reviewMode && <button
-          className={workspace === 'mindmap' ? 'active' : ''}
-          onClick={() => onWorkspaceChange('mindmap')}
-          title="Canvas"
-        >
-          <i className="ti ti-git-fork" aria-hidden="true" />
-          <span>Canvas</span>
-        </button>}
-        {!reviewMode && <button
-          className={workspace === 'atlas' ? 'active' : ''}
-          onClick={() => onWorkspaceChange('atlas')}
-          title="Atlas"
-        >
-          <i className="ti ti-map-2" aria-hidden="true" />
-          <span>Atlas</span>
-        </button>}
-      </div>
-
       {workspace === 'editor' && showEditor && (
         <SceneTabBar
           tabs={sceneTabs}

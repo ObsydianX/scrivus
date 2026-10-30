@@ -50,6 +50,14 @@ function buildExcerpt(text: string, index: number, length: number) {
   return `${start > 0 ? '...' : ''}${text.slice(start, end).trim()}${end < text.length ? '...' : ''}`
 }
 
+export function countLoreMentions(text: string, name: string, keywords?: string[]) {
+  const pattern = buildTermPattern(getEntryTerms(name, keywords))
+  if (!pattern) return 0
+  let count = 0
+  while (pattern.exec(text)) count += 1
+  return count
+}
+
 export async function buildLoreBacklinks(
   projectPath: string,
   tree: TreeNode[],

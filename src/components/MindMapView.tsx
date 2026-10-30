@@ -602,7 +602,7 @@ export function MindMapView({
   return (
     <div id="mindmap-view">
       <div id="mindmap-toolbar">
-        <div className="mindmap-toolbar-group">
+        <div className="mindmap-toolbar-group canvas-tool-dock" role="toolbar" aria-label="Canvas tools">
           <button className="mindmap-tool-btn mindmap-tool-btn-primary" onClick={addNode} title="Add node">
             <i className="ti ti-plus" aria-hidden="true" />
             <span>Node</span>
@@ -613,18 +613,9 @@ export function MindMapView({
           <button className="mindmap-tool-btn" onClick={duplicateSelectedNode} disabled={!selectedNode} title="Duplicate selected node">
             <i className="ti ti-copy" aria-hidden="true" />
           </button>
-          <button className="mindmap-tool-btn" onClick={() => updateViewport({ x: 0, y: 0, zoom: 1 })} title="Reset view">
-            <i className="ti ti-focus-centered" aria-hidden="true" />
-          </button>
-          <button className="mindmap-tool-btn" onClick={() => updateViewport({ ...viewport, zoom: viewport.zoom + 0.1 })} title="Zoom in">
-            <i className="ti ti-zoom-in" aria-hidden="true" />
-          </button>
-          <button className="mindmap-tool-btn" onClick={() => updateViewport({ ...viewport, zoom: viewport.zoom - 0.1 })} title="Zoom out">
-            <i className="ti ti-zoom-out" aria-hidden="true" />
-          </button>
         </div>
 
-        <div className="mindmap-toolbar-group mindmap-toolbar-group-wide">
+        <div className={`mindmap-toolbar-group mindmap-toolbar-group-wide canvas-properties${selectedNode || selectedEdge ? ' has-selection' : ''}`} role="region" aria-label="Selection properties">
           {selectedNode ? (
             <>
               <label className="mindmap-field mindmap-field-short">
@@ -686,6 +677,7 @@ export function MindMapView({
             </>
           ) : selectedEdge ? (
             <input
+              aria-label="Connection label"
               className="mindmap-edge-label-input"
               value={selectedEdge.label ?? ''}
               placeholder="Connection label"
@@ -701,6 +693,12 @@ export function MindMapView({
       </div>
 
       <div id="mindmap-canvas-wrap">
+        <div className="canvas-zoom-dock" role="toolbar" aria-label="Canvas view controls">
+          <button className="mindmap-tool-btn" onClick={() => updateViewport({ ...viewport, zoom: viewport.zoom - 0.1 })} title="Zoom out" aria-label="Zoom out"><i className="ti ti-minus" aria-hidden="true" /></button>
+          <span>{Math.round(viewport.zoom * 100)}%</span>
+          <button className="mindmap-tool-btn" onClick={() => updateViewport({ ...viewport, zoom: viewport.zoom + 0.1 })} title="Zoom in" aria-label="Zoom in"><i className="ti ti-plus" aria-hidden="true" /></button>
+          <button className="mindmap-tool-btn" onClick={() => updateViewport({ x: 0, y: 0, zoom: 1 })} title="Reset view" aria-label="Reset view"><i className="ti ti-focus-centered" aria-hidden="true" /></button>
+        </div>
         {map.nodes.length === 0 && (
           <div className="mindmap-empty">
             <i className="ti ti-git-fork" aria-hidden="true" />

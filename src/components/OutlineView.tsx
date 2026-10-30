@@ -16,6 +16,10 @@ function getFolderLabel(row: OutlineRow) {
 
 const PACING_COLLAPSED_KEY = 'scrivus-outline-pacing-collapsed'
 const PACING_LEGEND: SceneStatus[] = ['draft', 'revised', 'needsWork', 'complete']
+const OPTIONAL_COLUMNS = ['comments', 'pov', 'location', 'timeline', 'tags'] as const
+type OptionalColumn = typeof OPTIONAL_COLUMNS[number]
+const COLUMN_LABELS: Record<OptionalColumn, string> = { comments: 'Comments', pov: 'POV', location: 'Location', timeline: 'Timeline', tags: 'Tags' }
+const COLUMNS_KEY = 'scrivus-outline-columns'
 
 function formatReadingTime(words: number, wpm: number) {
   const minutes = words / Math.max(1, wpm)
@@ -156,6 +160,32 @@ export function OutlineView({
   readOnly?: boolean
 }) {
   const sceneRows = rows.filter(row => row.type === 'scene')
+  const [columns, setColumns] = useState<OptionalColumn[]>(() => {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(COLUMNS_KEY) ?? 'null')
+      if (Array.isArray(saved)) return OPTIONAL_COLUMNS.filter(column => saved.includes(column))
+    } catch { /* Fall back to columns containing manuscript data. */ }
+    return OPTIONAL_COLUMNS.filter(column => sceneRows.some(row => column === 'comments'
+      ? (sceneCommentCounts[row.id] ?? 0) > 0
+      : column === 'tags' ? Boolean(row.metadata?.tags.length) : Boolean(row.metadata?.[column])))
+  })
+  const toggleColumn = (column: OptionalColumn) => {
+    const next = columns.includes(column) ? columns.filter(item => item !== column) : [...columns, column]
+    setColumns(next)
+    try { localStorage.setItem(COLUMNS_KEY, JSON.stringify(next)) } catch { /* Session choice still applies. */ }
+  }
+  const maxSceneWords = Math.max(1, ...sceneRows.map(row => row.wordCount))
+  const folderStatuses = new Map<number, Record<SceneStatus, number>>()
+  const ancestors: OutlineRow[] = []
+  for (const row of rows) {
+    while (ancestors.length && ancestors[ancestors.length - 1].depth >= row.depth) ancestors.pop()
+    if (row.type === 'chapter') {
+      folderStatuses.set(row.id, { draft: 0, revised: 0, needsWork: 0, complete: 0 })
+      ancestors.push(row)
+    } else if (row.status !== 'inProgress') {
+      for (const ancestor of ancestors) folderStatuses.get(ancestor.id)![row.status]++
+    }
+  }
   const folderRows = rows.filter(row => row.type === 'chapter')
   const folderIds = folderRows.map(row => row.id)
   const actCount = folderRows.filter(row => row.role === 'act').length
@@ -189,6 +219,7 @@ export function OutlineView({
     <div id="outline-view">
       <div id="outline-header">
         <div className="outline-title-group">
+          <h1>Outline</h1>
           <div className="outline-folder-actions" aria-label="Folder display controls">
             <button
               className="outline-tool-btn"
@@ -216,6 +247,10 @@ export function OutlineView({
           <span title="Scenes">{sceneCount.toLocaleString()} {sceneCount === 1 ? 'scene' : 'scenes'}</span>
           <span title="Manuscript words">{manuscriptWordCount.toLocaleString()} words</span>
         </div>
+        <details className="outline-columns">
+          <summary><i className="ti ti-columns" aria-hidden="true" /> Columns</summary>
+          <div>{OPTIONAL_COLUMNS.map(column => <label key={column}><input type="checkbox" checked={columns.includes(column)} onChange={() => toggleColumn(column)} />{COLUMN_LABELS[column]}</label>)}</div>
+        </details>
       </div>
 
       {rows.length === 0 ? (
@@ -225,19 +260,24 @@ export function OutlineView({
         </div>
       ) : (
         <div className="outline-table-wrap">
-          <table className="outline-table">
+          <table className="outline-table" style={{ minWidth: 800 + columns.length * 120 }}>
+            <colgroup>
+              <col style={{ width: 240 }} /><col /><col style={{ width: 145 }} />
+              {columns.includes('comments') && <col style={{ width: 90 }} />}
+              <col style={{ width: 190 }} />
+              {OPTIONAL_COLUMNS.filter(column => column !== 'comments' && columns.includes(column)).map(column => <col key={column} style={{ width: 140 }} />)}
+            </colgroup>
             <thead>
               <tr>
                 <th>Scene</th>
-                <th>Chapter</th>
-                <th>Status</th>
-                <th>Comments</th>
-                <th>Words</th>
-                <th>POV</th>
-                <th>Location</th>
-                <th>Timeline</th>
-                <th>Tags</th>
                 <th>Synopsis</th>
+                <th>Status</th>
+                {columns.includes('comments') && <th>Comments</th>}
+                <th>Length</th>
+                {columns.includes('pov') && <th>POV</th>}
+                {columns.includes('location') && <th>Location</th>}
+                {columns.includes('timeline') && <th>Timeline</th>}
+                {columns.includes('tags') && <th>Tags</th>}
               </tr>
             </thead>
             <tbody>
@@ -269,14 +309,19 @@ export function OutlineView({
                       }
                     </div>
                   </td>
-                  <td>{row.type === 'chapter' ? getFolderLabel(row) : row.chapter}</td>
+                  <td className="outline-synopsis">{row.type === 'chapter'
+                    ? `${Object.values(folderStatuses.get(row.id)!).reduce((sum, count) => sum + count, 0)} scenes`
+                    : row.metadata?.synopsis || <span className="outline-missing-synopsis">No synopsis yet</span>}</td>
                   <td>
-                    {row.type === 'scene' && !readOnly
+                    {row.type === 'chapter' ? <div className="outline-status-summary" aria-label={PACING_LEGEND.map(status => `${folderStatuses.get(row.id)![status]} ${STATUS_LABELS[status]}`).join(', ')} title={PACING_LEGEND.map(status => `${folderStatuses.get(row.id)![status]} ${STATUS_LABELS[status]}`).join(' · ')}>
+                      {PACING_LEGEND.filter(status => folderStatuses.get(row.id)![status] > 0).map(status => <span key={status} className={`pacing-status-${status}`} style={{ flexGrow: folderStatuses.get(row.id)![status] }} />)}
+                    </div> : !readOnly
                       ? <label className={`outline-status-select-wrap outline-status-${row.status}`}>
                         <RevisionStatusIcon status={row.status} className="outline-status-icon" />
                         <select
                           className="outline-status-select"
                           value={row.status}
+                          aria-label={`Status for ${row.title}`}
                           onChange={e => onSceneStatusChange(row.id, e.target.value as SceneStatus)}
                           onClick={e => e.stopPropagation()}
                           onDoubleClick={e => e.stopPropagation()}
@@ -293,7 +338,7 @@ export function OutlineView({
                       </span>
                     }
                   </td>
-                  <td className="outline-comments-cell">
+                  {columns.includes('comments') && <td className="outline-comments-cell">
                     {row.type === 'scene'
                       ? (() => {
                         const count = sceneCommentCounts[row.id] ?? 0
@@ -312,13 +357,12 @@ export function OutlineView({
                       })()
                       : <span className="outline-comments-zero">-</span>
                     }
-                  </td>
-                  <td className="outline-number">{row.wordCount.toLocaleString()}</td>
-                  <td>{row.metadata?.pov || '—'}</td>
-                  <td>{row.metadata?.location || '—'}</td>
-                  <td>{row.metadata?.timeline || '—'}</td>
-                  <td>{row.metadata?.tags.length ? row.metadata.tags.join(', ') : '—'}</td>
-                  <td className="outline-synopsis">{row.metadata?.synopsis || '—'}</td>
+                  </td>}
+                  <td className="outline-number"><div className="outline-length"><span>{row.wordCount.toLocaleString()}</span>{row.type === 'scene' && <span className="outline-length-track" aria-hidden="true"><span style={{ width: `${(row.wordCount / maxSceneWords) * 100}%` }} /></span>}</div></td>
+                  {columns.includes('pov') && <td>{row.metadata?.pov || '—'}</td>}
+                  {columns.includes('location') && <td>{row.metadata?.location || '—'}</td>}
+                  {columns.includes('timeline') && <td>{row.metadata?.timeline || '—'}</td>}
+                  {columns.includes('tags') && <td>{row.metadata?.tags.length ? row.metadata.tags.join(', ') : '—'}</td>}
                 </tr>
               ))}
             </tbody>

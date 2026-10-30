@@ -43,7 +43,103 @@ type LoreBookViewProps = {
   onOpenPresence: () => void
 }
 
-export function LoreBookView({
+export function LoreBookView(props: LoreBookViewProps) {
+  const [query, setQuery] = useState('')
+  const [subcategoryFilter, setSubcategoryFilter] = useState<{ categoryId: string; id: string } | null>(null)
+  const categories = [...props.loreBook.categories].sort((a, b) => a.name.localeCompare(b.name))
+  const category = categories.find(item => item.id === props.activeCategoryId) ?? categories[0]
+  const subcategoryId = subcategoryFilter?.categoryId === category?.id ? subcategoryFilter?.id : null
+  const search = query.trim().toLocaleLowerCase()
+
+  // Keep creation and template actions scoped to the category shown on first opening.
+  useEffect(() => {
+    if (category && props.activeCategoryId !== category.id) props.onActiveCategoryChange(category.id)
+  }, [category?.id, props.activeCategoryId, props.onActiveCategoryChange])
+
+  const selectEntry = (cat: LoreCategory, entry: LoreEntry) => {
+    props.onActiveCategoryChange(cat.id)
+    props.onExpandedEntryChange(entry.id)
+    props.onLoreViewChange('entry')
+  }
+  const selectCategory = (cat: LoreCategory, subcategory: string | null = null) => {
+    setQuery('')
+    setSubcategoryFilter(subcategory ? { categoryId: cat.id, id: subcategory } : null)
+    props.onActiveCategoryChange(cat.id)
+    const entry = [...cat.entries].sort((a, b) => a.name.localeCompare(b.name))
+      .find(item => !subcategory || item.subcategoryId === subcategory)
+    props.onExpandedEntryChange(entry?.id ?? null)
+    props.onLoreViewChange(entry ? 'entry' : 'category')
+  }
+  const pinned = categories.flatMap(cat => cat.entries.filter(entry => entry.pinned).map(entry => ({ cat, entry })))
+  const groups = (search ? categories : category ? [category] : []).flatMap(cat => {
+    const subcategories = orderLoreSubcategories(cat.subcategories ?? [])
+    return [...subcategories.map(sub => ({ id: sub.id, name: sub.name, depth: sub.depth, color: sub.color ?? 'default' })),
+      { id: '', name: 'Uncategorized', depth: 0, color: 'default' }].map(sub => ({
+      ...sub,
+      cat,
+      entries: [...cat.entries].filter(entry => {
+        const groupId = subcategories.some(item => item.id === entry.subcategoryId) ? entry.subcategoryId : ''
+        return groupId === sub.id && (search
+          ? `${formatLoreEntryName(entry)} ${entry.keywords?.join(' ') ?? ''}`.toLocaleLowerCase().includes(search)
+          : !subcategoryId || entry.subcategoryId === subcategoryId)
+      }).sort((a, b) => a.name.localeCompare(b.name)),
+    })).filter(group => group.entries.length)
+  })
+  const selectedEntry = category?.entries.find(entry => entry.id === props.expandedEntryId)
+    ?? (props.loreView === 'home' ? category?.entries[0] : undefined)
+
+  return (
+    <div className="lore-workspace">
+      <nav className="lore-category-rail" aria-label="Lore Book categories">
+        <label className="lore-search"><i className="ti ti-search" aria-hidden="true" />
+          <input aria-label="Search all lore by name or keyword" placeholder="Search all lore…" value={query} onChange={event => setQuery(event.target.value)} />
+        </label>
+        {pinned.length > 0 && <section><h2>Pinned</h2>{pinned.map(({ cat, entry }) => (
+          <button key={`${cat.id}:${entry.id}`} className="lore-nav-row" onClick={() => selectEntry(cat, entry)}>
+            <i className="ti ti-star" aria-hidden="true" /><span>{formatLoreEntryName(entry)}</span>
+          </button>
+        ))}</section>}
+        <section><h2>Categories</h2>{categories.map(cat => (
+          <div key={cat.id}>
+            <button className={`lore-nav-row${cat.id === category?.id && !subcategoryId ? ' active' : ''}`} aria-current={cat.id === category?.id && !subcategoryId ? 'true' : undefined} onClick={() => selectCategory(cat)}>
+              <i className={`ti ${getLoreCategoryIconClass(cat.icon) || 'ti-folder'}`} aria-hidden="true" /><span>{cat.name || 'Unnamed category'}</span><small>{cat.entries.length}</small>
+            </button>
+            {cat.id === category?.id && orderLoreSubcategories(cat.subcategories ?? []).map(sub => (
+              <button key={sub.id} className={`lore-nav-row lore-subcategory${subcategoryId === sub.id ? ' active' : ''}`} style={{ paddingLeft: 28 + sub.depth * 12 }} aria-current={subcategoryId === sub.id ? 'true' : undefined} onClick={() => selectCategory(cat, sub.id)}>
+                <span>{sub.name || 'Unnamed subcategory'}</span><small>{cat.entries.filter(entry => entry.subcategoryId === sub.id).length}</small>
+              </button>
+            ))}
+          </div>
+        ))}
+          <button className="lore-nav-row lore-add" onClick={props.onNewCategory}><i className="ti ti-plus" aria-hidden="true" />New category</button>
+        </section>
+        <section><h2>Views</h2><button className="lore-nav-row" onClick={props.onOpenPresence}><i className="ti ti-chart-bar" aria-hidden="true" />Presence chart</button></section>
+      </nav>
+      <section className="lore-entry-browser" aria-label="Lore entries">
+        <header><h2>{search ? 'Search results' : category?.name || 'Entries'}</h2>{category && <>
+          <button title="Category overview and hierarchy" aria-label="Category overview and hierarchy" onClick={() => { props.onExpandedEntryChange(null); props.onLoreViewChange('category') }}><i className="ti ti-settings" aria-hidden="true" /></button>
+          <button title="Add entry" aria-label="Add entry" onClick={props.onNewEntry}><i className="ti ti-plus" aria-hidden="true" /></button>
+        </>}</header>
+        <div className="lore-entry-browser-scroll">
+          {groups.map(group => <section key={`${group.cat.id}:${group.id}`} className={`lorebook-entry-group-${group.color}`}>
+            <h3>{search ? `${group.cat.name} / ` : ''}{group.name}</h3>
+            {group.entries.map(entry => <button key={entry.id} className={`lore-entry-row${entry.id === selectedEntry?.id && group.cat.id === category?.id ? ' active' : ''}`} aria-current={entry.id === selectedEntry?.id && group.cat.id === category?.id ? 'true' : undefined} onClick={() => selectEntry(group.cat, entry)}>
+              <span className="lore-entry-initial" aria-hidden="true">{formatLoreEntryName(entry).slice(0, 1)}</span>
+              <span><strong>{formatLoreEntryName(entry)}</strong><small>{entry.keywords?.join(' · ') || group.name}</small></span>
+              {entry.pinned && <i className="ti ti-star-filled" aria-label="Pinned" />}
+            </button>)}
+          </section>)}
+          {!groups.length && <p className="lore-browser-empty">{search ? 'No entries match this search.' : 'No entries here yet. Add an entry to get started.'}</p>}
+        </div>
+      </section>
+      <div className="lore-detail-pane">
+        <LoreBookContent {...props} activeCategoryId={category?.id ?? null} expandedEntryId={selectedEntry?.id ?? null} loreView={category ? selectedEntry ? 'entry' : 'category' : 'home'} />
+      </div>
+    </div>
+  )
+}
+
+function LoreBookContent({
   loreBook,
   loreView,
   activeCategoryId,

@@ -111,7 +111,7 @@ export function AtlasView({
   const [mapRenameDraft, setMapRenameDraft] = useState('')
   const [mapSelectorMenu, setMapSelectorMenu] = useState<{ x: number; y: number } | null>(null)
   const [markerSearchQuery, setMarkerSearchQuery] = useState('')
-  const [markerListMode, setMarkerListMode] = useState<'alpha' | 'type'>('alpha')
+  const [markerListMode, setMarkerListMode] = useState<'alpha' | 'type'>('type')
   const [loreActionMenu, setLoreActionMenu] = useState<{ type: 'link' | 'create'; x: number; y: number; markerId: string } | null>(null)
 
   const activeMap = atlas.maps.find(map => map.id === atlas.activeMapId) ?? atlas.maps[0] ?? null
@@ -438,6 +438,9 @@ export function AtlasView({
   return (
     <div id="atlas-view">
       <div id="atlas-toolbar">
+        <details className="atlas-map-settings">
+          <summary><i className="ti ti-settings" aria-hidden="true" />Map settings</summary>
+          <div className="atlas-settings-content">
         <div className="atlas-toolbar-group">
           <button className="atlas-tool-btn atlas-tool-btn-primary" onClick={startImport} title="Import map">
             <i className="ti ti-photo-plus" aria-hidden="true" />
@@ -450,20 +453,25 @@ export function AtlasView({
           <button className="atlas-tool-btn" onClick={() => activeMap && setConfirmDeleteMap(activeMap)} disabled={!activeMap} title="Delete active map">
             <i className="ti ti-trash" aria-hidden="true" />
           </button>
-          <button className="atlas-tool-btn" onClick={() => activeMap && updateViewport({ x: activeMap.imageWidth / 2, y: activeMap.imageHeight / 2, zoom: 1 })} disabled={!activeMap} title="Reset view">
-            <i className="ti ti-focus-centered" aria-hidden="true" />
-          </button>
-          <button className="atlas-tool-btn" onClick={() => activeMap && updateViewport({ ...activeMap.viewport, zoom: activeMap.viewport.zoom + 0.12 })} disabled={!activeMap} title="Zoom in">
-            <i className="ti ti-zoom-in" aria-hidden="true" />
-          </button>
-          <button className="atlas-tool-btn" onClick={() => activeMap && updateViewport({ ...activeMap.viewport, zoom: activeMap.viewport.zoom - 0.12 })} disabled={!activeMap} title="Zoom out">
-            <i className="ti ti-zoom-out" aria-hidden="true" />
-          </button>
         </div>
+          {activeMap && (
+            <label className="atlas-map-overlay-picker">
+              <span>Sampling</span>
+              <select
+                value={activeMap.imageSampling}
+                onChange={event => updateActiveMap({ imageSampling: event.target.value as AtlasImageSampling })}
+              >
+                {SAMPLING_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+          )}
+          </div>
+        </details>
 
-        <div className="atlas-toolbar-group atlas-toolbar-group-wide">
+        <div className={`atlas-toolbar-group atlas-toolbar-group-wide atlas-place-card${selectedMarker ? ' has-selection' : ''}`} role="region" aria-label="Selected place">
           {selectedMarker && (
             <>
+              <header><span>{getMarkerKind(selectedMarker.kind).label}</span><h2>{selectedMarker.label || 'Unnamed place'}</h2><button className="atlas-tool-btn" title="Close place card" aria-label="Close place card" onClick={() => setSelectedMarkerId(null)}><i className="ti ti-x" aria-hidden="true" /></button></header>
               <label className="atlas-field">
                 <span>Label</span>
                 <input value={selectedMarker.label} onChange={event => updateMarker(selectedMarker.id, { label: event.target.value })} />
@@ -519,25 +527,12 @@ export function AtlasView({
         </div>
       </div>
 
-      <div
-        ref={viewportRef}
-        id="atlas-canvas"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        onContextMenu={handleContextMenu}
-      >
-        {!activeMap && (
-          <div className="atlas-empty">
-            <i className="ti ti-map-2" aria-hidden="true" />
-            <p>No atlas maps yet</p>
-            <button className="atlas-tool-btn atlas-tool-btn-primary" onClick={startImport}>
-              <i className="ti ti-photo-plus" aria-hidden="true" />
-              <span>Import Map</span>
-            </button>
-          </div>
-        )}
+      {activeMap && <div className="atlas-view-dock" role="toolbar" aria-label="Map view controls">
+        <button className="atlas-tool-btn" onClick={() => updateViewport({ ...activeMap.viewport, zoom: activeMap.viewport.zoom - 0.12 })} title="Zoom out" aria-label="Zoom out"><i className="ti ti-minus" aria-hidden="true" /></button>
+        <span>{Math.round(activeMap.viewport.zoom * 100)}%</span>
+        <button className="atlas-tool-btn" onClick={() => updateViewport({ ...activeMap.viewport, zoom: activeMap.viewport.zoom + 0.12 })} title="Zoom in" aria-label="Zoom in"><i className="ti ti-plus" aria-hidden="true" /></button>
+        <button className="atlas-tool-btn" onClick={() => updateViewport({ x: activeMap.imageWidth / 2, y: activeMap.imageHeight / 2, zoom: 1 })} title="Reset view" aria-label="Reset view"><i className="ti ti-focus-centered" aria-hidden="true" /></button>
+      </div>}
 
         <div
           className="atlas-map-overlay"
@@ -582,17 +577,7 @@ export function AtlasView({
               </select>
             )}
           </label>
-          {activeMap && (
-            <label className="atlas-map-overlay-picker">
-              <span>Sampling</span>
-              <select
-                value={activeMap.imageSampling}
-                onChange={event => updateActiveMap({ imageSampling: event.target.value as AtlasImageSampling })}
-              >
-                {SAMPLING_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-            </label>
-          )}
+
           {activeMap && (
             <section className="atlas-marker-list-panel" aria-label="Marker search list">
               <div className="atlas-marker-list-header">
@@ -650,7 +635,61 @@ export function AtlasView({
               </div>
             </section>
           )}
+        {activeMap && usedMarkerKinds.length > 0 && (
+          <div
+            className="atlas-marker-legend"
+            data-gradient-include=""
+            aria-label="Marker category visibility"
+            onPointerDown={event => event.stopPropagation()}
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="atlas-marker-legend-title">
+              <i className="ti ti-map-pin" aria-hidden="true" />
+              <span>Markers</span>
+            </div>
+            <div className="atlas-marker-toggles">
+              {usedMarkerKinds.map(kind => {
+                const hidden = activeHiddenMarkerKinds.has(kind.value)
+                return (
+                  <button
+                    key={kind.value}
+                    type="button"
+                    className={`atlas-marker-toggle${hidden ? '' : ' active'}`}
+                    onClick={() => toggleMarkerKindVisibility(kind.value)}
+                    title={`${hidden ? 'Show' : 'Hide'} ${kind.label} markers`}
+                    aria-pressed={!hidden}
+                  >
+                    <i className={`ti ${kind.icon}`} aria-hidden="true" />
+                    <span>{kind.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
         </div>
+
+      <div
+        ref={viewportRef}
+        id="atlas-canvas"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onContextMenu={handleContextMenu}
+      >
+        {!activeMap && (
+          <div className="atlas-empty">
+            <i className="ti ti-map-2" aria-hidden="true" />
+            <p>No atlas maps yet</p>
+            <button className="atlas-tool-btn atlas-tool-btn-primary" onClick={startImport}>
+              <i className="ti ti-photo-plus" aria-hidden="true" />
+              <span>Import Map</span>
+            </button>
+          </div>
+        )}
+
+
 
         {activeMap && imageSrc && (
           <div className="atlas-map-layer" data-gradient-exclude="" style={{ transform: mapTransform, width: activeMap.imageWidth, height: activeMap.imageHeight }}>
@@ -692,38 +731,7 @@ export function AtlasView({
           </div>
         )}
 
-        {activeMap && usedMarkerKinds.length > 0 && (
-          <div
-            className="atlas-marker-legend"
-            data-gradient-include=""
-            aria-label="Marker category visibility"
-            onPointerDown={event => event.stopPropagation()}
-            onClick={event => event.stopPropagation()}
-          >
-            <div className="atlas-marker-legend-title">
-              <i className="ti ti-map-pin" aria-hidden="true" />
-              <span>Markers</span>
-            </div>
-            <div className="atlas-marker-toggles">
-              {usedMarkerKinds.map(kind => {
-                const hidden = activeHiddenMarkerKinds.has(kind.value)
-                return (
-                  <button
-                    key={kind.value}
-                    type="button"
-                    className={`atlas-marker-toggle${hidden ? '' : ' active'}`}
-                    onClick={() => toggleMarkerKindVisibility(kind.value)}
-                    title={`${hidden ? 'Show' : 'Hide'} ${kind.label} markers`}
-                    aria-pressed={!hidden}
-                  >
-                    <i className={`ti ${kind.icon}`} aria-hidden="true" />
-                    <span>{kind.label}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
+
 
         {mapSelectorMenu && activeMap && (
           <div

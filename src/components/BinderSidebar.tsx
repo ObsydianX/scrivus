@@ -1,4 +1,4 @@
-import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react'
 import type { DropTarget, Manuscript, SceneStatus, TreeNode } from '../types'
 import { normalizeSceneMetadata } from '../constants'
 import { RevisionStatusIcon } from './RevisionStatusIcon'
@@ -38,6 +38,7 @@ function getFolderRole(node: TreeNode) {
 }
 
 type BinderSidebarProps = {
+  sceneWordCounts: Record<number, number>
   binderOpen: boolean
   panelLockActive: boolean
   workspace: 'editor' | 'revision' | 'outline' | 'lorebook' | 'mindmap' | 'atlas'
@@ -123,6 +124,7 @@ function InlineRenameInput({ id, label, onRenameNode, onRenamingIdChange }: Inli
 }
 
 export function BinderSidebar({
+  sceneWordCounts,
   binderOpen,
   panelLockActive,
   workspace,
@@ -174,6 +176,18 @@ export function BinderSidebar({
   onPreviewTrashScene,
   onRestoreFromTrash,
 }: BinderSidebarProps) {
+  const folderStatuses = useMemo(() => {
+    const result = new Map<number, Map<SceneStatus, number>>()
+    const collect = (node: TreeNode): Map<SceneStatus, number> => {
+      if (node.type === 'doc') return new Map([[normalizeSceneMetadata(node.metadata).status, 1]])
+      const counts = new Map<SceneStatus, number>()
+      node.children.forEach(child => collect(child).forEach((count, status) => counts.set(status, (counts.get(status) ?? 0) + count)))
+      result.set(node.id, counts)
+      return counts
+    }
+    tree.forEach(collect)
+    return result
+  }, [tree])
   const rowPointerDownRef = useRef<{ id: number; x: number; y: number } | null>(null)
 
   const renderTrashItem = (sidecarId: string, node: TreeNode, originalFolderId: number, depth: number, manuscript?: Manuscript): React.ReactNode => {
@@ -379,7 +393,9 @@ export function BinderSidebar({
                 onRenamingIdChange={onRenamingIdChange}
               />
               : <span className="item-label">
-                <span className="item-label-text">{n.label}</span>
+                <span className="binder-label-content"><span className="item-label-text">{n.label}</span>
+                  {n.type === 'doc' && n.id === activeId && normalizeSceneMetadata(n.metadata).synopsis && <span className="binder-scene-preview" title={normalizeSceneMetadata(n.metadata).synopsis}>{normalizeSceneMetadata(n.metadata).synopsis}</span>}
+                </span>
                 {n.type === 'doc' && n.id === bookmarkedSceneId && (
                   <span className="binder-bookmark" title="Last opened scene" aria-label="Last opened scene">
                     <i className="ti ti-bookmark" aria-hidden="true" />
@@ -387,6 +403,11 @@ export function BinderSidebar({
                 )}
               </span>
             }
+            {n.type === 'doc' && n.id === activeId && sceneWordCounts[n.id] !== undefined && renamingId !== n.id && <span className="binder-word-count" title={`${sceneWordCounts[n.id].toLocaleString()} words`}>{sceneWordCounts[n.id].toLocaleString()}</span>}
+            {n.type === 'folder' && !isRootContainer && sceneWordCounts[n.id] !== undefined && renamingId !== n.id && <span className="binder-word-count binder-chapter-word-count" title={`${sceneWordCounts[n.id].toLocaleString()} words`}>{sceneWordCounts[n.id].toLocaleString()}</span>}
+            {n.type === 'folder' && !n.open && !isRootContainer && (folderStatuses.get(n.id)?.size ?? 0) > 0 && <span className="binder-folder-statuses" title={Array.from(folderStatuses.get(n.id) ?? []).map(([status, count]) => `${count} ${STATUS_LABELS[status]}`).join(' · ')}>
+              {(['draft', 'revised', 'needsWork', 'complete'] as const).filter(status => folderStatuses.get(n.id)?.has(status)).map(status => <RevisionStatusIcon key={status} status={status} label={`${folderStatuses.get(n.id)?.get(status)} ${STATUS_LABELS[status]}`} />)}
+            </span>}
             {n.type === 'folder' && (
               <span className="item-actions" onClick={e => e.stopPropagation()}>
                 {workspace === 'editor' && !reviewMode && (
