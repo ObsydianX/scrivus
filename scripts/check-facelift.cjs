@@ -13,10 +13,14 @@ async function main() {
         import { getBinderWordCounts } from './src/binderWordCounts'
         import { countLoreMentions } from './src/loreBacklinks'
         import { getLoreEntryIconPath } from './src/loreImages'
+        import { orderLoreSubcategories } from './src/loreSubcategories'
         import { parseSceneTabs } from './src/sceneTabs'
         import { getActiveComments, RevisionCommentsPane } from './src/components/RevisionView'
         import { OutlineView } from './src/components/OutlineView'
         import { LoreBookView } from './src/components/LoreBookView'
+        import { MindMapView } from './src/components/MindMapView'
+        import { getCanvasBounds, fitCanvasBounds } from './src/components/CanvasMinimap'
+        import { normalizeMindMap } from './src/constants'
 
         const rows = [
           { id: 1, type: 'chapter', role: 'act', title: 'Act 1', depth: 0, wordCount: 1000, status: 'inProgress' },
@@ -31,6 +35,16 @@ async function main() {
         assert.equal(getBinderWordCounts(rows, 4, 300, saved)[2], 1200)
         assert.equal(getBinderWordCounts(rows, null, 9999, saved)[1], 1250)
         assert.deepEqual(getBinderWordCounts([], null, 0), {})
+        const subcategories = [
+          { id: 'normal', name: 'Normal Creature' },
+          { id: 'mini', name: 'Mini-boss Creature' },
+          { id: 'boss', name: 'Boss Creature' },
+          { id: 'zchild', name: 'Z child', parentId: 'normal' },
+          { id: 'achild', name: 'A child', parentId: 'normal' },
+        ]
+        assert.deepEqual(orderLoreSubcategories(subcategories).map(s => [s.id, s.depth]), [['normal', 0], ['zchild', 1], ['achild', 1], ['mini', 0], ['boss', 0]])
+        assert.deepEqual(orderLoreSubcategories([subcategories[2], subcategories[1], subcategories[0]]).map(s => s.id), ['boss', 'mini', 'normal'])
+        assert.deepEqual(subcategories.map(s => s.id), ['normal', 'mini', 'boss', 'zchild', 'achild'])
         assert.equal(getBinderWordCounts(rows, 3, 0)[2], 250)
 
         assert.equal(countLoreMentions("Adam met Adam's ally. Madam left.", 'Adam'), 2)
@@ -60,6 +74,34 @@ async function main() {
         assert.deepEqual(getActiveComments(comments, 3, 1, tabs).map(c => c.id), ['two'])
 
         const noop = () => {}
+        const canvasNode = { id: 'idea', x: 0, y: 0, title: '', text: 'An arrival changes everything.', kind: 'idea', color: 'violet' }
+        const canvasProps = { map: { nodes: [canvasNode], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }, scenes: [], onChange: noop, onOpenScene: noop, onCreateSceneFromNode: async () => null }
+        let canvasHtml = renderToStaticMarkup(<MindMapView {...canvasProps} />)
+        assert.ok(canvasHtml.includes('mindmap-node-text-primary'))
+        assert.ok(canvasHtml.includes('An arrival changes everything.'))
+        assert.ok(canvasHtml.includes('Canvas minimap'))
+        assert.ok(canvasHtml.includes('canvas-minimap-viewport'))
+        assert.ok(canvasHtml.includes('Fit all nodes'))
+        assert.ok(!canvasHtml.includes('class="mindmap-node-title"'))
+        canvasHtml = renderToStaticMarkup(<MindMapView {...canvasProps} map={{ ...canvasProps.map, nodes: [{ ...canvasNode, title: 'A long title that wraps over several lines', linkedSceneId: 3, kind: 'scene' }] }} scenes={[{ id: 3, title: 'Scene 3', chapter: 'Chapter 1' }]} />)
+        assert.ok(canvasHtml.includes('class="mindmap-node-title"'))
+        assert.ok(!canvasHtml.includes('Scene / Scene 3'))
+        assert.ok(canvasHtml.includes('Chapter 1 / Scene 3'))
+        canvasHtml = renderToStaticMarkup(<MindMapView {...canvasProps} map={{ ...canvasProps.map, nodes: [{ ...canvasNode, text: '' }] }} />)
+        assert.ok(canvasHtml.includes('Add title…'))
+        const bounds = getCanvasBounds([{ id: 'left', x: -500, y: -200, width: 192, height: 128 }, { id: 'right', x: 900, y: 400, width: 192, height: 256 }])
+        assert.deepEqual(bounds, { x: -500, y: -200, width: 1592, height: 856 })
+        const fit = fitCanvasBounds(bounds, 1200, 800)
+        assert.equal(fit.x, 296)
+        assert.equal(fit.y, 228)
+        assert.ok(bounds.width * fit.zoom <= 1200 - 128)
+        assert.ok(bounds.height * fit.zoom <= 800 - 128)
+        assert.ok(Number.isFinite(fitCanvasBounds(getCanvasBounds([]), 1, 1).zoom))
+        assert.ok(fitCanvasBounds({ x: 0, y: 0, width: 10, height: 10 }, 1200, 800).zoom <= 3)
+        for (const zoom of [.05, .15, .35, 1, 2.5, 3]) {
+          assert.equal(normalizeMindMap({ viewport: { x: 100, y: -200, zoom } }).viewport.zoom, zoom)
+        }
+        assert.equal(normalizeMindMap({ viewport: { x: 0, y: 0, zoom: .001 } }).viewport.zoom, .05)
         const loreEntry = { id: 'adam', name: 'Adam', fields: { bio: 'Freeform biography' } }
         const loreCategory = { id: 'characters', name: 'Characters', template: [{ id: 'bio', type: 'textarea', label: 'Biography', removed: false }], entries: [loreEntry] }
         const loreProps = { loreBook: { categories: [loreCategory] }, loreView: 'entry', activeCategoryId: 'characters', expandedEntryId: 'adam', projectPath: null, variables: {}, onLoreViewChange: noop, onActiveCategoryChange: noop, onExpandedEntryChange: noop, backlinks: { adam: [{ sceneId: 1, sceneTitle: 'Arrival', tabName: 'First Draft', excerpt: 'Adam arrives.', matchCount: 5 }, { sceneId: 2, sceneTitle: 'Departure', tabName: 'First Draft', excerpt: 'Adam leaves.', matchCount: 3 }] } }

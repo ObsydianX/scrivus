@@ -4344,28 +4344,33 @@ button.lore-hierarchy-person {
 }
 
 .modal-box.lore-image-crop-modal {
+  --crop-preview-height: min(52vh, calc(88vh - 280px), 560px);
   width: min(90vw, 960px);
   max-height: 88vh;
-  overflow: visible;
+  padding: 24px;
+  gap: 16px;
+  overflow-y: auto;
 }
 
 .lore-image-crop-stage {
   display: flex;
   justify-content: center;
   min-height: 0;
+  flex-shrink: 0;
+  padding: 12px;
   overflow: hidden;
 }
 
 .lore-image-crop-frame {
   position: relative;
   max-width: 100%;
-  max-height: min(64vh, 680px);
+  max-height: var(--crop-preview-height);
 }
 
 .lore-image-crop-frame img {
   display: block;
   max-width: 100%;
-  max-height: min(64vh, 680px);
+  max-height: var(--crop-preview-height);
   user-select: none;
   -webkit-user-drag: none;
 }

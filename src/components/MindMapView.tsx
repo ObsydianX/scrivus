@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { CanvasMinimap, fitCanvasBounds, getCanvasBounds } from './CanvasMinimap'
+import { MIN_CANVAS_ZOOM, MAX_CANVAS_ZOOM } from '../constants'
 import type {
   MindMap,
   MindMapEdge,
@@ -15,15 +17,12 @@ const NODE_WIDTH = GRID_SIZE * 3
 const MIN_NODE_HEIGHT = GRID_SIZE * 2
 const NODE_TITLE_Y = 18
 const NODE_TITLE_HEIGHT = 20
-const NODE_TEXT_Y = 40
 const NODE_META_HEIGHT = 22
 const NODE_BOTTOM_PADDING = 10
-const MIN_ZOOM = 0.35
-const MAX_ZOOM = 3
 
 const NODE_KINDS: { value: MindMapNodeKind; label: string; icon: string }[] = [
   { value: 'idea', label: 'Idea', icon: 'ti-bulb' },
-  { value: 'scene', label: 'Scene', icon: 'ti-device-tv' },
+  { value: 'scene', label: 'Scene', icon: 'ti-file-text' },
   { value: 'character', label: 'Character', icon: 'ti-user' },
   { value: 'location', label: 'Location', icon: 'ti-map-2' },
   { value: 'note', label: 'Note', icon: 'ti-notes' },
@@ -73,7 +72,7 @@ function createId(prefix: string) {
 }
 
 function clampZoom(zoom: number) {
-  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
+  return Math.min(MAX_CANVAS_ZOOM, Math.max(MIN_CANVAS_ZOOM, zoom))
 }
 
 function snapToGrid(value: number) {
@@ -101,13 +100,21 @@ function countWrappedLines(text: string, charactersPerLine: number) {
 }
 
 function getNodeLayout(node: MindMapNode) {
-  const textLines = countWrappedLines(node.text, 28)
-  const contentTextHeight = Math.max(22, textLines * 15)
-  const contentHeight = NODE_TEXT_Y + contentTextHeight + 7 + NODE_META_HEIGHT + NODE_BOTTOM_PADDING
+  const hasTitle = Boolean(node.title?.trim())
+  const showTitle = hasTitle || !node.text.trim()
+  const titleHeight = showTitle ? Math.max(22, countWrappedLines(node.title ?? '', 20) * 20) : 0
+  const textY = showTitle ? NODE_TITLE_Y + titleHeight + 6 : NODE_TITLE_Y
+  const textLines = countWrappedLines(node.text, hasTitle ? 26 : 21)
+  const contentTextHeight = Math.max(22, textLines * (hasTitle ? 18 : 23))
+  const contentHeight = textY + contentTextHeight + 7 + NODE_META_HEIGHT + NODE_BOTTOM_PADDING
   const height = snapUpToGrid(Math.max(MIN_NODE_HEIGHT, contentHeight))
   const metaY = height - NODE_META_HEIGHT - NODE_BOTTOM_PADDING
-  const textHeight = Math.max(22, metaY - NODE_TEXT_Y - 7)
+  const textHeight = Math.max(22, metaY - textY - 7)
   return {
+    hasTitle,
+    showTitle,
+    titleHeight,
+    textY,
     height,
     textHeight,
     metaY,
@@ -184,6 +191,7 @@ export function MindMapView({
   onCreateSceneFromNode,
 }: MindMapViewProps) {
   const svgRef = useRef<SVGSVGElement | null>(null)
+  const canvasRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<DragState>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(map.nodes[0]?.id ?? null)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
@@ -207,19 +215,22 @@ export function MindMapView({
   const viewX = viewport.x - viewWidth / 2
   const viewY = viewport.y - viewHeight / 2
   const viewBox = `${viewX} ${viewY} ${viewWidth} ${viewHeight}`
+  const minimapNodes = map.nodes.map(node => ({ ...node, width: NODE_WIDTH, height: getNodeLayout(node).height }))
 
   useEffect(() => {
-    const svg = svgRef.current
-    if (!svg) return
+    const canvas = canvasRef.current
+    if (!canvas) return
     const updateSize = () => {
+      const bounds = canvas.getBoundingClientRect()
+      if (bounds.width <= 0 || bounds.height <= 0) return
       setCanvasSize({
-        width: Math.max(1, svg.clientWidth),
-        height: Math.max(1, svg.clientHeight),
+        width: bounds.width,
+        height: bounds.height,
       })
     }
     updateSize()
     const observer = new ResizeObserver(updateSize)
-    observer.observe(svg)
+    observer.observe(canvas)
     return () => observer.disconnect()
   }, [])
 
@@ -692,12 +703,14 @@ export function MindMapView({
         </div>
       </div>
 
-      <div id="mindmap-canvas-wrap">
+      <div id="mindmap-canvas-wrap" ref={canvasRef}>
+        <CanvasMinimap nodes={minimapNodes} edges={map.edges} viewport={viewport} view={{ x: viewX, y: viewY, width: viewWidth, height: viewHeight }} selectedId={selectedNodeId} onNavigate={updateViewport} />
         <div className="canvas-zoom-dock" role="toolbar" aria-label="Canvas view controls">
           <button className="mindmap-tool-btn" onClick={() => updateViewport({ ...viewport, zoom: viewport.zoom - 0.1 })} title="Zoom out" aria-label="Zoom out"><i className="ti ti-minus" aria-hidden="true" /></button>
           <span>{Math.round(viewport.zoom * 100)}%</span>
           <button className="mindmap-tool-btn" onClick={() => updateViewport({ ...viewport, zoom: viewport.zoom + 0.1 })} title="Zoom in" aria-label="Zoom in"><i className="ti ti-plus" aria-hidden="true" /></button>
           <button className="mindmap-tool-btn" onClick={() => updateViewport({ x: 0, y: 0, zoom: 1 })} title="Reset view" aria-label="Reset view"><i className="ti ti-focus-centered" aria-hidden="true" /></button>
+          <button className="mindmap-tool-btn" disabled={!map.nodes.length} onClick={() => updateViewport(fitCanvasBounds(getCanvasBounds(minimapNodes), canvasSize.width, canvasSize.height))} title="Fit all nodes" aria-label="Fit all nodes"><i className="ti ti-maximize" aria-hidden="true" /></button>
         </div>
         {map.nodes.length === 0 && (
           <div className="mindmap-empty">
@@ -809,6 +822,7 @@ export function MindMapView({
                 <g
                   key={node.id}
                   className={className}
+                  style={{ '--canvas-node-accent': node.color === 'default' ? 'var(--border-soft)' : `var(--mindmap-node-${node.color})` } as CSSProperties}
                   transform={`translate(${node.x} ${node.y})`}
                   onDoubleClick={() => node.linkedSceneId && onOpenScene(node.linkedSceneId)}
                   onContextMenu={event => {
@@ -837,19 +851,19 @@ export function MindMapView({
                     rx="7"
                     onPointerDown={event => handleNodePointerDown(event, node)}
                   />
-                  <foreignObject x="12" y={NODE_TITLE_Y} width="166" height={NODE_TITLE_HEIGHT}>
-                    <input
+                  {layout.showTitle && <foreignObject x="12" y={NODE_TITLE_Y} width="166" height={layout.titleHeight}>
+                    <textarea
                       className="mindmap-node-title"
                       value={node.title ?? ''}
-                      placeholder="Node title"
+                      placeholder="Add title…"
                       aria-label="Mind map node title"
                       onPointerDown={event => event.stopPropagation()}
                       onChange={event => updateNode(node.id, { title: event.target.value })}
                     />
-                  </foreignObject>
-                  <foreignObject x="12" y={NODE_TEXT_Y} width="166" height={layout.textHeight}>
+                  </foreignObject>}
+                  <foreignObject x="12" y={layout.textY} width="166" height={layout.textHeight}>
                     <textarea
-                      className="mindmap-node-text"
+                      className={`mindmap-node-text${layout.hasTitle ? '' : ' mindmap-node-text-primary'}`}
                       value={node.text}
                       placeholder="Notes"
                       aria-label="Mind map node notes"
@@ -860,7 +874,7 @@ export function MindMapView({
                   <foreignObject className="mindmap-node-meta-foreign" x="12" y={layout.metaY} width="116" height={NODE_META_HEIGHT}>
                     <div className="mindmap-node-meta">
                       <i className={`ti ${kind.icon}`} aria-hidden="true" />
-                      <span>{kind.label}{linkedScene ? ` / ${linkedScene.title}` : ''}</span>
+                      <span title={linkedScene ? getSceneLabel(linkedScene) : kind.label}>{linkedScene ? node.kind === 'scene' ? linkedScene.title : `${kind.label} · ${linkedScene.title}` : kind.label}</span>
                     </div>
                   </foreignObject>
                   <foreignObject className="mindmap-node-action-foreign" x="132" y={layout.actionY} width="56" height="26">

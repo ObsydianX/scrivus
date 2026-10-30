@@ -35,7 +35,8 @@ export function orderLoreSubcategories(subcategories: LoreSubcategory[]): Ordere
     siblings.push(subcategory)
     byParent.set(subcategory.parentId, siblings)
   })
-  byParent.forEach(siblings => siblings.sort((a, b) => a.name.localeCompare(b.name)))
+  // Array order is the user's saved drag-and-drop order. Keep that order among
+  // siblings while displaying descendants immediately below their parent.
 
   const ordered: OrderedLoreSubcategory[] = []
   const appendChildren = (parentId: string | undefined, depth: number) => {

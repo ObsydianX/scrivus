@@ -109,7 +109,8 @@ export function LoreBookView(props: LoreBookViewProps) {
               <i className={`ti ${getLoreCategoryIconClass(cat.icon) || 'ti-folder'}`} aria-hidden="true" /><span>{cat.name || 'Unnamed category'}</span><small>{cat.entries.length}</small>
             </button>
             {cat.id === category?.id && orderLoreSubcategories(cat.subcategories ?? []).map(sub => (
-              <button key={sub.id} className={`lore-nav-row lore-subcategory${subcategoryId === sub.id ? ' active' : ''}`} style={{ paddingLeft: 28 + sub.depth * 12 }} aria-current={subcategoryId === sub.id ? 'true' : undefined} onClick={() => selectCategory(cat, sub.id)}>
+              <button key={sub.id} className={`lore-nav-row lore-subcategory lore-subcategory-color-${sub.color ?? 'default'}${subcategoryId === sub.id ? ' active' : ''}`} style={{ paddingLeft: 28 + sub.depth * 12 }} aria-current={subcategoryId === sub.id ? 'true' : undefined} onClick={() => selectCategory(cat, sub.id)}>
+                <span className="lore-subcategory-dot" aria-hidden="true" />
                 <span>{sub.name || 'Unnamed subcategory'}</span><small>{cat.entries.filter(entry => entry.subcategoryId === sub.id).length}</small>
               </button>
             ))}
@@ -128,7 +129,7 @@ export function LoreBookView(props: LoreBookViewProps) {
         </>}</header>
         <div className="lore-entry-browser-scroll">
           {groups.map(group => <section key={`${group.cat.id}:${group.id}`} className={`lorebook-entry-group-${group.color}`}>
-            <h3>{search ? `${group.cat.name} / ` : ''}{group.name}</h3>
+            <h3><span className="lore-subcategory-dot" aria-hidden="true" />{search ? `${group.cat.name} / ` : ''}{group.name}</h3>
             {group.entries.map(entry => <button key={entry.id} className={`lore-entry-row${entry.id === selectedEntry?.id && group.cat.id === category?.id ? ' active' : ''}`} aria-current={entry.id === selectedEntry?.id && group.cat.id === category?.id ? 'true' : undefined} onClick={() => selectEntry(group.cat, entry)}>
               <LoreEntryIcon category={group.cat} entry={entry} projectPath={props.projectPath} />
               <span><strong>{formatLoreEntryName(entry)}</strong><small>{entry.keywords?.join(' · ') || group.name}</small></span>
