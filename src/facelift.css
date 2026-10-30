@@ -383,8 +383,13 @@
   padding: 18px 12px 70px;
   background: var(--panel-bg);
   box-shadow: none;
-  overflow-y: auto;
+  overflow: hidden;
 }
+#atlas-view > .atlas-map-overlay > .atlas-map-overlay-picker { flex-shrink: 0; }
+.atlas-map-overlay .atlas-marker-list-panel { flex: 1; min-height: 80px; }
+.atlas-map-overlay .atlas-marker-list-header,
+.atlas-map-overlay .atlas-marker-search-input { flex-shrink: 0; }
+.atlas-map-overlay .atlas-marker-list { flex: 1; max-height: none; min-height: 0; }
 .atlas-map-settings { position: absolute; left: 12px; bottom: 16px; width: 220px; z-index: 6; color: var(--text-soft); font-size: 12px; }
 .atlas-map-settings summary { cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; border: 1px solid var(--border-soft); border-radius: 7px; background: var(--panel-bg); list-style: none; }
 .atlas-settings-content { position: absolute; bottom: calc(100% + 6px); width: 100%; padding: 12px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--panel-bg); }
@@ -401,6 +406,23 @@
 .atlas-place-card .atlas-toolbar-spacer { display: none; }
 .atlas-view-dock { position: absolute; bottom: 16px; left: calc(50% + 122px); transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 8px; padding: 6px; background: var(--panel-bg); border: 1px solid var(--border-soft); border-radius: 11px; box-shadow: 0 6px 24px #0003; }
 .atlas-view-dock > span { min-width: 42px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
+#atlas-view .atlas-view-dock { left: auto; right: 16px; transform: none; }
+#atlas-view .atlas-place-card.has-selection { max-height: calc(100% - 280px); }
+.atlas-linked-lore { grid-column: 1 / -1; min-width: 0; border-top: 1px solid var(--border-main); padding-top: 4px; }
+.atlas-linked-lore h3 { margin: 14px 0 9px; display: flex; gap: 8px; color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; font-weight: 500; }
+.atlas-linked-lore-entry { display: flex; width: 100%; gap: 10px; align-items: center; border: 1px solid var(--border-main); border-radius: 7px; background: var(--editor-bg); padding: 10px; color: var(--text-main); text-align: left; cursor: pointer; }
+.atlas-linked-lore-entry > span:last-child { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.atlas-linked-lore-entry strong { font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.atlas-linked-lore-entry small { color: var(--text-muted); font-size: 11px; }
+.atlas-linked-lore-row { display: flex; gap: 6px; align-items: center; }
+.atlas-linked-lore-row .atlas-linked-lore-entry { flex: 1; min-width: 0; }
+.atlas-unlink-lore { flex-shrink: 0; }
+.atlas-unlink-lore:hover { color: var(--danger); }
+.atlas-scene-mention { display: block; width: 100%; padding: 10px; margin-bottom: 7px; background: var(--editor-bg); border: 1px solid var(--border-main); border-radius: 7px; text-align: left; color: var(--text-soft); cursor: pointer; }
+.atlas-scene-mention > strong { display: flex; justify-content: space-between; font-size: 11px; font-weight: 500; gap: 8px; }
+.atlas-scene-mention small { color: var(--text-muted); }
+.atlas-scene-mention > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin-top: 6px; font: 12px/1.5 Georgia, serif; color: var(--text-muted); }
+.atlas-linked-lore p { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
 .atlas-marker-list-header { padding-top: 16px; }
 .atlas-marker-list-item { border-radius: 6px; margin: 4px 0; }
 .atlas-marker-list-item.selected { background: color-mix(in srgb, var(--accent) 14%, var(--panel-bg)); }
@@ -408,8 +430,9 @@
   position: static;
   width: 100%;
   max-width: none;
-  max-height: none;
-  flex-shrink: 0;
+  max-height: min(480px, 45%);
+  flex: 0 1 auto;
+  min-height: 60px;
   margin-top: 18px;
   padding: 12px 0 0;
   border: 0;
@@ -417,7 +440,7 @@
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  overflow: visible;
+  overflow-y: auto;
 }
 .atlas-map-overlay .atlas-marker-toggles { flex-wrap: wrap; }
 .atlas-map-overlay,

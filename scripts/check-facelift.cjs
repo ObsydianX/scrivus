@@ -19,7 +19,9 @@ async function main() {
         import { OutlineView } from './src/components/OutlineView'
         import { LoreBookView } from './src/components/LoreBookView'
         import { MindMapView } from './src/components/MindMapView'
-        import { getCanvasBounds, fitCanvasBounds } from './src/components/CanvasMinimap'
+        import { CanvasMinimap, getCanvasBounds, fitCanvasBounds } from './src/components/CanvasMinimap'
+        import { AtlasView, fitAtlasMap } from './src/components/AtlasView'
+        import atlasFixture from './src/defaultProject/atlas.json'
         import { normalizeMindMap } from './src/constants'
 
         const rows = [
@@ -102,6 +104,19 @@ async function main() {
           assert.equal(normalizeMindMap({ viewport: { x: 100, y: -200, zoom } }).viewport.zoom, zoom)
         }
         assert.equal(normalizeMindMap({ viewport: { x: 0, y: 0, zoom: .001 } }).viewport.zoom, .05)
+        const mapFit = fitAtlasMap(4096, 2048, 1200, 800)
+        assert.equal(mapFit.x, 2048)
+        assert.equal(mapFit.y, 1024)
+        assert.ok(4096 * mapFit.zoom <= 1136)
+        assert.ok(2048 * mapFit.zoom <= 736)
+        assert.ok(Number.isFinite(fitAtlasMap(0, 0, 1, 1).zoom))
+        const overview = renderToStaticMarkup(<CanvasMinimap label='Atlas minimap' storageKey='scrivus-atlas-minimap-collapsed' nodes={[]} edges={[]} selectedId={null} viewport={{x: 2048,y: 1024,zoom: .4}} view={{x: 0,y: 0,width: 4096,height: 2048}} mapImage={{src: 'map.png',width: 4096,height: 2048}} onNavigate={noop} />)
+        assert.ok(overview.includes('Atlas minimap'))
+        assert.ok(overview.includes('href="map.png"'))
+        assert.ok(overview.includes('canvas-minimap-viewport'))
+        const atlasHtml = renderToStaticMarkup(<AtlasView atlas={atlasFixture} projectPath={null} loreBook={{categories:[]}} onChange={noop} />)
+        assert.ok(atlasHtml.includes('Fit map'))
+        assert.ok(!atlasHtml.includes('atlas-scale-readout'))
         const loreEntry = { id: 'adam', name: 'Adam', fields: { bio: 'Freeform biography' } }
         const loreCategory = { id: 'characters', name: 'Characters', template: [{ id: 'bio', type: 'textarea', label: 'Biography', removed: false }], entries: [loreEntry] }
         const loreProps = { loreBook: { categories: [loreCategory] }, loreView: 'entry', activeCategoryId: 'characters', expandedEntryId: 'adam', projectPath: null, variables: {}, onLoreViewChange: noop, onActiveCategoryChange: noop, onExpandedEntryChange: noop, backlinks: { adam: [{ sceneId: 1, sceneTitle: 'Arrival', tabName: 'First Draft', excerpt: 'Adam arrives.', matchCount: 5 }, { sceneId: 2, sceneTitle: 'Departure', tabName: 'First Draft', excerpt: 'Adam leaves.', matchCount: 3 }] } }

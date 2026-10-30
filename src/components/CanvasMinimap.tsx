@@ -16,12 +16,12 @@ export function fitCanvasBounds(bounds: CanvasBounds, width: number, height: num
   return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2, zoom: Math.min(MAX_CANVAS_ZOOM, Math.max(MIN_CANVAS_ZOOM, Math.min(Math.max(1, width - 128) / bounds.width, Math.max(1, height - 128) / bounds.height))) }
 }
 
-export function CanvasMinimap({ nodes, edges, viewport, view, selectedId, onNavigate }: { nodes: MiniNode[]; edges: MindMapEdge[]; viewport: MindMapViewport; view: CanvasBounds; selectedId: string | null; onNavigate: (viewport: MindMapViewport) => void }) {
+export function CanvasMinimap({ nodes, edges, viewport, view, selectedId, onNavigate, mapImage, label = 'Canvas minimap', storageKey = 'scrivus-canvas-minimap-collapsed', className = '' }: { nodes: MiniNode[]; edges: MindMapEdge[]; viewport: MindMapViewport; view: CanvasBounds; selectedId: string | null; onNavigate: (viewport: MindMapViewport) => void; mapImage?: { src: string; width: number; height: number }; label?: string; storageKey?: string; className?: string }) {
   const [collapsed, setCollapsed] = useState(() => {
-    try { return localStorage.getItem('scrivus-canvas-minimap-collapsed') === '1' } catch { return false }
+    try { return localStorage.getItem(storageKey) === '1' } catch { return false }
   })
   const drag = useRef<{ inverse: DOMMatrix; offsetX: number; offsetY: number; bounds: CanvasBounds } | null>(null)
-  const nodeBounds = getCanvasBounds(nodes)
+  const nodeBounds = mapImage ? { x: 0, y: 0, width: mapImage.width, height: mapImage.height } : getCanvasBounds(nodes)
   const x = Math.min(nodeBounds.x, view.x) - 48
   const y = Math.min(nodeBounds.y, view.y) - 48
   const bounds = drag.current?.bounds ?? { x, y, width: Math.max(nodeBounds.x + nodeBounds.width, view.x + view.width) - x + 48, height: Math.max(nodeBounds.y + nodeBounds.height, view.y + view.height) - y + 48 }
@@ -32,13 +32,13 @@ export function CanvasMinimap({ nodes, edges, viewport, view, selectedId, onNavi
     const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(current.inverse)
     onNavigate({ ...viewport, x: point.x + current.offsetX, y: point.y + current.offsetY })
   }
-  return <section className="canvas-minimap" aria-label="Canvas minimap">
+  return <section className={`canvas-minimap ${className}`} aria-label={label}>
     <button className="canvas-minimap-toggle" aria-expanded={!collapsed} onClick={() => setCollapsed(value => {
       const next = !value
-      try { localStorage.setItem('scrivus-canvas-minimap-collapsed', next ? '1' : '0') } catch { /* Session preference still works. */ }
+      try { localStorage.setItem(storageKey, next ? '1' : '0') } catch { /* Session preference still works. */ }
       return next
     })}><i className="ti ti-map" aria-hidden="true" /><span>Minimap</span><i className={`ti ti-chevron-${collapsed ? 'up' : 'down'}`} aria-hidden="true" /></button>
-    {!collapsed && <svg viewBox={`${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`} role="group" aria-label="Board overview. Click or drag to navigate; arrow keys pan." tabIndex={0}
+    {!collapsed && <svg viewBox={`${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`} role="group" aria-label={`${label}. Click or drag to navigate; arrow keys pan.`} tabIndex={0}
       onPointerDown={event => {
         if (event.button !== 0) return
         const matrix = event.currentTarget.getScreenCTM()
@@ -57,6 +57,7 @@ export function CanvasMinimap({ nodes, edges, viewport, view, selectedId, onNavi
         event.preventDefault()
         onNavigate({ ...viewport, x: viewport.x + direction[0] * view.width * .1, y: viewport.y + direction[1] * view.height * .1 })
       }}>
+      {mapImage && <image href={mapImage.src} x={0} y={0} width={mapImage.width} height={mapImage.height} />}
       {edges.map(edge => {
         const from = byId.get(edge.fromNodeId), to = byId.get(edge.toNodeId)
         if (!from || !to) return null

@@ -1,6 +1,9 @@
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { join } from '@tauri-apps/api/path'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { CanvasMinimap } from './CanvasMinimap'
+import { LoreEntryIcon } from './LoreEntryIcon'
+import type { LoreBacklink } from '../loreBacklinks'
 import type {
   Atlas,
   AtlasImageSampling,
@@ -50,6 +53,8 @@ const SAMPLING_OPTIONS: { value: AtlasImageSampling; label: string }[] = [
 ]
 
 type AtlasViewProps = {
+  backlinks?: Record<string, LoreBacklink[]>
+  onOpenScene?: (id: number) => void
   atlas: Atlas
   projectPath: string | null
   onChange: (atlas: Atlas) => void
@@ -77,6 +82,10 @@ function clampZoom(zoom: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
 }
 
+export function fitAtlasMap(imageWidth: number, imageHeight: number, viewWidth: number, viewHeight: number): AtlasViewport {
+  return { x: imageWidth / 2, y: imageHeight / 2, zoom: clampZoom(Math.min(Math.max(1, viewWidth - 64) / Math.max(1, imageWidth), Math.max(1, viewHeight - 64) / Math.max(1, imageHeight))) }
+}
+
 function createId(prefix: string) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
@@ -86,6 +95,8 @@ function formatMegapixels(megapixels: number) {
 }
 
 export function AtlasView({
+  backlinks = {},
+  onOpenScene,
   atlas,
   projectPath,
   onChange,
@@ -159,12 +170,14 @@ export function AtlasView({
     return category && entry ? { category, entry } : null
   }
   const selectedMarkerLoreLink = getLinkedLoreEntry(selectedMarker)
+  const sceneMentions = selectedMarkerLoreLink ? backlinks[selectedMarkerLoreLink.entry.id] ?? [] : []
   useEffect(() => {
     let cancelled = false
     if (!projectPath || !activeMap) {
       setImageSrc(null)
       return
     }
+    setImageSrc(null)
     join(projectPath, activeMap.imagePath).then(path => {
       if (!cancelled) setImageSrc(convertFileSrc(path))
     })
@@ -175,6 +188,7 @@ export function AtlasView({
     const viewport = viewportRef.current
     if (!viewport) return
     const updateSize = () => {
+      if (viewport.clientWidth <= 0 || viewport.clientHeight <= 0) return
       setCanvasSize({
         width: Math.max(1, viewport.clientWidth),
         height: Math.max(1, viewport.clientHeight),
@@ -490,10 +504,20 @@ export function AtlasView({
               </label>
               <div className="atlas-toolbar-spacer" />
               {selectedMarkerLoreLink ? (
-                <button className="atlas-tool-btn" onClick={() => openMarkerLoreEntry(selectedMarker)} title="Open linked Lore Book entry">
-                  <i className="ti ti-book" aria-hidden="true" />
-                  <span>Open Lore</span>
-                </button>
+                <section className="atlas-linked-lore">
+                  <h3>Linked Lore entry</h3>
+                  <div className="atlas-linked-lore-row">
+                  <button className="atlas-linked-lore-entry" onClick={() => openMarkerLoreEntry(selectedMarker)}>
+                    <LoreEntryIcon category={selectedMarkerLoreLink.category} entry={selectedMarkerLoreLink.entry} projectPath={projectPath} />
+                    <span><strong>{selectedMarkerLoreLink.entry.name}</strong><small>{selectedMarkerLoreLink.category.name}</small></span>
+                  </button>
+                  <button type="button" className="atlas-tool-btn atlas-unlink-lore" title="Remove Lore link" aria-label="Remove Lore link" onClick={() => updateMarker(selectedMarker.id, { linkedLoreCategoryId: undefined, linkedLoreEntryId: undefined })}><i className="ti ti-x" aria-hidden="true" /></button>
+                  </div>
+                  <h3>Scene mentions <span>{sceneMentions.length}</span></h3>
+                  {sceneMentions.slice(0, 3).map(link => <button className="atlas-scene-mention" key={link.sceneId} disabled={!onOpenScene} onClick={() => onOpenScene?.(link.sceneId)}><strong>{link.sceneTitle}<small>×{link.matchCount}</small></strong><span>{link.excerpt}</span></button>)}
+                  {!sceneMentions.length && <p>No scene mentions found for this entry.</p>}
+                  {sceneMentions.length > 3 && <button className="atlas-tool-btn" onClick={() => openMarkerLoreEntry(selectedMarker)}>See all {sceneMentions.length} in Lore</button>}
+                </section>
               ) : (
                 <>
                   <button
@@ -532,7 +556,12 @@ export function AtlasView({
         <span>{Math.round(activeMap.viewport.zoom * 100)}%</span>
         <button className="atlas-tool-btn" onClick={() => updateViewport({ ...activeMap.viewport, zoom: activeMap.viewport.zoom + 0.12 })} title="Zoom in" aria-label="Zoom in"><i className="ti ti-plus" aria-hidden="true" /></button>
         <button className="atlas-tool-btn" onClick={() => updateViewport({ x: activeMap.imageWidth / 2, y: activeMap.imageHeight / 2, zoom: 1 })} title="Reset view" aria-label="Reset view"><i className="ti ti-focus-centered" aria-hidden="true" /></button>
+        <button className="atlas-tool-btn" onClick={() => updateViewport(fitAtlasMap(activeMap.imageWidth, activeMap.imageHeight, canvasSize.width, canvasSize.height))} title="Fit map" aria-label="Fit map"><i className="ti ti-maximize" aria-hidden="true" /></button>
       </div>}
+      {activeMap && imageSrc && <CanvasMinimap key={activeMap.id} className="atlas-minimap" label="Atlas minimap" storageKey="scrivus-atlas-minimap-collapsed" mapImage={{ src: imageSrc, width: activeMap.imageWidth, height: activeMap.imageHeight }} nodes={activeMap.markers.filter(marker => !activeHiddenMarkerKinds.has(marker.kind)).map(marker => {
+        const size = Math.max(activeMap.imageWidth, activeMap.imageHeight) / 60
+        return { id: marker.id, x: marker.x - size / 2, y: marker.y - size / 2, width: size, height: size, color: 'cyan' }
+      })} edges={[]} selectedId={selectedMarkerId} viewport={activeMap.viewport} view={{ x: activeMap.viewport.x - canvasSize.width / activeMap.viewport.zoom / 2, y: activeMap.viewport.y - canvasSize.height / activeMap.viewport.zoom / 2, width: canvasSize.width / activeMap.viewport.zoom, height: canvasSize.height / activeMap.viewport.zoom }} onNavigate={updateViewport} />}
 
         <div
           className="atlas-map-overlay"
@@ -752,11 +781,6 @@ export function AtlasView({
           </div>
         )}
 
-        {activeMap && (
-          <div className="atlas-scale-readout" data-gradient-include="">
-            {(activeMap.viewport.zoom * 100).toFixed(0)}%
-          </div>
-        )}
 
         {contextMenu && (
           <div

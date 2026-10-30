@@ -563,6 +563,8 @@ export function WorkspaceShell({
       )}
       {workspace === 'atlas' && (
         <AtlasView
+          backlinks={loreBacklinks}
+          onOpenScene={onLoreOpenScene}
           atlas={atlas}
           projectPath={atlasProjectPath}
           onChange={onAtlasChange}
