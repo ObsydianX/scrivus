@@ -10,7 +10,7 @@ async function main() {
         import assert from 'node:assert/strict'
         import React from 'react'
         import { renderToStaticMarkup } from 'react-dom/server'
-        import { getBinderWordCounts } from './src/binderWordCounts'
+        import { getBinderWordCounts, normalizeBinderWordCountDisplay, showBinderWordCount } from './src/binderWordCounts'
         import { countLoreMentions } from './src/loreBacklinks'
         import { getLoreEntryIconPath } from './src/loreImages'
         import { orderLoreSubcategories } from './src/loreSubcategories'
@@ -37,6 +37,12 @@ async function main() {
         assert.equal(getBinderWordCounts(rows, 4, 300, saved)[2], 1200)
         assert.equal(getBinderWordCounts(rows, null, 9999, saved)[1], 1250)
         assert.deepEqual(getBinderWordCounts([], null, 0), {})
+        assert.equal(normalizeBinderWordCountDisplay(undefined), 'all')
+        assert.equal(normalizeBinderWordCountDisplay('invalid'), 'all')
+        for (const [mode, expected] of Object.entries({ off: [false, false, false, false], acts: [true, false, false, false], chapters: [true, true, false, false], selectedScene: [true, true, true, false], all: [true, true, true, true] })) {
+          assert.equal(normalizeBinderWordCountDisplay(mode), mode)
+          assert.deepEqual([showBinderWordCount(mode, 'act', false), showBinderWordCount(mode, 'chapter', false), showBinderWordCount(mode, 'scene', true), showBinderWordCount(mode, 'scene', false)], expected)
+        }
         const subcategories = [
           { id: 'normal', name: 'Normal Creature' },
           { id: 'mini', name: 'Mini-boss Creature' },
@@ -150,6 +156,10 @@ async function main() {
         assert.ok(html.includes('A difficult arrival'))
         assert.ok(html.includes('<th>POV</th>'))
         assert.ok(!html.includes('<th>Location</th>'))
+        const lockedComments = renderToStaticMarkup(<RevisionCommentsPane panelLockActive activeId={3} comments={comments} activeTabIndex={0} tabs={tabs} activeCommentId={null} pendingComment={null} content='' draftText='' />)
+        assert(lockedComments.includes('class="collapsed"'))
+        assert(lockedComments.includes('disabled=""'))
+        assert(!lockedComments.includes('revision-comment-filters'))
         html = renderToStaticMarkup(<RevisionCommentsPane activeId={3} comments={comments} activeTabIndex={0} tabs={tabs} activeCommentId={null} pendingComment={null} content='' draftText='' />)
         assert.ok(html.includes('Filter comments'))
         assert.ok(html.includes('Check this'))

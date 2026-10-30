@@ -18,3 +18,14 @@ export function getBinderWordCounts(rows: OutlineRow[], activeId: number | null,
   }
   return counts
 }
+
+export type BinderWordCountDisplay = 'off' | 'acts' | 'chapters' | 'selectedScene' | 'all'
+export function normalizeBinderWordCountDisplay(value: unknown): BinderWordCountDisplay {
+  return value === 'off' || value === 'acts' || value === 'chapters' || value === 'selectedScene' ? value : 'all'
+}
+export function showBinderWordCount(mode: BinderWordCountDisplay, kind: 'act' | 'chapter' | 'scene', selected: boolean) {
+  if (mode === 'off') return false
+  if (kind === 'act') return true
+  if (kind === 'chapter') return mode !== 'acts'
+  return mode === 'all' || (mode === 'selectedScene' && selected)
+}

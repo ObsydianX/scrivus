@@ -236,7 +236,7 @@ import type {
 import './App.css'
 import './facelift.css'
 import { CommandPalette } from './components/CommandPalette'
-import { getBinderWordCounts } from './binderWordCounts'
+import { normalizeBinderWordCountDisplay, type BinderWordCountDisplay, getBinderWordCounts } from './binderWordCounts'
 
 // #endregion
 
@@ -542,6 +542,7 @@ export default function App() {
   const DEFAULT_SETTINGS = {
     zoom: 100,
     theme: 'dark' as ThemeId,
+    binderWordCountDisplay: 'all' as BinderWordCountDisplay,
     incrementNewNodeNumbers: false,
     loreLinksEnabled: true,
     typewriterScrolling: false,
@@ -578,6 +579,7 @@ export default function App() {
       return {
         ...parsed,
         theme: normalizeTheme(parsed.theme),
+        binderWordCountDisplay: normalizeBinderWordCountDisplay(parsed.binderWordCountDisplay),
         incrementNewNodeNumbers: parsed.incrementNewNodeNumbers === true,
         loreLinksEnabled: parsed.loreLinksEnabled !== false,
         typewriterScrolling: parsed.typewriterScrolling === true,
@@ -626,6 +628,7 @@ export default function App() {
   // --- ZOOM STATE ---
   const ZOOM_PRESETS = [50, 75, 90, 100, 110, 125, 150, 175, 200, 300];
   const initialSettings = loadSettings()
+  const [binderWordCountDisplay, setBinderWordCountDisplay] = useState(() => initialSettings.binderWordCountDisplay)
   const [compileFrontMatter, setCompileFrontMatter] = useState(() => initialSettings.compile.frontMatter)
   const [compileFormat, setCompileFormat] = useState<CompileFormat>(() => initialSettings.compile.format)
   const [compileIncludeActHeadings, setCompileIncludeActHeadings] = useState(() => initialSettings.compile.includeActHeadings)
@@ -4866,11 +4869,13 @@ export default function App() {
     nextDefaultSceneTargetWordCount: number,
     nextGradientOverlayEnabled: boolean,
     nextGradientOverlayAnimated: boolean,
+    nextBinderWordCountDisplay: BinderWordCountDisplay,
   ) => {
     const normalizedReadingWpm = Math.min(1000, Math.max(50, Math.round(nextReadingWpm)))
     const normalizedDefaultSceneTargetWordCount = Math.min(999999, Math.max(0, Math.round(nextDefaultSceneTargetWordCount)))
     setAppTheme(theme)
     setIncrementNewNodeNumbers(shouldIncrementNewNodeNumbers)
+    setBinderWordCountDisplay(nextBinderWordCountDisplay)
     setReadingWpm(normalizedReadingWpm)
     setDefaultSceneTargetWordCount(normalizedDefaultSceneTargetWordCount)
     setGradientOverlayEnabled(nextGradientOverlayEnabled)
@@ -4878,6 +4883,7 @@ export default function App() {
     saveSettings({
       ...loadSettings(),
       theme,
+      binderWordCountDisplay: nextBinderWordCountDisplay,
       incrementNewNodeNumbers: shouldIncrementNewNodeNumbers,
       readingWpm: normalizedReadingWpm,
       defaultSceneTargetWordCount: normalizedDefaultSceneTargetWordCount,
@@ -7224,6 +7230,7 @@ export default function App() {
       />
       {showPreferences && (
         <PreferencesModal
+          binderWordCountDisplay={binderWordCountDisplay}
           theme={appTheme}
           incrementNewNodeNumbers={incrementNewNodeNumbers}
           readingWpm={readingWpm}
@@ -7439,6 +7446,7 @@ export default function App() {
       </div>
 
       <BinderSidebar
+        wordCountDisplay={binderWordCountDisplay}
         sceneWordCounts={getBinderWordCounts(outlineRows, isTrashPreview ? null : activeId, wordCount, outlineWordCountsRef.current)}
         binderOpen={binderOpen}
         workspace={workspace}
@@ -7706,6 +7714,7 @@ export default function App() {
       />
       {workspace === 'revision' && revisionActiveId !== null && (
         <RevisionCommentsPane
+          panelLockActive={sidePanelsLocked}
           activeId={revisionActiveId}
           comments={revisionComments}
           activeCommentId={revisionActiveCommentId}

@@ -3,6 +3,7 @@ import { convertFileSrc } from '@tauri-apps/api/core'
 import { DEFAULT_BACKUP_SETTINGS, DEFAULT_MANUSCRIPT_ID, DEFAULT_STYLES, normalizeProjectSettings, normalizeProjectStyles } from '../constants'
 import type { BackupSettings, BodyStyle, EditorStyle, Manuscript, ProjectSettings, ProjectStyles, ThemeId } from '../types'
 import { evaluateProjectExpression, isValidProjectVariableName } from '../projectExpressions'
+import { type BinderWordCountDisplay } from '../binderWordCounts'
 import { ProjectVariablesPanel } from './ProjectVariablesPanel'
 
 // What to do with the project cover image when the settings are saved.
@@ -954,6 +955,7 @@ export const THEME_OPTIONS: { id: ThemeId; name: string; swatches: string[] }[] 
 ]
 
 export function PreferencesModal({
+  binderWordCountDisplay,
   theme,
   incrementNewNodeNumbers,
   readingWpm,
@@ -965,6 +967,7 @@ export function PreferencesModal({
 }: {
   theme: ThemeId
   incrementNewNodeNumbers: boolean
+  binderWordCountDisplay: BinderWordCountDisplay
   readingWpm: number
   defaultSceneTargetWordCount: number
   gradientOverlayEnabled: boolean
@@ -977,8 +980,10 @@ export function PreferencesModal({
     defaultSceneTargetWordCount: number,
     gradientOverlayEnabled: boolean,
     gradientOverlayAnimated: boolean,
+    binderWordCountDisplay: BinderWordCountDisplay,
   ) => void
 }) {
+  const [localBinderWordCountDisplay, setLocalBinderWordCountDisplay] = useState(binderWordCountDisplay)
   const [localTheme, setLocalTheme] = useState<ThemeId>(theme)
   const [localIncrementNewNodeNumbers, setLocalIncrementNewNodeNumbers] = useState(incrementNewNodeNumbers)
   const [localReadingWpm, setLocalReadingWpm] = useState(String(readingWpm))
@@ -988,13 +993,14 @@ export function PreferencesModal({
   const [activeTab, setActiveTab] = useState<'general' | 'themes'>('general')
 
   useEffect(() => {
+    setLocalBinderWordCountDisplay(binderWordCountDisplay)
     setLocalTheme(theme)
     setLocalIncrementNewNodeNumbers(incrementNewNodeNumbers)
     setLocalReadingWpm(String(readingWpm))
     setLocalDefaultSceneTargetWordCount(String(defaultSceneTargetWordCount || ''))
     setLocalGradientOverlayEnabled(gradientOverlayEnabled)
     setLocalGradientOverlayAnimated(gradientOverlayAnimated)
-  }, [theme, incrementNewNodeNumbers, readingWpm, defaultSceneTargetWordCount, gradientOverlayEnabled, gradientOverlayAnimated])
+  }, [binderWordCountDisplay, theme, incrementNewNodeNumbers, readingWpm, defaultSceneTargetWordCount, gradientOverlayEnabled, gradientOverlayAnimated])
 
   const MIN_READING_WPM = 50
   const MAX_READING_WPM = 1000
@@ -1078,6 +1084,16 @@ export function PreferencesModal({
                   placeholder="0"
                 />
               </div>
+              <div className="modal-field">
+                <label className="modal-label" htmlFor="binder-word-count-display">Binder word counts</label>
+                <select id="binder-word-count-display" className="modal-input" value={localBinderWordCountDisplay} onChange={e => setLocalBinderWordCountDisplay(e.target.value as BinderWordCountDisplay)}>
+                  <option value="off">Off</option>
+                  <option value="acts">Acts only</option>
+                  <option value="chapters">Acts and chapters</option>
+                  <option value="selectedScene">Acts, chapters, and selected scene</option>
+                  <option value="all">All types</option>
+                </select>
+              </div>
               <label className="modal-checkbox-label">
                 <input
                   type="checkbox"
@@ -1129,7 +1145,7 @@ export function PreferencesModal({
         </div>
         <div className="modal-footer">
           <button className="welcome-btn" onClick={onCancel}>Cancel</button>
-          <button className="welcome-btn" onClick={() => onSave(localTheme, localIncrementNewNodeNumbers, normalizeReadingWpmInput(), normalizeDefaultSceneTargetInput(), localGradientOverlayEnabled, localGradientOverlayAnimated)}>Save</button>
+          <button className="welcome-btn" onClick={() => onSave(localTheme, localIncrementNewNodeNumbers, normalizeReadingWpmInput(), normalizeDefaultSceneTargetInput(), localGradientOverlayEnabled, localGradientOverlayAnimated, localBinderWordCountDisplay)}>Save</button>
         </div>
       </div>
     </div>

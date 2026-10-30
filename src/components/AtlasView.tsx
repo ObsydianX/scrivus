@@ -110,6 +110,7 @@ export function AtlasView({
 }: AtlasViewProps) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<DragState>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
@@ -450,7 +451,7 @@ export function AtlasView({
     : undefined
 
   return (
-    <div id="atlas-view">
+    <div id="atlas-view" className={sidebarOpen ? undefined : 'atlas-sidebar-collapsed'}>
       <div id="atlas-toolbar">
         <details className="atlas-map-settings">
           <summary><i className="ti ti-settings" aria-hidden="true" />Map settings</summary>
@@ -575,6 +576,12 @@ export function AtlasView({
             if (activeMap) setMapSelectorMenu({ x: event.clientX, y: event.clientY })
           }}
         >
+          <div className="atlas-sidebar-toggle">
+            <span>Places</span>
+            <button title={sidebarOpen ? 'Collapse Atlas binder' : 'Expand Atlas binder'} aria-label={sidebarOpen ? 'Collapse Atlas binder' : 'Expand Atlas binder'} aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(open => !open)}>
+              <i className={sidebarOpen ? 'ti ti-chevrons-left' : 'ti ti-chevrons-right'} aria-hidden="true" />
+            </button>
+          </div>
           <label className="atlas-map-overlay-picker">
             <span>Map</span>
             {activeMap && renamingMapId === activeMap.id ? (

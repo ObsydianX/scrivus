@@ -2,6 +2,17 @@
 
 All notable Scrivus changes are tracked here.
 
+## 0.3.4
+
+- Changed: Introduced a cohesive visual facelift across Write, Revise, Outline, Lore, Canvas, and Atlas, with shared workspace navigation, quieter toolbars, and layouts that adapt to smaller windows.
+- New Feature: Added a Ctrl+K command palette for jumping to scenes, Lore entries, and workspaces.
+- Changed: Redesigned the Lore Book around a category binder, grouped entry list, and entry details with a dedicated scene-mentions column. Image fields can now be selected as entry icons using their saved crops, while entries without an icon retain their letter fallback.
+- Changed: Reorganized the Write inspector into Scene, In this scene, and Notes sections, bringing scene metadata and detected Lore mentions together beside the manuscript.
+- Changed: Refined Outline with configurable columns, chapter status summaries, scene-length bars, and the retained manuscript pacing graph.
+- New Feature: Added interactive minimaps to Canvas and Atlas for navigating larger boards and maps, alongside fit controls and streamlined editing tools.
+- Changed: Expanded Atlas place details with linked Lore entries and scene mentions, and added a collapsible map binder.
+- New Feature: Added a Binder word counts preference with options ranging from Off to All types, including selected-scene counts. The setting applies to both Write and Revise and defaults to All types.
+
 ## 0.3.3
 
 - New Feature: Added categorized project variables, expression evaluation, and editor autocomplete for inserting variables while writing.

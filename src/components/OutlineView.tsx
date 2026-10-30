@@ -260,12 +260,12 @@ export function OutlineView({
         </div>
       ) : (
         <div className="outline-table-wrap">
-          <table className="outline-table" style={{ minWidth: 800 + columns.length * 120 }}>
+          <table className="outline-table" style={{ minWidth: 0 }}>
             <colgroup>
-              <col style={{ width: 240 }} /><col /><col style={{ width: 145 }} />
-              {columns.includes('comments') && <col style={{ width: 90 }} />}
-              <col style={{ width: 190 }} />
-              {OPTIONAL_COLUMNS.filter(column => column !== 'comments' && columns.includes(column)).map(column => <col key={column} style={{ width: 140 }} />)}
+              <col style={{ width: `${200 / (8 + columns.length)}%` }} /><col style={{ width: `${300 / (8 + columns.length)}%` }} /><col style={{ width: `${150 / (8 + columns.length)}%` }} />
+              {columns.includes('comments') && <col style={{ width: `${100 / (8 + columns.length)}%` }} />}
+              <col style={{ width: `${150 / (8 + columns.length)}%` }} />
+              {OPTIONAL_COLUMNS.filter(column => column !== 'comments' && columns.includes(column)).map(column => <col key={column} style={{ width: `${100 / (8 + columns.length)}%` }} />)}
             </colgroup>
             <thead>
               <tr>

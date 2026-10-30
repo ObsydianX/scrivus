@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react'
 import type { DropTarget, Manuscript, SceneStatus, TreeNode } from '../types'
 import { normalizeSceneMetadata } from '../constants'
+import { showBinderWordCount, type BinderWordCountDisplay } from '../binderWordCounts'
 import { RevisionStatusIcon } from './RevisionStatusIcon'
 import { ManuscriptActionIcon } from './ManuscriptActionIcon'
 
@@ -38,6 +39,7 @@ function getFolderRole(node: TreeNode) {
 }
 
 type BinderSidebarProps = {
+  wordCountDisplay: BinderWordCountDisplay
   sceneWordCounts: Record<number, number>
   binderOpen: boolean
   panelLockActive: boolean
@@ -124,6 +126,7 @@ function InlineRenameInput({ id, label, onRenameNode, onRenamingIdChange }: Inli
 }
 
 export function BinderSidebar({
+  wordCountDisplay,
   sceneWordCounts,
   binderOpen,
   panelLockActive,
@@ -403,8 +406,8 @@ export function BinderSidebar({
                 )}
               </span>
             }
-            {n.type === 'doc' && n.id === activeId && sceneWordCounts[n.id] !== undefined && renamingId !== n.id && <span className="binder-word-count" title={`${sceneWordCounts[n.id].toLocaleString()} words`}>{sceneWordCounts[n.id].toLocaleString()}</span>}
-            {n.type === 'folder' && !isRootContainer && sceneWordCounts[n.id] !== undefined && renamingId !== n.id && <span className="binder-word-count binder-chapter-word-count" title={`${sceneWordCounts[n.id].toLocaleString()} words`}>{sceneWordCounts[n.id].toLocaleString()}</span>}
+            {n.type === 'doc' && showBinderWordCount(wordCountDisplay, 'scene', n.id === activeId) && sceneWordCounts[n.id] !== undefined && renamingId !== n.id && <span className="binder-word-count" title={`${sceneWordCounts[n.id].toLocaleString()} words`}>{sceneWordCounts[n.id].toLocaleString()}</span>}
+            {n.type === 'folder' && !isRootContainer && showBinderWordCount(wordCountDisplay, folderRole === 'act' ? 'act' : 'chapter', n.id === activeId) && sceneWordCounts[n.id] !== undefined && renamingId !== n.id && <span className="binder-word-count binder-chapter-word-count" title={`${sceneWordCounts[n.id].toLocaleString()} words`}>{sceneWordCounts[n.id].toLocaleString()}</span>}
             {n.type === 'folder' && !n.open && !isRootContainer && (folderStatuses.get(n.id)?.size ?? 0) > 0 && <span className="binder-folder-statuses" title={Array.from(folderStatuses.get(n.id) ?? []).map(([status, count]) => `${count} ${STATUS_LABELS[status]}`).join(' · ')}>
               {(['draft', 'revised', 'needsWork', 'complete'] as const).filter(status => folderStatuses.get(n.id)?.has(status)).map(status => <RevisionStatusIcon key={status} status={status} label={`${folderStatuses.get(n.id)?.get(status)} ${STATUS_LABELS[status]}`} />)}
             </span>}

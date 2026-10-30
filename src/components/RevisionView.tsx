@@ -33,6 +33,7 @@ type RevisionViewProps = {
 }
 
 type RevisionCommentsPaneProps = {
+  panelLockActive?: boolean
   activeId: number | null
   comments: RevisionComment[]
   activeCommentId: string | null
@@ -289,6 +290,7 @@ export function RevisionView({
 }
 
 export function RevisionCommentsPane({
+  panelLockActive = false,
   activeId,
   comments,
   activeCommentId,
@@ -306,7 +308,17 @@ export function RevisionCommentsPane({
   onUnresolveComment,
   onDeleteCommentRequest,
 }: RevisionCommentsPaneProps) {
-  const [commentsOpen, setCommentsOpen] = useState(true)
+  const [commentsExpanded, setCommentsOpen] = useState(true)
+  const [narrowWindow, setNarrowWindow] = useState(() => typeof window !== 'undefined' && window.innerWidth < 960)
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 959px)')
+    const update = () => setNarrowWindow(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  const commentsLocked = panelLockActive || narrowWindow
+  const commentsOpen = commentsExpanded && !commentsLocked
   const [commentFilter, setCommentFilter] = useState<'all' | 'open' | 'resolved'>('all')
   const activeComments = getActiveComments(comments, activeId, activeTabIndex, tabs)
   const openCount = activeComments.filter(comment => !comment.resolved).length
@@ -318,7 +330,7 @@ export function RevisionCommentsPane({
       <div id="revision-comments-header">
         <div style={{ display: 'flex', flexDirection: commentsOpen ? 'row' : 'column', gap: 2, alignItems: 'center' }}>
           {!commentsOpen && (
-            <button title="Expand comments" onClick={() => setCommentsOpen(true)}>
+            <button disabled={commentsLocked} title={commentsLocked ? 'Comments unavailable at this window width' : 'Expand comments'} onClick={() => { if (!commentsLocked) setCommentsOpen(true) }}>
               <i className="ti ti-chevrons-left" aria-hidden="true" />
             </button>
           )}

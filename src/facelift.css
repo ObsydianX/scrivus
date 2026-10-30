@@ -468,9 +468,9 @@
 .revision-reading-toolbar > span:first-child { display: inline-flex; align-items: center; gap: 7px; color: var(--accent); }
 #revision-wrap { padding-top: 44px; padding-bottom: 64px; }
 #revision-comments-pane.collapsed { min-width: 36px; }
-#revision-comments-header { min-height: 48px; padding: 10px 14px; border-bottom: 1px solid var(--border-main); }
+#revision-comments-header { min-height: 48px; padding: 10px 14px; border-bottom: 0; }
 #revision-comments-pane.collapsed #revision-comments-header { padding: 10px 4px; }
-.revision-comment-filters { display: flex; gap: 4px; padding: 12px; border-bottom: 1px solid var(--border-main); }
+.revision-comment-filters { display: flex; gap: 4px; padding: 12px; border-bottom: 0; }
 .revision-comment-filters button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-muted); font: inherit; font-size: 11px; cursor: pointer; }
 .revision-comment-filters button[aria-pressed='true'] { background: var(--panel-bg-2); border-color: var(--border-soft); color: var(--text-main); }
 .revision-comment-filters button span { font-variant-numeric: tabular-nums; opacity: .75; }
@@ -485,7 +485,7 @@
 .revision-comment-actions { flex-wrap: wrap; gap: 6px; }
 .revision-btn { border-radius: 6px; }
 
-.inspector-sections { display: flex; gap: 3px; padding: 6px 10px; border-bottom: 1px solid var(--border-main); flex-shrink: 0; }
+.inspector-sections { display: flex; gap: 3px; padding: 6px 10px; border-bottom: 0; flex-shrink: 0; }
 .inspector-sections button { flex: 1; padding: 9px 3px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted); font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }
 .inspector-sections button[aria-pressed='true'] { border-bottom-color: var(--accent); color: var(--text-main); }
 .inspector-section-body { display: flex; flex: 1; min-height: 0; flex-direction: column; }
@@ -526,7 +526,7 @@
 .lore-entry-icon img { width: 100%; height: 100%; object-fit: cover; }
 .lore-entry-icon-large { width: 88px; height: 88px; flex-basis: 88px; border-radius: 14px; border: 1px solid var(--border-soft); font: 36px Georgia, serif; }
 .lore-category-rail .lore-entry-icon { width: 24px; height: 24px; flex-basis: 24px; font-size: 11px; }
-.lore-entry-hero { display: flex; align-items: center; gap: 20px; margin-bottom: 24px; }
+.lore-entry-hero { display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; align-items: center; gap: 20px; margin-bottom: 24px; }
 .lore-entry-heading { min-width: 0; }
 .lore-entry-heading { flex: 1; }
 .lore-entry-actions { display: flex; gap: 6px; align-items: center; margin-left: auto; flex-shrink: 0; }
@@ -540,8 +540,8 @@
 .lore-detail-empty p { margin-bottom: 20px; }
 .lore-entry-browser > header { flex-wrap: wrap; }
 @container lore-detail (max-width: 1000px) {
-  .lore-entry-hero { flex-wrap: wrap; }
-  .lore-entry-actions { margin-left: auto; }
+  .lore-entry-hero { grid-template-columns: 64px minmax(0, 1fr); }
+  .lore-entry-actions { grid-column: 1 / -1; justify-self: end; margin-left: 0; flex-wrap: wrap; }
 }
 .lore-entry-location { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
 .lore-detail-pane .lore-entry-hero .lorebook-entry-view-title { margin: 0 0 12px; overflow-wrap: anywhere; }
@@ -655,4 +655,80 @@
 @media (max-width: 650px) {
   .modal-box { padding: 20px; gap: 16px; }
   .modal-box .modal-footer-actions { flex-wrap: wrap; }
+}
+@media (max-width: 1150px) {
+  .lore-entry-browser > header h2 { flex: 1 0 100%; }
+}
+.outline-table { min-width: 0; }
+.outline-table :is(th, td) { overflow-wrap: anywhere; }
+.outline-status-summary { max-width: 100%; }
+.outline-status-select-wrap { min-width: 0; max-width: 100%; }
+.outline-status-select { min-width: 0; width: 100%; }
+.outline-length-track { min-width: 0; }
+@media (max-width: 1000px) {
+  .outline-table :is(th, td) { padding: 10px 8px; }
+  .outline-length-track { display: none; }
+  .outline-length { justify-content: flex-end; }
+}
+.atlas-sidebar-toggle { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; margin-bottom: 12px; color: var(--text-muted); font-size: 11px; text-transform: uppercase; }
+.atlas-sidebar-toggle button { padding: 4px; border: 0; background: transparent; color: var(--text-soft); cursor: pointer; }
+#atlas-view.atlas-sidebar-collapsed > .atlas-map-overlay { width: 36px; padding: 12px 4px; }
+#atlas-view.atlas-sidebar-collapsed > .atlas-map-overlay > :not(.atlas-sidebar-toggle),
+#atlas-view.atlas-sidebar-collapsed .atlas-sidebar-toggle > span,
+#atlas-view.atlas-sidebar-collapsed .atlas-map-settings { display: none; }
+#atlas-view.atlas-sidebar-collapsed #atlas-canvas { margin-left: 36px; }
+#revision-comments-header button:disabled,
+#revision-comments-header button:disabled:hover {
+  cursor: default;
+  opacity: .38;
+  background: none;
+  color: var(--text-muted);
+}
+@media (max-width: 800px) {
+  .lore-entry-actions { justify-self: center; justify-content: center; }
+}
+@container lore-detail (max-width: 500px) {
+  .lore-entry-hero > .lore-entry-actions {
+    width: 100%;
+    margin: 0;
+    justify-self: stretch;
+    justify-content: center;
+  }
+}
+@media (max-width: 959px) {
+  #revision-comments-pane.collapsed #revision-comments-header button {
+    opacity: .38;
+    color: var(--text-muted);
+    background: none;
+    cursor: default;
+    pointer-events: none;
+  }
+}
+/* Interface chrome should not become part of a dragged text selection. */
+button,
+.workspace-navigation,
+.revision-reading-toolbar,
+.revision-comment-filters,
+.document-title-bar,
+.inspector-sections,
+.inspector-drawer-header,
+.lore-entry-browser > header,
+.lore-entry-actions,
+.canvas-minimap,
+.atlas-sidebar-toggle,
+.command-palette > footer {
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* Preserve selection in editable controls nested inside interface chrome. */
+input,
+textarea,
+[contenteditable='true'] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+/* Active binder rows use a quiet background, so their icons need foreground contrast. */
+.tree-item.active .item-icon,
+.tree-item.active .item-icon > i {
+  color: var(--text-main);
 }
