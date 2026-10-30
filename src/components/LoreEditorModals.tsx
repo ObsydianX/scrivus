@@ -46,6 +46,7 @@ type CropEditorState = {
   label: string
   fullWidth: boolean
   ignoreEntryCrop: boolean
+  useAsEntryIcon: boolean
 }
 
 type CropRect = {
@@ -813,6 +814,7 @@ export function LoreEntryEditorModal({
       label: activeFields.find(field => field.id === fieldId)?.label ?? 'Image',
       fullWidth,
       ignoreEntryCrop,
+      useAsEntryIcon: local.entryIconFieldId === fieldId,
     })
   }
 
@@ -826,6 +828,7 @@ export function LoreEntryEditorModal({
       label,
       fullWidth: getLoreImageFullWidth(current),
       ignoreEntryCrop: getLoreImageIgnoreEntryCrop(current),
+      useAsEntryIcon: local.entryIconFieldId === fieldId,
     })
   }
 
@@ -933,6 +936,7 @@ export function LoreEntryEditorModal({
         const path = getLoreImagePath(current) || cropEditor.path
         return {
           ...prev,
+          entryIconFieldId: cropEditor.useAsEntryIcon ? cropEditor.fieldId : prev.entryIconFieldId === cropEditor.fieldId ? undefined : prev.entryIconFieldId,
           fields: {
             ...prev.fields,
             [cropEditor.fieldId]: createLoreImageValue(
@@ -1329,6 +1333,13 @@ export function LoreEntryEditorModal({
             Crop the square image used for Lore Book cards, pinned entries, and compact previews.
           </div>
           <div className="lore-image-crop-options">
+            <label>
+              <input type="checkbox" checked={cropEditor.useAsEntryIcon} onChange={event => {
+                const useAsEntryIcon = event.currentTarget.checked
+                setCropEditor(editor => editor ? { ...editor, useAsEntryIcon } : editor)
+              }} />
+              <span>Use as entry icon</span>
+            </label>
             <label>
               <input
                 type="checkbox"

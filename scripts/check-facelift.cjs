@@ -12,9 +12,11 @@ async function main() {
         import { renderToStaticMarkup } from 'react-dom/server'
         import { getBinderWordCounts } from './src/binderWordCounts'
         import { countLoreMentions } from './src/loreBacklinks'
+        import { getLoreEntryIconPath } from './src/loreImages'
         import { parseSceneTabs } from './src/sceneTabs'
         import { getActiveComments, RevisionCommentsPane } from './src/components/RevisionView'
         import { OutlineView } from './src/components/OutlineView'
+        import { LoreBookView } from './src/components/LoreBookView'
 
         const rows = [
           { id: 1, type: 'chapter', role: 'act', title: 'Act 1', depth: 0, wordCount: 1000, status: 'inProgress' },
@@ -37,6 +39,16 @@ async function main() {
         assert.equal(countLoreMentions('Amin', 'Adam'), 0) // equal-length edit
         assert.equal(countLoreMentions('ab ab', 'ab'), 0)
 
+        const category = { template: [{ id: 'portrait', type: 'image' }, { id: 'other', type: 'image' }, { id: 'text', type: 'text' }] }
+        const entry = { fields: { portrait: { path: 'portrait.png', croppedPath: 'portrait-crop.png', ignoreEntryCrop: true }, other: { path: 'other.png', croppedPath: 'other-crop.png' }, text: 'not-an-image' } }
+        assert.equal(getLoreEntryIconPath(category, entry), '')
+        assert.equal(getLoreEntryIconPath(category, { ...entry, entryIconFieldId: 'portrait' }), 'portrait-crop.png')
+        assert.equal(getLoreEntryIconPath(category, { ...entry, entryIconFieldId: 'other' }), 'other-crop.png')
+        assert.equal(getLoreEntryIconPath(category, { ...entry, entryIconFieldId: 'missing' }), '')
+        assert.equal(getLoreEntryIconPath(category, { ...entry, entryIconFieldId: 'text' }), '')
+        assert.equal(getLoreEntryIconPath({ template: [{ id: 'portrait', type: 'image', removed: true }] }, { ...entry, entryIconFieldId: 'portrait' }), '')
+        assert.equal(getLoreEntryIconPath(category, { fields: {}, entryIconFieldId: 'portrait' }), '')
+
         const tabs = parseSceneTabs('<!--TAB:First Draft-->\n<p>Original</p>\n<!--TAB:Revision-->\n<p>Rewritten</p>\n<!--DELETED:Removed:123-->\n<p>Old</p>')
         assert.equal(tabs.length, 2)
         assert.equal(tabs[0].content, '<p>Original</p>')
@@ -48,6 +60,30 @@ async function main() {
         assert.deepEqual(getActiveComments(comments, 3, 1, tabs).map(c => c.id), ['two'])
 
         const noop = () => {}
+        const loreEntry = { id: 'adam', name: 'Adam', fields: { bio: 'Freeform biography' } }
+        const loreCategory = { id: 'characters', name: 'Characters', template: [{ id: 'bio', type: 'textarea', label: 'Biography', removed: false }], entries: [loreEntry] }
+        const loreProps = { loreBook: { categories: [loreCategory] }, loreView: 'entry', activeCategoryId: 'characters', expandedEntryId: 'adam', projectPath: null, variables: {}, onLoreViewChange: noop, onActiveCategoryChange: noop, onExpandedEntryChange: noop, backlinks: { adam: [{ sceneId: 1, sceneTitle: 'Arrival', tabName: 'First Draft', excerpt: 'Adam arrives.', matchCount: 5 }, { sceneId: 2, sceneTitle: 'Departure', tabName: 'First Draft', excerpt: 'Adam leaves.', matchCount: 3 }] } }
+        let loreHtml = renderToStaticMarkup(<LoreBookView {...loreProps} />)
+        assert.ok(loreHtml.includes('lore-entry-fields'))
+        assert.ok(loreHtml.includes('Freeform biography'))
+        assert.ok(loreHtml.includes('lore-entry-mentions'))
+        assert.ok(loreHtml.includes('<strong>8</strong>'))
+        assert.ok(loreHtml.includes('2 scene mentions'))
+        assert.ok(loreHtml.includes('Adam arrives.'))
+        assert.ok(!loreHtml.includes('id="lorebook-category-header"'))
+        assert.ok(!loreHtml.includes('Category overview and hierarchy'))
+        assert.ok(loreHtml.includes('aria-label="Edit category"'))
+        assert.ok(loreHtml.includes('aria-label="Show hierarchy"'))
+        assert.ok(loreHtml.includes('aria-label="Entry actions"'))
+        assert.ok(loreHtml.includes('aria-label="Previous entry"'))
+        assert.ok(loreHtml.includes('aria-label="Delete entry"'))
+        assert.ok(loreHtml.includes('aria-label="Export entry"'))
+        loreHtml = renderToStaticMarkup(<LoreBookView {...loreProps} backlinks={{}} />)
+        assert.ok(loreHtml.includes('<strong>0</strong>'))
+        assert.ok(loreHtml.includes('No scene mentions found.'))
+        loreHtml = renderToStaticMarkup(<LoreBookView {...loreProps} loreBook={{ categories: [{ ...loreCategory, entries: [] }] }} />)
+        assert.ok(loreHtml.includes('Add an entry to begin building this category.'))
+        assert.ok(!loreHtml.includes('id="lorebook-category-header"'))
         const props = { rows, manuscriptWordCount: 1100, readingWpm: 250, collapsedFolderIds: new Set([2]), onCollapsedFolderIdsChange: noop, onOpenScene: noop, onOpenCommentsScene: noop, onSceneStatusChange: noop }
         let html = renderToStaticMarkup(<OutlineView {...props} />)
         assert.ok(!html.includes('A difficult arrival'))
@@ -61,7 +97,7 @@ async function main() {
         assert.ok(html.includes('Filter comments'))
         assert.ok(html.includes('Check this'))
         assert.ok(html.includes('tabindex="0"'))
-        console.log('Facelift checks passed: live counts and nested totals, cached scene switches, empty counts, Lore matching, draft parsing, comment scoping, Outline columns and pacing, comment rendering.')
+        console.log('Facelift checks passed: live counts, nested totals, Lore matching and icon crops/fallbacks, draft parsing, comment scoping, Outline columns and pacing, comment rendering.')
       `,
     },
     bundle: true,

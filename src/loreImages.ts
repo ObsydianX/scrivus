@@ -1,4 +1,9 @@
-import type { LoreFieldValue, LoreImageCrop, LoreImageCropRect, LoreImageValue } from './types'
+import type { LoreCategory, LoreEntry, LoreFieldValue, LoreImageCrop, LoreImageCropRect, LoreImageValue } from './types'
+
+export function getLoreEntryIconPath(category: LoreCategory, entry: LoreEntry) {
+  const field = category.template.find(field => field.id === entry.entryIconFieldId && field.type === 'image' && !field.removed)
+  return field ? getLoreImageDisplayPath(entry.fields[field.id]) : ''
+}
 
 export const DEFAULT_LORE_IMAGE_CROP: LoreImageCrop = {
   zoom: 1,

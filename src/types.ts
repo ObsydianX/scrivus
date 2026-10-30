@@ -158,6 +158,7 @@ export type LoreSubcategoryColor = 'default' | 'blue' | 'green' | 'rose' | 'gold
 
 export type LoreEntry = {
   id: string
+  entryIconFieldId?: string
   name: string
   prefix?: string
   suffix?: string
