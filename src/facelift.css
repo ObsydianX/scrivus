@@ -97,9 +97,17 @@
   color: var(--text-main);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
 }
-#scene-tab-bar { padding: 5px 12px; gap: 4px; min-height: 42px; }
-.scene-tab { border: 1px solid transparent; border-radius: 6px; padding: 0 12px; }
-.scene-tab.active {
+#scene-tab-bar,
+#editor-split-tab-bar { padding: 5px 12px; gap: 4px; min-height: 42px; }
+#editor-split-tab-bar { height: auto; box-sizing: border-box; }
+.editor-split-tabs { gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.editor-split-tabs::-webkit-scrollbar { height: 0; }
+.scene-tab,
+.editor-split-tab { border: 1px solid transparent; border-radius: 6px; padding: 0 12px; }
+.editor-split-tab { min-width: 60px; flex-shrink: 0; text-align: center; }
+.editor-split-close { border-radius: 6px; }
+.scene-tab.active,
+.editor-split-tab.active {
   border: 1px solid var(--border-soft);
   color: var(--text-main);
   background: var(--panel-bg-2);
@@ -754,7 +762,7 @@ textarea,
   #sidebar-header, #inspector-header, #search-input-wrap, #fnr-body,
   #editor-toolbar, #revision-toolbar, #revision-toolbar-placeholder,
   #scene-tab-bar, #revision-tab-bar, .scene-nav-controls,
-  .document-title-bar, #editor-split-tab-bar,
+  .document-title-bar, #editor-split-tab-bar, #editor-split-view,
   #statusbar, #outline-header, .pacing-strip,
   #lorebook-category-header, .lorebook-entry-footer,
   .lore-category-rail, .lore-entry-browser, .lore-entry-browser > header, .lore-category-footer, .lore-presence-footer,
@@ -816,7 +824,8 @@ textarea,
 }
 
 /* Keep the glow stationary around the text viewport while reading. */
-.revision-text-viewport {
+.revision-text-viewport,
+.read-only-text-viewport {
   position: relative;
   isolation: isolate;
   display: flex;
@@ -824,7 +833,8 @@ textarea,
   min-height: 0;
   min-width: 0;
 }
-.revision-text-viewport::after {
+.revision-text-viewport::after,
+.read-only-text-viewport::after {
   content: '';
   position: absolute;
   inset: 0;

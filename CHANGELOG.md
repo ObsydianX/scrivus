@@ -4,31 +4,38 @@ All notable Scrivus changes are tracked here.
 
 ## 0.3.4
 
+- New Feature: Added a Ctrl+K command palette for jumping to scenes, Lore entries, and workspaces.
+- New Feature: Added interactive minimaps to Canvas and Atlas for navigating larger boards and maps, alongside fit controls and streamlined editing tools.
+- New Feature: Added a Binder word counts preference with options ranging from Off to All types, including selected-scene counts. The setting applies to both Write and Revise and defaults to All types.
+- New Feature: Added automatic chapter and act completion summaries in the Binder and Outline: word-weighted progress rings, checkmarks when every scene is Complete, warning dots for scenes marked Needs Work, and explanatory hover details. Zero-word folders fall back to scene-count weighting.
+- New Feature: Added a shared read-only text-area edge glow in Revise and the split-view reference pane, with an enable toggle, intensity slider, and live preview in Preferences > General.
+- New Feature: Added Hide in Entry for Lore images used as entry icons. Header thumbnails open the original full image, keeping hidden body images accessible.
+- New Feature: Missing Lore images show a themed placeholder that opens an image picker for replacement.
+- New Feature: Added live Lore detection to the inspector's In This Scene section, with mention counts, expandable entry previews, and links to full Lore entries while writing.
+- New Feature: Added search across all Lore categories by entry name or keyword.
+- New Feature: Added All, Open, and Resolved filters with counts to the Revise comments pane.
+- New Feature: Added a gradient overlay intensity slider with live preview in Preferences > Themes.
+- Changed: Sped up project opening by starting the last active scene read first, loading supporting project files concurrently, and preparing backup file paths concurrently. Project data is applied together before editing becomes available.
 - Changed: Sped up Compile preparation with concurrent scene loading and a per-scene revision cache reused during export. Changed scenes refresh automatically, and project backup files copy concurrently while preserving the pre-compile backup.
 - Changed: Introduced a cohesive visual facelift across Write, Revise, Outline, Lore, Canvas, and Atlas, with shared workspace navigation, quieter toolbars, and layouts that adapt to smaller windows.
-- New Feature: Added a Ctrl+K command palette for jumping to scenes, Lore entries, and workspaces.
 - Changed: Redesigned the Lore Book around a category binder, grouped entry list, and entry details with a dedicated scene-mentions column. Image fields can now be selected as entry icons using their saved crops, while entries without an icon retain their letter fallback.
 - Changed: Reorganized the Write inspector into Scene and Notes tabs, with separate collapsible Scene Metadata and In This Scene sections. Dimmed metadata placeholders to distinguish examples from entered values.
 - Changed: Refined Outline with configurable columns, compact rows, wider scene-length bars, and the retained manuscript pacing graph. Synopsis takes spare column space; long synopses can be expanded in place or read on hover.
-- New Feature: Added interactive minimaps to Canvas and Atlas for navigating larger boards and maps, alongside fit controls and streamlined editing tools.
 - Changed: Expanded Atlas place details with linked Lore entries and scene mentions, and added a collapsible map binder.
-- New Feature: Added a Binder word counts preference with options ranging from Off to All types, including selected-scene counts. The setting applies to both Write and Revise and defaults to All types.
-
-- New Feature: Added automatic chapter and act completion summaries in the Binder and Outline: word-weighted progress rings, checkmarks when every scene is Complete, warning dots for scenes marked Needs Work, and explanatory hover details. Zero-word folders fall back to scene-count weighting.
-- New Feature: Added a Revise text-area edge glow with an enable toggle, intensity slider, and live preview in Preferences > General.
-- New Feature: Added Hide in Entry for Lore images used as entry icons. Header thumbnails open the original full image, keeping hidden body images accessible.
 - Changed: Simplified Binder rows with a single actions menu and scene status markers in place of redundant document icons, leaving more room for titles and word counts.
 - Changed: Consolidated Lore mention totals into one summary showing total mentions and the number of scenes. Moved Delete Category to a fixed footer beneath the independently scrolling entries list, and clarified creation and deletion colors.
 - Changed: Improved Canvas selection with a stronger outline and glow. Connectors attach to node-side midpoints, have larger click targets that remain consistent when zooming, and display labels above their lines.
 - Changed: Atlas marker visibility buttons now use the Focus-style accent treatment when shown and red styling when hidden.
 - Changed: Themed textarea scrollbars and resize handles to match the current theme.
+- Changed: Lore categories can be expanded and collapsed independently, with states remembered per project. Presence Chart and Delete Category stay in aligned footer panels while their lists scroll independently.
+- Fixes: Project opening now reports file read and JSON parse failures instead of loading empty fallback data that could later overwrite the affected file. Missing optional project files still receive their normal defaults.
 - Fixes: Unified live revision word counts across the Binder, status bar, and Outline so chapter and manuscript totals stay consistent during revision changes.
 - Fixes: Corrected stale scene-title suffixes and tab selection after revision deletion, refreshed counts after revision reordering, and preserved pending edits when deleting a revision.
 - Fixes: Restored missing pinned-star indicators in the Lore Book and kept Canvas properties aligned with the node whose title or notes are being edited.
 - Fixes: Gradient exclusions for maps and images no longer leave untinted cutouts across overlapping dropdown and context menus.
-- Changed: Lore categories can be expanded and collapsed independently, with states remembered per project. Presence Chart and Delete Category stay in aligned footer panels while their lists scroll independently.
 - Fixes: Deleting Lore entries or categories now removes older entry-owned image variants as well as referenced originals and crops, preserves shared images, and reports cleanup failures.
-- New Feature: Missing Lore images show a themed placeholder that opens an image picker for replacement.
+- Fixes: Pending scene metadata edits are saved to their original scene when switching scenes or closing the inspector, preventing lost edits or updates to the wrong scene.
+- Fixes: Opening a project with a blocked custom backup folder now requests access to that backup destination instead of repeatedly asking for the project folder, including backup locations on other drives.
 
 ## 0.3.3
 

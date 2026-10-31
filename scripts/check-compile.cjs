@@ -74,6 +74,13 @@ async function main() {
   files.delete('project/scenes/s0.md')
   await assert.rejects(collectCompileNodesFromSelection(chapters, 'project'), /Missing scene/)
   let copies = 0, copying = 0, peakCopies = 0, manifest = false
+  let joining = 0, peakJoins = 0
+  mocks['@tauri-apps/api/path'].join = async (...parts) => {
+    joining++; peakJoins = Math.max(peakJoins, joining)
+    await new Promise(resolve => setTimeout(resolve, 1))
+    joining--
+    return parts.join('/')
+  }
   Object.assign(mocks['@tauri-apps/plugin-fs'], {
     mkdir: async () => {},
     readDir: async name => name === 'project' ? [
@@ -92,7 +99,21 @@ async function main() {
   await createProjectBackup('project', 'Book', 'compile', 20, undefined, 'backups')
   assert.equal(manifest, true)
   assert.ok(peakCopies > 1 && peakCopies <= 8)
+  assert.ok(peakJoins > 1 && peakJoins <= 16, 'backup path preparation is concurrent and bounded')
+  manifest = false
+  mocks['@tauri-apps/plugin-fs'].copyFile = async source => {
+    copying++
+    try {
+      await new Promise(resolve => setTimeout(resolve, 2))
+      if (source.endsWith('/s0.md')) throw new Error('copy denied')
+    } finally {
+      copying--
+    }
+  }
+  await assert.rejects(createProjectBackup('project', 'Book', 'open', 20, undefined, 'backups'), /copy denied/)
+  assert.equal(copying, 0, 'backup failure drains outstanding copies')
+  assert.equal(manifest, false, 'failed backup is never marked complete')
   console.log('Compile checks passed: 106 scenes, bounded concurrency, cache reuse/invalidation, order, revisions, inclusion, and missing-file errors.')
-  console.log('Backup checks passed: bounded copying, skipped directories/symlinks, completion before manifest.')
+  console.log('Backup checks passed: bounded paths/copying, skipped directories/symlinks, completion before manifest, and drained failure without a completion marker.')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

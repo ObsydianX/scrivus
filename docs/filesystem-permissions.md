@@ -27,9 +27,20 @@ permissions and drive availability still apply.
 
 For an existing project selected before this fix, use Open Project once to grant
 recursive access; subsequent recent-project opens should retain that access.
-If its opening safety backup encounters a forbidden-path error, Scrivus offers
-Choose Project Folder to renew access through the native picker and retry opening.
+If its opening safety backup encounters a forbidden-path error, Scrivus distinguishes
+the project source from a configured custom backup destination. It offers
+Choose Project Folder for source failures or Choose Backup Folder for destination
+failures. The latter renews access to the configured backup folder (or its parent)
+and retries the original project; it does not treat the backup folder as a project
+or change the saved backup location. Both pickers request recursive access.
 Verify this recovery by opening a project from Recent Projects with a legacy
 non-recursive grant, selecting its folder in the recovery picker, and confirming
 the safety backup completes before the project opens. Canceling must leave the
 project unopened.
+
+Also test a project whose custom backup destination has an expired or missing
+grant on another drive. Confirm Choose Backup Folder opens at that destination,
+canceling leaves the project unopened, choosing an unrelated folder does not
+change settings, and selecting the correct destination permits the safety backup
+and original project to open. Restart and repeat from Recent Projects to check
+that the destination grant persists.

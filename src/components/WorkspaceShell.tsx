@@ -254,21 +254,23 @@ function EditorSplitView({
         </button>
       </div>
       <DocumentTitleBar title={splitTitle} />
-      <div id="editor-split-scroll">
-        <div id="editor-split-wrap">
-          <div
-            id="editor-split-body"
-            style={{ fontSize: `calc(var(--editor-body-size, 12pt) * ${zoomScale})` }}
-            dangerouslySetInnerHTML={{ __html: renderRevisionAnnotatedHtml(splitTab.content, activeComments) }}
-            onMouseMove={e => {
-              const target = e.target as HTMLElement
-              const mark = target.closest('[data-comment-id]') as HTMLElement | null
-              const id = mark?.dataset.commentId
-              const comment = id ? activeComments.find(c => c.id === id) : null
-              setHoverComment(comment ? { comment, x: e.clientX, y: e.clientY } : null)
-            }}
-            onMouseLeave={() => setHoverComment(null)}
-          />
+      <div className="read-only-text-viewport">
+        <div id="editor-split-scroll">
+          <div id="editor-split-wrap">
+            <div
+              id="editor-split-body"
+              style={{ fontSize: `calc(var(--editor-body-size, 12pt) * ${zoomScale})` }}
+              dangerouslySetInnerHTML={{ __html: renderRevisionAnnotatedHtml(splitTab.content, activeComments) }}
+              onMouseMove={e => {
+                const target = e.target as HTMLElement
+                const mark = target.closest('[data-comment-id]') as HTMLElement | null
+                const id = mark?.dataset.commentId
+                const comment = id ? activeComments.find(c => c.id === id) : null
+                setHoverComment(comment ? { comment, x: e.clientX, y: e.clientY } : null)
+              }}
+              onMouseLeave={() => setHoverComment(null)}
+            />
+          </div>
         </div>
       </div>
       {hoverComment && hoverCommentText && (

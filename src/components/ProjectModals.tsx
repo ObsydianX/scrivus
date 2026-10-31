@@ -1135,14 +1135,14 @@ export function PreferencesModal({
               </label>
               </div>
                 <section className="modal-field">
-                  <span className="modal-label">Revise Edge Glow</span>
+                  <span className="modal-label">Read-only Edge Glow</span>
                   <label className="modal-checkbox-label">
                     <input type="checkbox" checked={localReviseGlowEnabled} onChange={e => setLocalReviseGlowEnabled(e.target.checked)} />
-                    Show a subtle highlight around the read-only Revise pane
+                    Highlight read-only text in Revise and split view
                   </label>
                   <label className="gradient-intensity-control">
                     <span>Intensity <output>{localReviseGlowIntensity}%</output></span>
-                    <input aria-label="Revise glow intensity" type="range" min={0} max={100} step={1} value={localReviseGlowIntensity} disabled={!localReviseGlowEnabled} onChange={e => setLocalReviseGlowIntensity(Number(e.target.value))} />
+                    <input aria-label="Read-only glow intensity" type="range" min={0} max={100} step={1} value={localReviseGlowIntensity} disabled={!localReviseGlowEnabled} onChange={e => setLocalReviseGlowIntensity(Number(e.target.value))} />
                   </label>
                 </section>
             </>

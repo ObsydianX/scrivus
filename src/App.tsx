@@ -85,6 +85,8 @@ import {
 import { RevisionCommentsPane } from './components/RevisionView'
 import { WorkspaceShell, type Workspace } from './components/WorkspaceShell'
 import { buildCompileChapters, collectCompileNodesFromSelection } from './compile'
+import { readProjectSnapshot } from './projectLoad'
+import { backupAccessTarget, folderContains } from './folderAccess'
 import {
   COMPILE_STYLE_PRESETS,
   ATLAS_MAX_SIDE,
@@ -139,11 +141,8 @@ import {
   readLoreBookFile,
   readAtlasFile,
   readCanvasFile,
-  readNotesFile,
   saveLoreCroppedImage,
-  readProjectDictionary,
   readReviewSnapshots,
-  readRevisionFile,
   readSceneFile,
   saveDefaultStyles,
   saveProjectToDisk,
@@ -4723,6 +4722,8 @@ export default function App() {
     const loadedTree = data.tree as TreeNode[]
     const restoredId = (data.lastActiveId as number | null) ?? null
     const restoredTabIndex = Number.isInteger(data.lastActiveTabIndex) ? data.lastActiveTabIndex as number : 0
+    const restoredNode = restoredId !== null ? findNode(loadedTree, restoredId) : null
+    const snapshot = await readProjectSnapshot(path, restoredNode?.type === 'doc' ? restoredNode.file : undefined)
     const visibleTree = restoredId !== null
       ? openAncestorFoldersForNode(loadedTree, restoredId).nodes
       : loadedTree
@@ -4766,24 +4767,19 @@ export default function App() {
     projectRef.current = loadedProject
     setTree(visibleTree)
     treeRef.current = visibleTree
-    const notes = await readNotesFile(path)
+    const { notes, lore, comments: revComments, canvas: loadedMindMap, atlas: loadedAtlas, dictionary: dictionaryWords } = snapshot
     setQuickNote(notes.quickNote)
     quickNoteRef.current = notes.quickNote
     setChecklist(notes.checklist)
     checklistRef.current = notes.checklist
-    const lore = await readLoreBookFile(path)
     setLoreBook(lore)
     loreBookRef.current = lore
-    const revComments = await readRevisionFile(path)
     setRevisionComments(revComments)
     revisionCommentsRef.current = revComments
-    const loadedMindMap = await readCanvasFile(path)
     setMindMap(loadedMindMap)
     mindMapRef.current = loadedMindMap
-    const loadedAtlas = await readAtlasFile(path)
     setAtlas(loadedAtlas)
     atlasRef.current = loadedAtlas
-    const dictionaryWords = await readProjectDictionary(path)
     setProjectDictionary(dictionaryWords)
     setStyles(loadedStyles)
     setActiveId(restoredId)
@@ -4792,7 +4788,7 @@ export default function App() {
       const restoredNode = findNode(visibleTree, restoredId)
       if (restoredNode && restoredNode.type === 'doc') {
         setTitleValue(restoredNode.title)
-        const raw = await readSceneFile(path, restoredNode.file)
+        const raw = snapshot.rawScene
         rawFileRef.current = raw
         const tabs = parseSceneTabs(raw)
         setSceneTabs(tabs)
@@ -4989,22 +4985,34 @@ export default function App() {
     } catch (e) {
       // Recent projects can still have a non-recursive grant saved by older
       // versions. Renew it through the native picker before retrying the backup.
-      if (String(e).includes('forbidden path:')) {
+      const accessTarget = backupAccessTarget(e, path, settings.backups.useDefaultLocation ? undefined : settings.backups.backupFolder)
+      if (accessTarget) {
+        const backupAccess = accessTarget.kind === 'backup'
         showMessage(
-          `Scrivus needs folder access to create the safety backup. Select the project folder again to allow access to its scenes, images, and other contents.\n\n${String(e)}`,
-          'Project Folder Access Required',
+          backupAccess
+            ? `Scrivus needs access to the configured backup folder to create the safety backup. Select this folder (or its parent) to renew access:\n\n${accessTarget.path}\n\n${String(e)}`
+            : `Scrivus needs folder access to create the safety backup. Select the project folder again to allow access to its scenes, images, and other contents.\n\n${String(e)}`,
+          backupAccess ? 'Backup Folder Access Required' : 'Project Folder Access Required',
           'warning',
           {
-            label: 'Choose Project Folder',
+            label: backupAccess ? 'Choose Backup Folder' : 'Choose Project Folder',
             onClick: () => {
               void (async () => {
                 const selected = await open({
-                  title: 'Allow Project Folder Access',
-                  defaultPath: path,
+                  title: backupAccess ? 'Allow Backup Folder Access' : 'Allow Project Folder Access',
+                  defaultPath: accessTarget.path,
                   directory: true,
                   recursive: true,
                 })
                 if (!selected || Array.isArray(selected)) return
+                if (backupAccess) {
+                  if (!folderContains(selected, accessTarget.path)) {
+                    showMessage(`Select the configured backup folder or its parent:\n\n${accessTarget.path}`, 'Backup Folder Access Required', 'warning')
+                    return
+                  }
+                  await openProjectFromPath(path, 'That folder does not contain a Scrivus project.', 'Invalid Project')
+                  return
+                }
                 await openProjectFromPath(selected, 'That folder does not contain a Scrivus project.', 'Invalid Project')
               })().catch(error => showMessage(String(error), 'Folder Access Failed', 'error'))
             },

@@ -63,13 +63,13 @@ async function copyDirectoryContents(source: string, target: string) {
     await mkdir(target, { recursive: true })
     const entries = await readDir(source)
 
-    for (const entry of entries) {
-      if (SKIP_NAMES.has(entry.name)) continue
-      const sourcePath = await join(source, entry.name)
-      const targetPath = await join(target, entry.name)
+    const paths = await mapConcurrent(entries.filter(entry => !SKIP_NAMES.has(entry.name) && !entry.isSymlink), async entry => {
+      const [sourcePath, targetPath] = await Promise.all([join(source, entry.name), join(target, entry.name)])
+      return { entry, sourcePath, targetPath }
+    })
 
+    for (const { entry, sourcePath, targetPath } of paths) {
       try {
-        if (entry.isSymlink) continue
         if (entry.isDirectory) {
           await collect(sourcePath, targetPath)
         } else if (entry.isFile) {

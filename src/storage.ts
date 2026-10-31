@@ -182,18 +182,24 @@ export async function writeSceneFile(projectPath: string, fileId: string, conten
   invalidateSceneSearchCache(projectPath, fileId)
 }
 
-export async function readSceneFile(projectPath: string, fileId: string): Promise<string> {
+type ReadOptions = { strict?: boolean }
+
+export async function readSceneFile(projectPath: string, fileId: string, options: ReadOptions = {}): Promise<string> {
   try {
     const filePath = await join(projectPath, 'scenes', `${fileId}.md`)
     const fileExists = await exists(filePath)
-    if (!fileExists) return ''
+    if (!fileExists) {
+      if (options.strict) throw new Error(`Scene file is missing: ${filePath}`)
+      return ''
+    }
     return await readTextFile(filePath)
-  } catch {
+  } catch (error) {
+    if (options.strict) throw error
     return ''
   }
 }
 
-export async function readNotesFile(projectPath: string): Promise<{
+export async function readNotesFile(projectPath: string, options: ReadOptions = {}): Promise<{
   quickNote: string
   checklist: ChecklistItem[]
 }> {
@@ -203,7 +209,8 @@ export async function readNotesFile(projectPath: string): Promise<{
     if (!fileExists) return { quickNote: '', checklist: [] }
     const raw = await readTextFile(filePath)
     return { quickNote: '', checklist: [], ...JSON.parse(raw) }
-  } catch {
+  } catch (error) {
+    if (options.strict) throw error
     return { quickNote: '', checklist: [], }
   }
 }
@@ -220,7 +227,7 @@ export async function writeNotesFile(projectPath: string, data: {
   }
 }
 
-export async function readProjectDictionary(projectPath: string): Promise<string[]> {
+export async function readProjectDictionary(projectPath: string, options: ReadOptions = {}): Promise<string[]> {
   try {
     const filePath = await join(projectPath, 'dictionary.json')
     const fileExists = await exists(filePath)
@@ -230,7 +237,8 @@ export async function readProjectDictionary(projectPath: string): Promise<string
     return Array.isArray(data.words)
       ? data.words.filter((word: unknown): word is string => typeof word === 'string')
       : []
-  } catch {
+  } catch (error) {
+    if (options.strict) throw error
     return []
   }
 }
@@ -246,14 +254,15 @@ export async function writeProjectDictionary(projectPath: string, words: string[
   }
 }
 
-export async function readLoreBookFile(projectPath: string): Promise<LoreBook> {
+export async function readLoreBookFile(projectPath: string, options: ReadOptions = {}): Promise<LoreBook> {
   try {
     const filePath = await join(projectPath, 'lorebook.json')
     const fileExists = await exists(filePath)
     if (!fileExists) return { categories: [] }
     const raw = await readTextFile(filePath)
     return { categories: [], ...JSON.parse(raw) }
-  } catch {
+  } catch (error) {
+    if (options.strict) throw error
     return { categories: [] }
   }
 }
@@ -267,14 +276,15 @@ export async function writeLoreBookFile(projectPath: string, data: LoreBook) {
   }
 }
 
-export async function readRevisionFile(projectPath: string): Promise<RevisionComment[]> {
+export async function readRevisionFile(projectPath: string, options: ReadOptions = {}): Promise<RevisionComment[]> {
   try {
     const filePath = await join(projectPath, 'revision.json')
     const fileExists = await exists(filePath)
     if (!fileExists) return []
     const raw = await readTextFile(filePath)
     return JSON.parse(raw) ?? []
-  } catch {
+  } catch (error) {
+    if (options.strict) throw error
     return []
   }
 }
@@ -310,14 +320,15 @@ export async function writeReviewSnapshots(projectPath: string, reviews: ReviewS
   }
 }
 
-export async function readCanvasFile(projectPath: string): Promise<MindMap> {
+export async function readCanvasFile(projectPath: string, options: ReadOptions = {}): Promise<MindMap> {
   try {
     const filePath = await join(projectPath, 'canvas.json')
     const fileExists = await exists(filePath)
     if (!fileExists) return DEFAULT_MIND_MAP
     const raw = await readTextFile(filePath)
     return normalizeMindMap(JSON.parse(raw))
-  } catch {
+  } catch (error) {
+    if (options.strict) throw error
     return DEFAULT_MIND_MAP
   }
 }
@@ -331,14 +342,15 @@ export async function writeCanvasFile(projectPath: string, data: MindMap) {
   }
 }
 
-export async function readAtlasFile(projectPath: string): Promise<Atlas> {
+export async function readAtlasFile(projectPath: string, options: ReadOptions = {}): Promise<Atlas> {
   try {
     const filePath = await join(projectPath, 'atlas.json')
     const fileExists = await exists(filePath)
     if (!fileExists) return DEFAULT_ATLAS
     const raw = await readTextFile(filePath)
     return normalizeAtlas(JSON.parse(raw))
-  } catch {
+  } catch (error) {
+    if (options.strict) throw error
     return DEFAULT_ATLAS
   }
 }
