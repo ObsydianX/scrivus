@@ -1,3 +1,5 @@
+import { getFolderProgress } from '../folderProgress'
+import { FolderProgressIcon } from './FolderProgressIcon'
 import { useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react'
 import type { DropTarget, Manuscript, SceneStatus, TreeNode } from '../types'
 import { normalizeSceneMetadata } from '../constants'
@@ -165,7 +167,6 @@ export function BinderSidebar({
   onContextMenuChange,
   onTrashOpenChange,
   onTrashExpandedChange,
-  onConfirmBinDeleteChange,
   onConfirmDeleteChange,
   onConfirmEmptyTrashChange,
   onLoadTrash,
@@ -173,24 +174,11 @@ export function BinderSidebar({
   onSelectRevisionDoc,
   onToggleFolder,
   onRenameNode,
-  onAddDoc,
-  onAddFolder,
   onDrop,
   onPreviewTrashScene,
   onRestoreFromTrash,
 }: BinderSidebarProps) {
-  const folderStatuses = useMemo(() => {
-    const result = new Map<number, Map<SceneStatus, number>>()
-    const collect = (node: TreeNode): Map<SceneStatus, number> => {
-      if (node.type === 'doc') return new Map([[normalizeSceneMetadata(node.metadata).status, 1]])
-      const counts = new Map<SceneStatus, number>()
-      node.children.forEach(child => collect(child).forEach((count, status) => counts.set(status, (counts.get(status) ?? 0) + count)))
-      result.set(node.id, counts)
-      return counts
-    }
-    tree.forEach(collect)
-    return result
-  }, [tree])
+  const folderProgress = useMemo(() => getFolderProgress(tree, sceneWordCounts), [tree, sceneWordCounts])
   const rowPointerDownRef = useRef<{ id: number; x: number; y: number } | null>(null)
 
   const renderTrashItem = (sidecarId: string, node: TreeNode, originalFolderId: number, depth: number, manuscript?: Manuscript): React.ReactNode => {
@@ -261,7 +249,6 @@ export function BinderSidebar({
       const canSelectForBulk = !isProtected && !isManuscriptRoot
       const canRename = !isProtected
       const canMove = !isProtected && !isManuscriptRoot
-      const canDelete = !isProtected && !isManuscriptRoot
       const isDragging = dragId === n.id
       const isSelected = selectedIds.has(n.id)
       const isDragSource = inDraggedSubtree || isDragging || (dragId !== null && isSelected)
@@ -372,14 +359,15 @@ export function BinderSidebar({
               ? <span className="toggle"><i className={`ti ti-chevron-${n.open ? 'down' : 'right'}`} aria-hidden="true" /></span>
               : <span style={{ width: 16, flexShrink: 0 }} />
             }
-            <span className="item-icon">
+            {n.type === 'folder' && <span className="item-icon">
               <i className={`ti ti-${n.id === 1 ? 'book-2' :
                 isManuscriptRoot ? 'book-2' :
                 n.id === 2 ? 'notebook' :
                   n.type === 'folder' ? (folderRole === 'act' ? 'books' : 'folder') :
                     'file-text'
                 }`} aria-hidden="true" />
-            </span>
+            </span>}
+            {n.type === 'folder' && !isRootContainer && folderProgress.has(n.id) && <FolderProgressIcon progress={folderProgress.get(n.id)!} />}
             {n.type === 'doc' && (
               <RevisionStatusIcon
                 status={normalizeSceneMetadata(n.metadata).status}
@@ -408,50 +396,17 @@ export function BinderSidebar({
             }
             {n.type === 'doc' && showBinderWordCount(wordCountDisplay, 'scene', n.id === activeId) && sceneWordCounts[n.id] !== undefined && renamingId !== n.id && <span className="binder-word-count" title={`${sceneWordCounts[n.id].toLocaleString()} words`}>{sceneWordCounts[n.id].toLocaleString()}</span>}
             {n.type === 'folder' && !isRootContainer && showBinderWordCount(wordCountDisplay, folderRole === 'act' ? 'act' : 'chapter', n.id === activeId) && sceneWordCounts[n.id] !== undefined && renamingId !== n.id && <span className="binder-word-count binder-chapter-word-count" title={`${sceneWordCounts[n.id].toLocaleString()} words`}>{sceneWordCounts[n.id].toLocaleString()}</span>}
-            {n.type === 'folder' && !n.open && !isRootContainer && (folderStatuses.get(n.id)?.size ?? 0) > 0 && <span className="binder-folder-statuses" title={Array.from(folderStatuses.get(n.id) ?? []).map(([status, count]) => `${count} ${STATUS_LABELS[status]}`).join(' · ')}>
-              {(['draft', 'revised', 'needsWork', 'complete'] as const).filter(status => folderStatuses.get(n.id)?.has(status)).map(status => <RevisionStatusIcon key={status} status={status} label={`${folderStatuses.get(n.id)?.get(status)} ${STATUS_LABELS[status]}`} />)}
-            </span>}
-            {n.type === 'folder' && (
-              <span className="item-actions" onClick={e => e.stopPropagation()}>
-                {workspace === 'editor' && !reviewMode && (
-                  <>
-                    <button title="New scene" onClick={e => { e.stopPropagation(); onAddDoc(n.id) }}>
-                      <i className="ti ti-file-plus" aria-hidden="true" />
-                    </button>
-                    <button title="New folder" onClick={e => { e.stopPropagation(); onAddFolder(n.id) }}>
-                      <i className="ti ti-folder-plus" aria-hidden="true" />
-                    </button>
-                  </>
-                )}
-                {canRename && !reviewMode && (
-                  <>
-                    <button title="Rename" onClick={e => { e.stopPropagation(); onRenamingIdChange(n.id) }}>
-                      <i className="ti ti-pencil" aria-hidden="true" />
-                    </button>
-                  </>
-                )}
-                {canDelete && !reviewMode && (
-                  <>
-                    <button title="Delete" onClick={e => {
-                      e.stopPropagation()
-                      onConfirmBinDeleteChange({ id: n.id, label: n.label })
-                    }}>
-                      <i className="ti ti-trash" aria-hidden="true" />
-                    </button>
-                  </>
-                )}
-              </span>
-            )}
-            {n.type === 'doc' && !isProtected && !reviewMode && (
-              <span className="item-actions" onClick={e => e.stopPropagation()}>
-                <button title="Rename" onClick={e => { e.stopPropagation(); onRenamingIdChange(n.id) }}>
-                  <i className="ti ti-pencil" aria-hidden="true" />
-                </button>
-                <button title="Delete" onClick={e => {
-                  e.stopPropagation()
-                  onConfirmBinDeleteChange({ id: n.id, label: n.label })
-                }}>
-                  <i className="ti ti-trash" aria-hidden="true" />
+            {!reviewMode && renamingId !== n.id && (n.type === 'folder' || !isProtected) && (
+              <span className="item-actions" onClick={event => event.stopPropagation()}>
+                <button type="button" title={`Actions for ${n.label}`} aria-label={`Actions for ${n.label}`} aria-haspopup="menu"
+                  onDoubleClick={event => event.stopPropagation()}
+                  onClick={event => {
+                    event.stopPropagation()
+                    if (canSelectForBulk && !selectedIds.has(n.id)) onClearSelection(n.id)
+                    const rect = event.currentTarget.getBoundingClientRect()
+                    onContextMenuChange({ x: rect.left, y: rect.bottom, node: n, depth })
+                  }}>
+                  <i className="ti ti-dots" aria-hidden="true" />
                 </button>
               </span>
             )}

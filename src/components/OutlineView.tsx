@@ -1,3 +1,5 @@
+import { getOutlineFolderProgress } from '../folderProgress'
+import { FolderProgressIcon } from './FolderProgressIcon'
 import { useState, type CSSProperties } from 'react'
 import type { OutlineRow, SceneStatus } from '../types'
 import { RevisionStatusIcon } from './RevisionStatusIcon'
@@ -176,17 +178,7 @@ export function OutlineView({
     try { localStorage.setItem(COLUMNS_KEY, JSON.stringify(next)) } catch { /* Session choice still applies. */ }
   }
   const maxSceneWords = Math.max(1, ...sceneRows.map(row => row.wordCount))
-  const folderStatuses = new Map<number, Record<SceneStatus, number>>()
-  const ancestors: OutlineRow[] = []
-  for (const row of rows) {
-    while (ancestors.length && ancestors[ancestors.length - 1].depth >= row.depth) ancestors.pop()
-    if (row.type === 'chapter') {
-      folderStatuses.set(row.id, { draft: 0, revised: 0, needsWork: 0, complete: 0 })
-      ancestors.push(row)
-    } else if (row.status !== 'inProgress') {
-      for (const ancestor of ancestors) folderStatuses.get(ancestor.id)![row.status]++
-    }
-  }
+  const folderProgress = getOutlineFolderProgress(rows)
   const folderRows = rows.filter(row => row.type === 'chapter')
   const folderIds = folderRows.map(row => row.id)
   const actCount = folderRows.filter(row => row.role === 'act').length
@@ -313,7 +305,7 @@ export function OutlineView({
                     </div>
                   </td>
                   <td className="outline-synopsis">{row.type === 'chapter'
-                    ? `${Object.values(folderStatuses.get(row.id)!).reduce((sum, count) => sum + count, 0)} scenes`
+                    ? `${folderProgress.get(row.id)!.scenes} scenes`
                     : row.metadata?.synopsis ? <button
                         type="button"
                         className={`outline-synopsis-preview${expandedSynopsisId === row.id ? ' expanded' : ''}`}
@@ -325,9 +317,7 @@ export function OutlineView({
                       >{row.metadata.synopsis}</button>
                       : <span className="outline-missing-synopsis">No synopsis yet</span>}</td>
                   <td>
-                    {row.type === 'chapter' ? <div className="outline-status-summary" aria-label={PACING_LEGEND.map(status => `${folderStatuses.get(row.id)![status]} ${STATUS_LABELS[status]}`).join(', ')} title={PACING_LEGEND.map(status => `${folderStatuses.get(row.id)![status]} ${STATUS_LABELS[status]}`).join(' · ')}>
-                      {PACING_LEGEND.filter(status => folderStatuses.get(row.id)![status] > 0).map(status => <span key={status} className={`pacing-status-${status}`} style={{ flexGrow: folderStatuses.get(row.id)![status] }} />)}
-                    </div> : !readOnly
+                    {row.type === 'chapter' ? <FolderProgressIcon progress={folderProgress.get(row.id)!} /> : !readOnly
                       ? <label className={`outline-status-select-wrap outline-status-${row.status}`}>
                         <RevisionStatusIcon status={row.status} className="outline-status-icon" />
                         <select

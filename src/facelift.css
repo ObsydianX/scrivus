@@ -947,3 +947,13 @@ textarea::-webkit-resizer {
   border-color: var(--danger);
   background: color-mix(in srgb, var(--danger) 16%, var(--panel-bg));
 }
+
+.binder-folder-progress { width: 18px; height: 18px; flex-shrink: 0; overflow: visible; }
+.binder-progress-track { fill: none; stroke: var(--text-muted); stroke-width: 1.5; opacity: .4; }
+.binder-progress-fill { fill: none; stroke: var(--revision-status-complete); stroke-width: 2; }
+.binder-progress-check { fill: none; stroke: var(--revision-status-complete); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.binder-progress-warning { fill: var(--revision-status-needsWork); stroke: var(--panel-bg); stroke-width: 1; }
+
+.tree-item .item-actions { display: flex; opacity: 0; pointer-events: none; flex-shrink: 0; }
+.tree-item:hover .item-actions,
+.tree-item:focus-within .item-actions { opacity: 1; pointer-events: auto; }

@@ -11,6 +11,8 @@ async function main() {
         import React from 'react'
         import { renderToStaticMarkup } from 'react-dom/server'
         import { getBinderWordCounts, normalizeBinderWordCountDisplay, showBinderWordCount } from './src/binderWordCounts'
+        import { getFolderProgress, getFolderProgressDisplay, getOutlineFolderProgress } from './src/folderProgress'
+        import { FolderProgressIcon } from './src/components/FolderProgressIcon'
         import { countLoreMentions } from './src/loreBacklinks'
         import { getLoreEntryIconPath, createLoreImageValue, shouldHideLoreImageInEntry } from './src/loreImages'
         import { orderLoreSubcategories } from './src/loreSubcategories'
@@ -44,6 +46,33 @@ async function main() {
           assert.equal(normalizeBinderWordCountDisplay(mode), mode)
           assert.deepEqual([showBinderWordCount(mode, 'act', false), showBinderWordCount(mode, 'chapter', false), showBinderWordCount(mode, 'scene', true), showBinderWordCount(mode, 'scene', false)], expected)
         }
+        const outlineProgress = getOutlineFolderProgress(rows)
+        assert.equal(getFolderProgressDisplay(outlineProgress.get(2)).fill, .25)
+        assert.equal(getFolderProgressDisplay(outlineProgress.get(1)).fill, 350 / 1100)
+
+        const progressTree = [{ id: 10, type: 'folder', children: [
+          { id: 11, type: 'folder', children: [
+            { id: 1, type: 'doc', metadata: { status: 'complete' } },
+            { id: 2, type: 'doc', metadata: { status: 'needsWork' } },
+          ] },
+          { id: 12, type: 'folder', children: [{ id: 3, type: 'doc', metadata: { status: 'complete' } }] },
+          { id: 13, type: 'folder', children: [] },
+        ] }]
+        const progress = getFolderProgress(progressTree, { 1: 200, 2: 800, 3: 1000 })
+        assert.equal(getFolderProgressDisplay(progress.get(11)).fill, .2)
+        assert.equal(getFolderProgressDisplay(progress.get(10)).fill, .6) // Aggregate words, not chapter averages.
+        assert.equal(progress.get(10).needsWork, 1)
+        assert.equal(getFolderProgressDisplay(progress.get(12)).done, true)
+        assert.equal(getFolderProgressDisplay(progress.get(13)).label, 'No scenes')
+        const emptyScenes = getFolderProgress(progressTree, {})
+        assert.equal(getFolderProgressDisplay(emptyScenes.get(11)).fill, .5)
+        assert.equal(getFolderProgressDisplay(emptyScenes.get(12)).done, true)
+        const zeroUnfinished = getFolderProgress(progressTree, { 1: 200, 3: 1000 })
+        assert.equal(getFolderProgressDisplay(zeroUnfinished.get(11)).fill, .95)
+        assert.equal(getFolderProgressDisplay(zeroUnfinished.get(11)).done, false)
+        assert.ok(renderToStaticMarkup(<FolderProgressIcon progress={progress.get(10)} />).includes('binder-progress-warning'))
+        assert.ok(renderToStaticMarkup(<FolderProgressIcon progress={progress.get(12)} />).includes('binder-progress-check'))
+
         const subcategories = [
           { id: 'normal', name: 'Normal Creature' },
           { id: 'mini', name: 'Mini-boss Creature' },
@@ -208,7 +237,8 @@ async function main() {
         let html = renderToStaticMarkup(<OutlineView {...props} />)
         assert.ok(!html.includes('A difficult arrival'))
         assert.ok(html.includes('pacing-strip-track'))
-        assert.ok(html.includes('1 Draft, 0 Revised, 0 Needs work, 1 Complete'))
+        assert.ok(html.includes('25% of words complete · 1 of 2 scenes complete · 0 needs work'))
+        assert.ok(!html.includes('outline-status-summary'))
         html = renderToStaticMarkup(<OutlineView {...props} collapsedFolderIds={new Set()} />)
         assert.ok(html.includes('A difficult arrival'))
         assert.ok(html.includes('<th>POV</th>'))
