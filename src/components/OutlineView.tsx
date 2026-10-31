@@ -169,6 +169,7 @@ export function OutlineView({
       ? (sceneCommentCounts[row.id] ?? 0) > 0
       : column === 'tags' ? Boolean(row.metadata?.tags.length) : Boolean(row.metadata?.[column])))
   })
+  const [expandedSynopsisId, setExpandedSynopsisId] = useState<number | null>(null)
   const toggleColumn = (column: OptionalColumn) => {
     const next = columns.includes(column) ? columns.filter(item => item !== column) : [...columns, column]
     setColumns(next)
@@ -260,12 +261,14 @@ export function OutlineView({
         </div>
       ) : (
         <div className="outline-table-wrap">
-          <table className="outline-table" style={{ minWidth: 0 }}>
+          <table className="outline-table" style={{ minWidth: 844 + columns.reduce((width, column) => width + (column === 'comments' ? 96 : column === 'tags' ? 156 : 132), 0) }}>
             <colgroup>
-              <col style={{ width: `${200 / (8 + columns.length)}%` }} /><col style={{ width: `${300 / (8 + columns.length)}%` }} /><col style={{ width: `${150 / (8 + columns.length)}%` }} />
-              {columns.includes('comments') && <col style={{ width: `${100 / (8 + columns.length)}%` }} />}
-              <col style={{ width: `${150 / (8 + columns.length)}%` }} />
-              {OPTIONAL_COLUMNS.filter(column => column !== 'comments' && columns.includes(column)).map(column => <col key={column} style={{ width: `${100 / (8 + columns.length)}%` }} />)}
+              <col style={{ width: 224 }} />
+              <col />{/* Synopsis absorbs available space; utility columns stay compact. */}
+              <col style={{ width: 148 }} />
+              {columns.includes('comments') && <col style={{ width: 96 }} />}
+              <col style={{ width: 200 }} />
+              {OPTIONAL_COLUMNS.filter(column => column !== 'comments' && columns.includes(column)).map(column => <col key={column} style={{ width: column === 'tags' ? 156 : 132 }} />)}
             </colgroup>
             <thead>
               <tr>
@@ -311,7 +314,16 @@ export function OutlineView({
                   </td>
                   <td className="outline-synopsis">{row.type === 'chapter'
                     ? `${Object.values(folderStatuses.get(row.id)!).reduce((sum, count) => sum + count, 0)} scenes`
-                    : row.metadata?.synopsis || <span className="outline-missing-synopsis">No synopsis yet</span>}</td>
+                    : row.metadata?.synopsis ? <button
+                        type="button"
+                        className={`outline-synopsis-preview${expandedSynopsisId === row.id ? ' expanded' : ''}`}
+                        aria-expanded={expandedSynopsisId === row.id}
+                        aria-label={`${expandedSynopsisId === row.id ? 'Collapse' : 'Expand'} synopsis for ${row.title}`}
+                        title={row.metadata.synopsis}
+                        onClick={() => setExpandedSynopsisId(expandedSynopsisId === row.id ? null : row.id)}
+                        onDoubleClick={event => event.stopPropagation()}
+                      >{row.metadata.synopsis}</button>
+                      : <span className="outline-missing-synopsis">No synopsis yet</span>}</td>
                   <td>
                     {row.type === 'chapter' ? <div className="outline-status-summary" aria-label={PACING_LEGEND.map(status => `${folderStatuses.get(row.id)![status]} ${STATUS_LABELS[status]}`).join(', ')} title={PACING_LEGEND.map(status => `${folderStatuses.get(row.id)![status]} ${STATUS_LABELS[status]}`).join(' · ')}>
                       {PACING_LEGEND.filter(status => folderStatuses.get(row.id)![status] > 0).map(status => <span key={status} className={`pacing-status-${status}`} style={{ flexGrow: folderStatuses.get(row.id)![status] }} />)}

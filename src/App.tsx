@@ -1,3 +1,4 @@
+import { formatSceneTabTitle, getTabIndexAfterRemoval } from './sceneTabs'
 // #region === IMPORTS ===
 // ─────────────────────────────────────────────────────────────────────────────
 // Imports
@@ -548,6 +549,7 @@ export default function App() {
     typewriterScrolling: false,
     readingWpm: 240,
     defaultSceneTargetWordCount: 0,
+    reviseGlow: { enabled: true, intensity: 35 },
     gradientOverlay: {
       enabled: true,
       animated: false,
@@ -590,6 +592,12 @@ export default function App() {
         defaultSceneTargetWordCount: Number.isFinite(Number(parsed.defaultSceneTargetWordCount))
           ? Math.min(999999, Math.max(0, Math.round(Number(parsed.defaultSceneTargetWordCount))))
           : DEFAULT_SETTINGS.defaultSceneTargetWordCount,
+        reviseGlow: {
+          enabled: parsed.reviseGlow?.enabled !== false,
+          intensity: typeof parsed.reviseGlow?.intensity === 'number' && Number.isFinite(parsed.reviseGlow.intensity)
+            ? Math.min(100, Math.max(0, Math.round(parsed.reviseGlow.intensity)))
+            : DEFAULT_SETTINGS.reviseGlow.intensity,
+        },
         gradientOverlay: {
           enabled: parsed.gradientOverlay?.enabled !== false,
           animated: parsed.gradientOverlay?.animated === true,
@@ -652,6 +660,9 @@ export default function App() {
   const [gradientOverlayEnabled, setGradientOverlayEnabled] = useState(() => initialSettings.gradientOverlay.enabled)
   const [gradientOverlayAnimated, setGradientOverlayAnimated] = useState(() => initialSettings.gradientOverlay.animated)
   const [gradientOverlayIntensity, setGradientOverlayIntensity] = useState(() => initialSettings.gradientOverlay.intensity)
+  const [reviseGlowEnabled, setReviseGlowEnabled] = useState(() => initialSettings.reviseGlow.enabled)
+  const [reviseGlowIntensity, setReviseGlowIntensity] = useState(() => initialSettings.reviseGlow.intensity)
+  const [reviseGlowPreview, setReviseGlowPreview] = useState<number | null>(null)
   const [gradientOverlayPreview, setGradientOverlayPreview] = useState<number | null>(null)
   const [goals, setGoals] = useState(() => initialSettings.goals)
   const [showGoalModal, setShowGoalModal] = useState(false)
@@ -659,10 +670,6 @@ export default function App() {
   const [themeMenuOpen, setThemeMenuOpen] = useState(false)
   const [zoomOpen, setZoomOpen] = useState(false);
 
-  const formatSceneTabTitle = (sceneTitle: string, tabs: SceneTab[], tabIndex: number) => {
-    const tabName = tabs[tabIndex]?.name
-    return tabs.length > 1 && tabName ? `${sceneTitle} - ${tabName}` : sceneTitle
-  }
 
   const openAncestorFoldersForNode = (nodes: TreeNode[], targetId: number): { nodes: TreeNode[]; found: boolean } => {
     let foundInNodes = false
@@ -2125,6 +2132,8 @@ export default function App() {
     if (activeIdRef.current !== null) {
       sceneActiveTabRef.current[activeIdRef.current] = newIndex
     }
+    setWordCount(countLatestRevisionWords(newTabs))
+    setCharCount(0)
     bodyHtmlRef.current = ''
     editor?.commands.setContent('', { emitUpdate: false })
     if (activeIdRef.current !== null && projectRef.current) {
@@ -2200,7 +2209,7 @@ export default function App() {
     setRenamingTabIndex(null)
     const node = findNode(treeRef.current, activeIdRef.current ?? -1)
     if (node && node.type === 'doc') {
-      setTitleValue(formatSceneTabTitle(node.title, updatedTabs, index))
+      setTitleValue(formatSceneTabTitle(node.title, updatedTabs, activeTabIndexRef.current))
       if (projectRef.current) {
         const serialized = serializeSceneTabs(updatedTabs, rawFileRef.current)
         rawFileRef.current = serialized
@@ -2211,14 +2220,17 @@ export default function App() {
 
   // Soft-deletes a tab, preserving its content in the file.
   const deleteTab = (index: number) => {
-    const tabs = sceneTabsRef.current
-    if (tabs.length <= 1) return
+    if (sceneTabsRef.current.length <= 1 || index < 0 || index >= sceneTabsRef.current.length) return
+    // Capture pending edits before preserving surviving and deleted revisions.
+    const cleanHtml = bodyHtmlRef.current.replace(/<mark data-fnr="" class="fnr-highlight">(.*?)<\/mark>/g, '$1')
+    const tabs = sceneTabsRef.current.map((tab, tabIndex) =>
+      tabIndex === activeTabIndexRef.current ? { ...tab, content: cleanHtml } : tab)
     const newRaw = softDeleteTab(tabs, index, rawFileRef.current)
     const newTabs = tabs.filter((_, i) => i !== index)
     rawFileRef.current = newRaw
     sceneTabsRef.current = newTabs
     setSceneTabs(newTabs)
-    const newIndex = Math.min(activeTabIndex, newTabs.length - 1)
+    const newIndex = getTabIndexAfterRemoval(activeTabIndexRef.current, index, newTabs.length)
     const splitWasOpen = editorSplitTabIndex !== null
     let nextSplitIndex = editorSplitTabIndex === null ? null
       : editorSplitTabIndex === index ? null
@@ -2240,11 +2252,16 @@ export default function App() {
     if (activeIdRef.current !== null && projectRef.current) {
       const node = findNode(treeRef.current, activeIdRef.current)
       if (node && node.type === 'doc') {
+        setTitleValue(formatSceneTabTitle(node.title, newTabs, newIndex))
+        outlineWordCountsRef.current.set(node.id, countLatestRevisionWords(newTabs))
         writeSceneFile(projectRef.current.path, node.file, newRaw)
         saveProjectState({ ...projectRef.current, tree: treeRef.current }, activeIdRef.current, newIndex)
       }
     }
     setWordCount(countLatestRevisionWords(newTabs))
+    setCharCount(htmlFragmentText(content).length)
+    setRenamingTabIndex(null)
+    setTabContextMenu(null)
     setConfirmDeleteTab(null)
   }
 
@@ -2269,6 +2286,7 @@ export default function App() {
     // Track where the active tab ended up
     const newActiveIndex = reordered.findIndex(t => t === savedTabs[activeTabIndex])
     const newSplitIndex = splitTab ? reordered.findIndex(t => t === splitTab) : null
+    setWordCount(countLatestRevisionWords(reordered))
     sceneTabsRef.current = reordered
     setSceneTabs(reordered)
     setActiveTabIndex(newActiveIndex)
@@ -2283,6 +2301,8 @@ export default function App() {
     if (activeIdRef.current !== null && projectRef.current) {
       const node = findNode(treeRef.current, activeIdRef.current)
       if (node && node.type === 'doc') {
+        setTitleValue(formatSceneTabTitle(node.title, reordered, newActiveIndex))
+        outlineWordCountsRef.current.set(node.id, countLatestRevisionWords(reordered))
         const serialized = serializeSceneTabs(reordered, rawFileRef.current)
         rawFileRef.current = serialized
         writeSceneFile(projectRef.current.path, node.file, serialized)
@@ -4877,6 +4897,8 @@ export default function App() {
     nextGradientOverlayAnimated: boolean,
     nextGradientOverlayIntensity: number,
     nextBinderWordCountDisplay: BinderWordCountDisplay,
+    nextReviseGlowEnabled: boolean,
+    nextReviseGlowIntensity: number,
   ) => {
     const normalizedReadingWpm = Math.min(1000, Math.max(50, Math.round(nextReadingWpm)))
     const normalizedDefaultSceneTargetWordCount = Math.min(999999, Math.max(0, Math.round(nextDefaultSceneTargetWordCount)))
@@ -4889,9 +4911,13 @@ export default function App() {
     setGradientOverlayAnimated(nextGradientOverlayAnimated)
     const normalizedIntensity = Math.min(100, Math.max(0, Math.round(nextGradientOverlayIntensity)))
     setGradientOverlayIntensity(normalizedIntensity)
+    const normalizedGlowIntensity = Math.min(100, Math.max(0, Math.round(nextReviseGlowIntensity)))
+    setReviseGlowEnabled(nextReviseGlowEnabled)
+    setReviseGlowIntensity(normalizedGlowIntensity)
     saveSettings({
       ...loadSettings(),
       theme,
+      reviseGlow: { enabled: nextReviseGlowEnabled, intensity: normalizedGlowIntensity },
       binderWordCountDisplay: nextBinderWordCountDisplay,
       incrementNewNodeNumbers: shouldIncrementNewNodeNumbers,
       readingWpm: normalizedReadingWpm,
@@ -7248,6 +7274,9 @@ export default function App() {
           gradientOverlayEnabled={gradientOverlayEnabled}
           gradientOverlayAnimated={gradientOverlayAnimated}
           gradientOverlayIntensity={gradientOverlayIntensity}
+          reviseGlowEnabled={reviseGlowEnabled}
+          reviseGlowIntensity={reviseGlowIntensity}
+          onPreviewReviseGlowIntensity={setReviseGlowPreview}
           onPreviewIntensity={setGradientOverlayPreview}
           onCancel={() => setShowPreferences(false)}
           onSave={savePreferences}
@@ -7427,8 +7456,20 @@ export default function App() {
   // ───────────────────────────────────────────────────────────────────────────
   // Render: main editor workspace
   // ───────────────────────────────────────────────────────────────────────────
+  // Use the same live revision counts for every manuscript surface. Separate
+  // async recounts can lag behind an edit or revision change.
+  const liveWordCounts = getBinderWordCounts(outlineRows, isTrashPreview ? null : activeId, wordCount, outlineWordCountsRef.current)
+  const liveOutlineRows = outlineRows.map(row => ({ ...row, wordCount: liveWordCounts[row.id] ?? row.wordCount }))
+  const liveManuscriptWordCount = outlineRows.length
+    ? liveOutlineRows.reduce((total, row) => total + (row.type === 'scene' ? row.wordCount : 0), 0)
+    : manuscriptWordCount
+  const activeParent = activeId === null ? null : findParentFolder(tree, activeId)
+  const liveChapterWordCount = activeParent && liveWordCounts[activeParent.id] !== undefined
+    ? liveWordCounts[activeParent.id]
+    : chapterWordCount
+
   return (
-    <div id="app" className={focusMode ? 'app-workspace editor-focus-mode' : 'app-workspace'} style={{ position: 'relative' }}>
+    <div id="app" className={focusMode ? 'app-workspace editor-focus-mode' : 'app-workspace'} style={{ position: 'relative', ['--revise-glow-opacity' as string]: (reviseGlowPreview ?? (reviseGlowEnabled ? reviseGlowIntensity : 0)) / 100 }}>
       <div id="menubar" className="workspace-header">
         <span className="project-title" title={project.name}><i className="ti ti-feather" aria-hidden="true" />{project.name}{reviewPackage && <span className="review-mode-label">Review</span>}</span>
         <div className="app-menus"><MenuBarMenus /></div>
@@ -7473,7 +7514,7 @@ export default function App() {
 
       <BinderSidebar
         wordCountDisplay={binderWordCountDisplay}
-        sceneWordCounts={getBinderWordCounts(outlineRows, isTrashPreview ? null : activeId, wordCount, outlineWordCountsRef.current)}
+        sceneWordCounts={liveWordCounts}
         binderOpen={binderOpen}
         workspace={workspace}
         projectOpen={!!project}
@@ -7639,8 +7680,8 @@ export default function App() {
           wordCount,
           targetWordCount: activeSceneMetadata?.targetWordCount,
           onGoalClick: () => setShowGoalModal(true),
-          chapterWordCount,
-          manuscriptWordCount,
+          chapterWordCount: liveChapterWordCount,
+          manuscriptWordCount: liveManuscriptWordCount,
           readingWpm,
           sprint,
           sprintWords,
@@ -7653,8 +7694,8 @@ export default function App() {
           onZoomChange: setZoom,
         }}
         outlineState={{
-          rows: outlineRows,
-          manuscriptWordCount,
+          rows: liveOutlineRows,
+          manuscriptWordCount: liveManuscriptWordCount,
           readingWpm,
           sceneCommentCounts: outlineSceneCommentCounts,
           collapsedFolderIds: outlineCollapsedFolderIds,

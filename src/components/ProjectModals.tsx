@@ -963,6 +963,9 @@ export function PreferencesModal({
   gradientOverlayEnabled,
   gradientOverlayAnimated,
   gradientOverlayIntensity,
+  reviseGlowEnabled,
+  reviseGlowIntensity,
+  onPreviewReviseGlowIntensity,
   onPreviewIntensity,
   onCancel,
   onSave,
@@ -975,6 +978,9 @@ export function PreferencesModal({
   gradientOverlayEnabled: boolean
   gradientOverlayAnimated: boolean
   gradientOverlayIntensity: number
+  reviseGlowEnabled: boolean
+  reviseGlowIntensity: number
+  onPreviewReviseGlowIntensity: (intensity: number | null) => void
   onPreviewIntensity: (intensity: number | null) => void
   onCancel: () => void
   onSave: (
@@ -986,6 +992,8 @@ export function PreferencesModal({
     gradientOverlayAnimated: boolean,
     gradientOverlayIntensity: number,
     binderWordCountDisplay: BinderWordCountDisplay,
+    reviseGlowEnabled: boolean,
+    reviseGlowIntensity: number,
   ) => void
 }) {
   const [localBinderWordCountDisplay, setLocalBinderWordCountDisplay] = useState(binderWordCountDisplay)
@@ -996,9 +1004,13 @@ export function PreferencesModal({
   const [localGradientOverlayEnabled, setLocalGradientOverlayEnabled] = useState(gradientOverlayEnabled)
   const [localGradientOverlayAnimated, setLocalGradientOverlayAnimated] = useState(gradientOverlayAnimated)
   const [localGradientOverlayIntensity, setLocalGradientOverlayIntensity] = useState(gradientOverlayIntensity)
+  const [localReviseGlowEnabled, setLocalReviseGlowEnabled] = useState(reviseGlowEnabled)
+  const [localReviseGlowIntensity, setLocalReviseGlowIntensity] = useState(reviseGlowIntensity)
   const [activeTab, setActiveTab] = useState<'general' | 'themes'>('general')
 
   useEffect(() => {
+    setLocalReviseGlowEnabled(reviseGlowEnabled)
+    setLocalReviseGlowIntensity(reviseGlowIntensity)
     setLocalBinderWordCountDisplay(binderWordCountDisplay)
     setLocalTheme(theme)
     setLocalIncrementNewNodeNumbers(incrementNewNodeNumbers)
@@ -1007,12 +1019,17 @@ export function PreferencesModal({
     setLocalGradientOverlayEnabled(gradientOverlayEnabled)
     setLocalGradientOverlayAnimated(gradientOverlayAnimated)
     setLocalGradientOverlayIntensity(gradientOverlayIntensity)
-  }, [binderWordCountDisplay, theme, incrementNewNodeNumbers, readingWpm, defaultSceneTargetWordCount, gradientOverlayEnabled, gradientOverlayAnimated, gradientOverlayIntensity])
+  }, [reviseGlowEnabled, reviseGlowIntensity, binderWordCountDisplay, theme, incrementNewNodeNumbers, readingWpm, defaultSceneTargetWordCount, gradientOverlayEnabled, gradientOverlayAnimated, gradientOverlayIntensity])
 
   useEffect(() => {
     onPreviewIntensity(localGradientOverlayEnabled ? localGradientOverlayIntensity : 0)
     return () => onPreviewIntensity(null)
   }, [localGradientOverlayEnabled, localGradientOverlayIntensity, onPreviewIntensity])
+
+  useEffect(() => {
+    onPreviewReviseGlowIntensity(localReviseGlowEnabled ? localReviseGlowIntensity : 0)
+    return () => onPreviewReviseGlowIntensity(null)
+  }, [localReviseGlowEnabled, localReviseGlowIntensity, onPreviewReviseGlowIntensity])
 
   const MIN_READING_WPM = 50
   const MAX_READING_WPM = 1000
@@ -1106,6 +1123,8 @@ export function PreferencesModal({
                   <option value="all">All types</option>
                 </select>
               </div>
+              <div className="modal-field preferences-numbering-field" role="group" aria-labelledby="preferences-numbering-label">
+                <span id="preferences-numbering-label" className="modal-label">Automatic Numbering</span>
               <label className="modal-checkbox-label">
                 <input
                   type="checkbox"
@@ -1114,6 +1133,18 @@ export function PreferencesModal({
                 />
                 Increment scene, chapter, and act numbers when adding new binder items
               </label>
+              </div>
+                <section className="modal-field">
+                  <span className="modal-label">Revise Edge Glow</span>
+                  <label className="modal-checkbox-label">
+                    <input type="checkbox" checked={localReviseGlowEnabled} onChange={e => setLocalReviseGlowEnabled(e.target.checked)} />
+                    Show a subtle highlight around the read-only Revise pane
+                  </label>
+                  <label className="gradient-intensity-control">
+                    <span>Intensity <output>{localReviseGlowIntensity}%</output></span>
+                    <input aria-label="Revise glow intensity" type="range" min={0} max={100} step={1} value={localReviseGlowIntensity} disabled={!localReviseGlowEnabled} onChange={e => setLocalReviseGlowIntensity(Number(e.target.value))} />
+                  </label>
+                </section>
             </>
           )}
           {activeTab === 'themes' && (
@@ -1131,6 +1162,7 @@ export function PreferencesModal({
                     {darkThemes.map(renderThemeOption)}
                   </div>
                 </section>
+
                 <section className="preferences-theme-section">
                   <h3>Gradient Overlay</h3>
                   <label className="modal-checkbox-label">
@@ -1169,7 +1201,7 @@ export function PreferencesModal({
         </div>
         <div className="modal-footer">
           <button className="welcome-btn" onClick={onCancel}>Cancel</button>
-          <button className="welcome-btn" onClick={() => onSave(localTheme, localIncrementNewNodeNumbers, normalizeReadingWpmInput(), normalizeDefaultSceneTargetInput(), localGradientOverlayEnabled, localGradientOverlayAnimated, localGradientOverlayIntensity, localBinderWordCountDisplay)}>Save</button>
+          <button className="welcome-btn" onClick={() => onSave(localTheme, localIncrementNewNodeNumbers, normalizeReadingWpmInput(), normalizeDefaultSceneTargetInput(), localGradientOverlayEnabled, localGradientOverlayAnimated, localGradientOverlayIntensity, localBinderWordCountDisplay, localReviseGlowEnabled, localReviseGlowIntensity)}>Save</button>
         </div>
       </div>
     </div>

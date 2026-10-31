@@ -12,13 +12,14 @@ async function main() {
         import { renderToStaticMarkup } from 'react-dom/server'
         import { getBinderWordCounts, normalizeBinderWordCountDisplay, showBinderWordCount } from './src/binderWordCounts'
         import { countLoreMentions } from './src/loreBacklinks'
-        import { getLoreEntryIconPath } from './src/loreImages'
+        import { getLoreEntryIconPath, createLoreImageValue, shouldHideLoreImageInEntry } from './src/loreImages'
         import { orderLoreSubcategories } from './src/loreSubcategories'
-        import { parseSceneTabs } from './src/sceneTabs'
+        import { countLatestRevisionWords } from './src/wordCount'
+        import { parseSceneTabs, formatSceneTabTitle, getTabIndexAfterRemoval } from './src/sceneTabs'
         import { getActiveComments, RevisionCommentsPane } from './src/components/RevisionView'
         import { OutlineView } from './src/components/OutlineView'
         import { LoreBookView } from './src/components/LoreBookView'
-        import { MindMapView } from './src/components/MindMapView'
+        import { MindMapView, getNodeSidePort } from './src/components/MindMapView'
         import { CanvasMinimap, getCanvasBounds, fitCanvasBounds } from './src/components/CanvasMinimap'
         import { AtlasView, fitAtlasMap } from './src/components/AtlasView'
         import atlasFixture from './src/defaultProject/atlas.json'
@@ -54,6 +55,16 @@ async function main() {
         assert.deepEqual(orderLoreSubcategories([subcategories[2], subcategories[1], subcategories[0]]).map(s => s.id), ['boss', 'mini', 'normal'])
         assert.deepEqual(subcategories.map(s => s.id), ['normal', 'mini', 'boss', 'zchild', 'achild'])
         assert.equal(getBinderWordCounts(rows, 3, 0)[2], 250)
+        // Reproduce the screenshot: cached scene count was 1, live count is 894.
+        const staleRows = [
+          { id: 11, type: 'chapter', depth: 0, wordCount: 3059 },
+          { id: 64, type: 'scene', depth: 1, wordCount: 3058 },
+          { id: 65, type: 'scene', depth: 1, wordCount: 1 },
+        ]
+        const liveCounts = getBinderWordCounts(staleRows, 65, 894)
+        assert.equal(liveCounts[11], 3952)
+        assert.equal(staleRows.filter(row => row.type === 'scene').reduce((sum, row) => sum + liveCounts[row.id], 0), 3952)
+        assert.equal(getBinderWordCounts(staleRows, 65, 0)[11], 3058)
 
         assert.equal(countLoreMentions("Adam met Adam's ally. Madam left.", 'Adam'), 2)
         assert.equal(countLoreMentions('Goreclaw saw a kobold lord.', 'Goreclaw', ['kobold lord']), 2)
@@ -71,11 +82,45 @@ async function main() {
         assert.equal(getLoreEntryIconPath({ template: [{ id: 'portrait', type: 'image', removed: true }] }, { ...entry, entryIconFieldId: 'portrait' }), '')
         assert.equal(getLoreEntryIconPath(category, { fields: {}, entryIconFieldId: 'portrait' }), '')
 
+        const hiddenPortrait = createLoreImageValue('full.png', undefined, false, false, 'crop.png', null, true)
+        const hiddenEntry = JSON.parse(JSON.stringify({ entryIconFieldId: 'portrait', fields: { portrait: hiddenPortrait } }))
+        assert.equal(shouldHideLoreImageInEntry(hiddenEntry, 'portrait'), true)
+        assert.equal(getLoreEntryIconPath(category, hiddenEntry), 'crop.png')
+        assert.equal(shouldHideLoreImageInEntry({ ...hiddenEntry, entryIconFieldId: 'other' }, 'portrait'), false)
+        assert.equal(shouldHideLoreImageInEntry({ fields: { portrait: 'legacy.png' }, entryIconFieldId: 'portrait' }, 'portrait'), false)
+        assert.equal(shouldHideLoreImageInEntry({ fields: {}, entryIconFieldId: 'portrait' }, 'portrait'), false)
+        assert.equal(createLoreImageValue('visible.png').hideInEntry, false)
+
         const tabs = parseSceneTabs('<!--TAB:First Draft-->\n<p>Original</p>\n<!--TAB:Revision-->\n<p>Rewritten</p>\n<!--DELETED:Removed:123-->\n<p>Old</p>')
         assert.equal(tabs.length, 2)
         assert.equal(tabs[0].content, '<p>Original</p>')
         assert.equal(tabs[1].name, 'Revision')
         assert.equal(tabs[1].content, '<p>Rewritten</p>')
+        // Isolate revision selection from the browser HTML parser: these fixtures are plain text.
+        const previousParser = globalThis.DOMParser
+        globalThis.DOMParser = class { parseFromString(text) { return { body: { textContent: text } } } }
+        try {
+          const revisions = parseSceneTabs('<!--TAB:First Draft-->\nOld\n<!--TAB:New Revision-->\n' + Array(894).fill('word').join(' '))
+          assert.equal(countLatestRevisionWords(revisions), 894)
+          assert.equal(getBinderWordCounts([{ id: 11, type: 'chapter', depth: 0 }, { id: 65, type: 'scene', depth: 1, wordCount: countLatestRevisionWords(revisions) }], null, 0)[11], 894)
+          assert.equal(countLatestRevisionWords([]), 0)
+        } finally {
+          globalThis.DOMParser = previousParser
+        }
+
+        const firstDraft = { name: 'First Draft', content: 'Original scene' }
+        const newRevision = { name: 'New Revision', content: '' }
+        assert.equal(formatSceneTabTitle('Scene 65', [firstDraft], 0), 'Scene 65')
+        assert.equal(formatSceneTabTitle('Scene 65', [firstDraft, newRevision], 1), 'Scene 65 - New Revision')
+        const restoredIndex = getTabIndexAfterRemoval(1, 1, 1)
+        assert.equal(formatSceneTabTitle('Scene 65', [firstDraft], restoredIndex), 'Scene 65')
+        // Removing an earlier tab must preserve the active revision's identity.
+        assert.equal(getTabIndexAfterRemoval(1, 0, 2), 0)
+        assert.equal(getTabIndexAfterRemoval(2, 0, 2), 1)
+        assert.equal(getTabIndexAfterRemoval(0, 2, 2), 0)
+        assert.equal(getTabIndexAfterRemoval(1, 1, 2), 1)
+        assert.equal(formatSceneTabTitle('Scene 65', [newRevision, firstDraft], 1), 'Scene 65 - First Draft')
+
         const comment = { id: 'one', sceneId: 3, tabIndex: 0, quote: 'Original', text: 'Check this', createdAt: 0, resolved: false }
         const comments = [comment, { ...comment, id: 'two', tabIndex: 1 }, { ...comment, id: 'other', sceneId: 4 }]
         assert.deepEqual(getActiveComments(comments, 3, 0, tabs).map(c => c.id), ['one'])
@@ -83,6 +128,16 @@ async function main() {
 
         const noop = () => {}
         const canvasNode = { id: 'idea', x: 0, y: 0, title: '', text: 'An arrival changes everything.', kind: 'idea', color: 'violet' }
+        assert.deepEqual(getNodeSidePort(canvasNode, { x: 400, y: 64 }), { x: 192, y: 64 })
+        assert.deepEqual(getNodeSidePort(canvasNode, { x: -100, y: 64 }), { x: 0, y: 64 })
+        assert.deepEqual(getNodeSidePort(canvasNode, { x: 96, y: -100 }), { x: 96, y: 0 })
+        assert.deepEqual(getNodeSidePort(canvasNode, { x: 96, y: 400 }), { x: 96, y: 128 })
+        assert.deepEqual(getNodeSidePort(canvasNode, { ...canvasNode, x: 384, y: 0 }), { x: 192, y: 64 })
+        const tallNode = { ...canvasNode, text: Array(20).fill('line').join('\n') }
+        const tallRight = getNodeSidePort(tallNode, { ...tallNode, x: 384 })
+        assert.equal(tallRight.x, 192)
+        assert.ok(tallRight.y > 64)
+
         const canvasProps = { map: { nodes: [canvasNode], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }, scenes: [], onChange: noop, onOpenScene: noop, onCreateSceneFromNode: async () => null }
         let canvasHtml = renderToStaticMarkup(<MindMapView {...canvasProps} />)
         assert.ok(canvasHtml.includes('mindmap-node-text-primary'))
@@ -131,7 +186,9 @@ async function main() {
         assert.ok(loreHtml.includes('Freeform biography'))
         assert.ok(loreHtml.includes('lore-entry-mentions'))
         assert.ok(loreHtml.includes('<strong>8</strong>'))
-        assert.ok(loreHtml.includes('2 scene mentions'))
+        assert.ok(loreHtml.includes('mentions · in 2 scenes'))
+        assert.ok(!loreHtml.includes('lorebook-backlinks-count'))
+        assert.ok(!loreHtml.includes('2 scene mentions'))
         assert.ok(loreHtml.includes('Adam arrives.'))
         assert.ok(!loreHtml.includes('id="lorebook-category-header"'))
         assert.ok(!loreHtml.includes('Category overview and hierarchy'))

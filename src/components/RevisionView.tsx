@@ -260,6 +260,7 @@ export function RevisionView({
         )}
         <div className="revision-reading-toolbar"><span><i className="ti ti-message-circle" aria-hidden="true" /> Review</span><span>Select text to add a comment <span aria-hidden="true">·</span> Read-only manuscript</span></div>
         <DocumentTitleBar title={titleBarText} bookmarked={bookmarked} />
+        <div className="revision-text-viewport">
         <div id="revision-scroll" ref={scrollRef}>
           <div id="revision-wrap">
             <div
@@ -281,6 +282,7 @@ export function RevisionView({
               }}
             />
           </div>
+        </div>
         </div>
         {footer}
       </div>

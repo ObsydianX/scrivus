@@ -4,9 +4,16 @@ import { useEffect, useRef } from 'react'
 // data-gradient-exclude, plus every image (lore book, atlas maps, covers).
 const EXCLUDE_SELECTOR = '[data-gradient-exclude], img'
 
-// Elements that float above an excluded region (e.g. the Atlas panels over
-// the map) and should get the gradient back where they overlap its hole.
-const INCLUDE_SELECTOR = '[data-gradient-include]'
+// Elements that float above an excluded region (Atlas panels and menus)
+// should get the gradient back where they overlap its hole.
+const INCLUDE_SELECTOR = [
+  '[data-gradient-include]',
+  '.menu-dropdown',
+  '.theme-menu-dropdown',
+  '.ctx-menu',
+  '.atlas-context-menu',
+  '.mindmap-context-menu',
+].join(', ')
 
 type Rect = { left: number; top: number; right: number; bottom: number }
 

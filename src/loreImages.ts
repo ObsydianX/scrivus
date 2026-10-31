@@ -65,6 +65,11 @@ export function getLoreImageIgnoreEntryCrop(value: LoreFieldValue | undefined) {
   return isLoreImageValue(value) ? value.ignoreEntryCrop === true : false
 }
 
+export function shouldHideLoreImageInEntry(entry: LoreEntry, fieldId: string) {
+  const value = entry.fields[fieldId]
+  return entry.entryIconFieldId === fieldId && isLoreImageValue(value) && value.hideInEntry === true
+}
+
 export function createLoreImageValue(
   path: string,
   crop: LoreImageCrop = DEFAULT_LORE_IMAGE_CROP,
@@ -72,6 +77,7 @@ export function createLoreImageValue(
   ignoreEntryCrop = false,
   croppedPath?: string,
   cropRect?: LoreImageCropRect | null,
+  hideInEntry = false,
 ): LoreImageValue {
   return {
     path,
@@ -80,5 +86,6 @@ export function createLoreImageValue(
     cropRect: cropRect ?? undefined,
     fullWidth,
     ignoreEntryCrop,
+    hideInEntry,
   }
 }

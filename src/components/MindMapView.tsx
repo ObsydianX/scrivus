@@ -16,7 +16,6 @@ const GRID_SIZE = 64
 const NODE_WIDTH = GRID_SIZE * 3
 const MIN_NODE_HEIGHT = GRID_SIZE * 2
 const NODE_TITLE_Y = 18
-const NODE_TITLE_HEIGHT = 20
 const NODE_META_HEIGHT = 22
 const NODE_BOTTOM_PADDING = 10
 
@@ -123,29 +122,24 @@ function getNodeLayout(node: MindMapNode) {
 }
 
 function isMindMapNode(target: { x: number; y: number } | MindMapNode): target is MindMapNode {
-  return 'title' in target
+  return 'text' in target
 }
 
-function getNodeTitlePort(node: MindMapNode, target: { x: number; y: number } | MindMapNode) {
-  const sourceCenterX = node.x + NODE_WIDTH / 2
-  const sourceCenterY = node.y + NODE_TITLE_Y + NODE_TITLE_HEIGHT / 2
+export function getNodeSidePort(node: MindMapNode, target: { x: number; y: number } | MindMapNode) {
+  const height = getNodeLayout(node).height
+  const centerX = node.x + NODE_WIDTH / 2
+  const centerY = node.y + height / 2
   const targetCenterX = isMindMapNode(target) ? target.x + NODE_WIDTH / 2 : target.x
-  const targetCenterY = isMindMapNode(target) ? target.y + NODE_TITLE_Y + NODE_TITLE_HEIGHT / 2 : target.y
-  const dx = targetCenterX - sourceCenterX
-  const dy = targetCenterY - sourceCenterY
-  const edgeX = node.x + (dx >= 0 ? NODE_WIDTH : 0)
+  const targetCenterY = isMindMapNode(target) ? target.y + getNodeLayout(target).height / 2 : target.y
+  const dx = targetCenterX - centerX
+  const dy = targetCenterY - centerY
 
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    return {
-      x: edgeX,
-      y: node.y,
-    }
+  // Compare directions relative to the node's proportions, then use the
+  // midpoint of the facing side. Route points remain untouched.
+  if (Math.abs(dx) / NODE_WIDTH >= Math.abs(dy) / height) {
+    return { x: node.x + (dx >= 0 ? NODE_WIDTH : 0), y: centerY }
   }
-
-  return {
-    x: edgeX,
-    y: node.y + (dy >= 0 ? getNodeLayout(node).height : 0),
-  }
+  return { x: centerX, y: node.y + (dy >= 0 ? height : 0) }
 }
 
 function getPolylineLabelPoint(points: { x: number; y: number }[]) {
@@ -442,9 +436,9 @@ export function MindMapView({
     const firstTarget = routePoints[0] ?? to
     const lastTarget = routePoints[routePoints.length - 1] ?? from
     const points = [
-      getNodeTitlePort(from, firstTarget),
+      getNodeSidePort(from, firstTarget),
       ...routePoints,
-      getNodeTitlePort(to, lastTarget),
+      getNodeSidePort(to, lastTarget),
     ]
     let insertIndex = routePoints.length
     let closestDistance = Number.POSITIVE_INFINITY
@@ -755,8 +749,8 @@ export function MindMapView({
               const routePoints = edge.routePoints ?? []
               const firstTarget = routePoints[0] ?? to
               const lastTarget = routePoints[routePoints.length - 1] ?? from
-              const fromPort = getNodeTitlePort(from, firstTarget)
-              const toPort = getNodeTitlePort(to, lastTarget)
+              const fromPort = getNodeSidePort(from, firstTarget)
+              const toPort = getNodeSidePort(to, lastTarget)
               const points = [fromPort, ...routePoints, toPort]
               const pointList = points.map(point => `${point.x},${point.y}`).join(' ')
               const labelPoint = getPolylineLabelPoint(points)
@@ -780,9 +774,10 @@ export function MindMapView({
                   setSelectedRoutePoint(null)
                   setContextMenu({ type: 'edge', x: event.clientX, y: event.clientY, edgeId: edge.id })
                 }}>
-                  <polyline points={pointList} />
+                  <polyline className="mindmap-edge-hitbox" points={pointList} aria-hidden="true" />
+                  <polyline className="mindmap-edge-line" points={pointList} />
                   {edge.label && (
-                    <text x={labelPoint.x} y={labelPoint.y}>{edge.label}</text>
+                    <text x={labelPoint.x} y={labelPoint.y - 10}>{edge.label}</text>
                   )}
                   {routePoints.map(point => (
                     <circle
@@ -857,7 +852,12 @@ export function MindMapView({
                       value={node.title ?? ''}
                       placeholder="Add title…"
                       aria-label="Mind map node title"
-                      onPointerDown={event => event.stopPropagation()}
+                      onPointerDown={event => {
+                        event.stopPropagation()
+                        setSelectedNodeId(node.id)
+                        setSelectedEdgeId(null)
+                        setSelectedRoutePoint(null)
+                      }}
                       onChange={event => updateNode(node.id, { title: event.target.value })}
                     />
                   </foreignObject>}
@@ -867,7 +867,12 @@ export function MindMapView({
                       value={node.text}
                       placeholder="Notes"
                       aria-label="Mind map node notes"
-                      onPointerDown={event => event.stopPropagation()}
+                      onPointerDown={event => {
+                        event.stopPropagation()
+                        setSelectedNodeId(node.id)
+                        setSelectedEdgeId(null)
+                        setSelectedRoutePoint(null)
+                      }}
                       onChange={event => updateNode(node.id, { text: event.target.value })}
                     />
                   </foreignObject>

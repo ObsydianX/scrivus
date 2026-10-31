@@ -178,6 +178,7 @@ export type LoreImageValue = {
   cropRect?: LoreImageCropRect
   fullWidth?: boolean
   ignoreEntryCrop?: boolean
+  hideInEntry?: boolean
 }
 
 export type LoreImageCropRect = {

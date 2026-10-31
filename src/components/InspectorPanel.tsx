@@ -96,7 +96,7 @@ export function InspectorPanel({
   onChecklistDropIndexChange: (index: number | null) => void
   onAddChecklistItem: () => void
 }) {
-  const [section, setSection] = useState<'scene' | 'lore' | 'notes'>('scene')
+  const [section, setSection] = useState<'scene' | 'notes'>('scene')
   const [peekId, setPeekId] = useState<string | null>(null)
   const mentions = useMemo(() => {
     if (activeSceneId === null) return []
@@ -110,6 +110,7 @@ export function InspectorPanel({
     quickNote: true,
     sceneMetadata: true,
     checklist: true,
+    sceneLore: true,
   }
 
   return (
@@ -137,9 +138,12 @@ export function InspectorPanel({
         {open && <span>Inspector</span>}
       </div>
       {open && <div className="inspector-sections" role="group" aria-label="Inspector sections">
-        {([['scene', 'Scene'], ['lore', 'In this scene'], ['notes', 'Notes']] as const).map(([id, label]) => <button key={id} type="button" aria-pressed={section === id} onClick={() => setSection(id)}>{label}</button>)}
+        {([['scene', 'Scene'], ['notes', 'Notes']] as const).map(([id, label]) => <button key={id} type="button" aria-pressed={section === id} onClick={() => setSection(id)}>{label}</button>)}
       </div>}
-      {open && section === 'lore' && <div className="inspector-lore">
+      {open && (
+        <div className={`inspector-section-body inspector-section-${section}`}>
+        <InspectorBody
+          sceneLore={<div className="inspector-lore">
         <p>Entries detected in the current draft.</p>
         {mentions.map(({ category, entry, count }) => <button key={`${category.id}:${entry.id}`} className="inspector-lore-entry" aria-expanded={peekId === entry.id} onClick={() => setPeekId(peekId === entry.id ? null : entry.id)}><strong>{entry.name}</strong><span>{category.name} · {count} {count === 1 ? 'mention' : 'mentions'}</span></button>)}
         {!mentions.length && <p>{activeSceneId === null ? 'Select a scene to see its lore.' : 'No matching Lore entries in this draft.'}</p>}
@@ -151,9 +155,6 @@ export function InspectorPanel({
           <button onClick={() => onOpenLoreEntry(peek.category.id, peek.entry.id)}>Open full Lore entry</button>
         </section>}
       </div>}
-      {open && (
-        <div className={`inspector-section-body inspector-section-${section}`} hidden={section === 'lore'}>
-        <InspectorBody
           project={project}
           activeSceneId={activeSceneId}
           activeSceneMetadata={activeSceneMetadata}
@@ -182,6 +183,7 @@ export function InspectorPanel({
 }
 
 function InspectorBody({
+  sceneLore,
   project,
   activeSceneId,
   activeSceneMetadata,
@@ -203,6 +205,7 @@ function InspectorBody({
   onChecklistDropIndexChange,
   onAddChecklistItem,
 }: {
+  sceneLore: ReactNode
   project: Project | null
   activeSceneId: number | null
   activeSceneMetadata: SceneMetadata | null
@@ -473,6 +476,9 @@ function InspectorBody({
           </div>
         </InspectorDrawer>
       )}
+      <InspectorDrawer id="sceneLore" label="In This Scene" drawerOpen={drawerOpen} onToggle={toggleDrawer}>
+        {sceneLore}
+      </InspectorDrawer>
       <InspectorDrawer id="quickNote" label="Quick Note" drawerOpen={drawerOpen} onToggle={toggleDrawer}>
         <textarea
           key={project?.path ?? 'none'}
