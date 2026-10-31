@@ -248,6 +248,9 @@ export const DEFAULT_MIND_MAP: MindMap = {
   },
 }
 
+export const MIN_CANVAS_ZOOM = 0.05
+export const MAX_CANVAS_ZOOM = 3
+
 export function normalizeMindMap(data?: Partial<MindMap> | null): MindMap {
   const validColors: MindMapNodeColor[] = ['default', 'blue', 'green', 'rose', 'gold', 'violet', 'cyan', 'orange', 'red', 'slate']
   const nodes = Array.isArray(data?.nodes)
@@ -316,7 +319,7 @@ export function normalizeMindMap(data?: Partial<MindMap> | null): MindMap {
     viewport: {
       x: Number.isFinite(Number(data?.viewport?.x)) ? Number(data?.viewport?.x) : DEFAULT_MIND_MAP.viewport.x,
       y: Number.isFinite(Number(data?.viewport?.y)) ? Number(data?.viewport?.y) : DEFAULT_MIND_MAP.viewport.y,
-      zoom: Number.isFinite(zoom) ? Math.min(2, Math.max(0.35, zoom)) : DEFAULT_MIND_MAP.viewport.zoom,
+      zoom: Number.isFinite(zoom) ? Math.min(MAX_CANVAS_ZOOM, Math.max(MIN_CANVAS_ZOOM, zoom)) : DEFAULT_MIND_MAP.viewport.zoom,
     },
   }
 }

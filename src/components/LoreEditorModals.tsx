@@ -1,3 +1,4 @@
+import { LoreImageButton } from './LoreImageButton'
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { readFile } from '@tauri-apps/plugin-fs'
@@ -11,6 +12,7 @@ import {
   getLoreImageIgnoreEntryCrop,
   getLoreImagePath,
   getLoreListItems,
+  shouldHideLoreImageInEntry,
 } from '../loreImages'
 import type { LoreCategory, LoreEntry, LoreFieldType, LoreSelectionOption, LoreSubcategoryColor, LoreTemplateElement } from '../types'
 import { hasInvalidProjectExpressions, type ProjectVariables } from '../projectExpressions'
@@ -46,6 +48,8 @@ type CropEditorState = {
   label: string
   fullWidth: boolean
   ignoreEntryCrop: boolean
+  useAsEntryIcon: boolean
+  hideInEntry: boolean
 }
 
 type CropRect = {
@@ -805,7 +809,7 @@ export function LoreEntryEditorModal({
     if (!rel) return
     setLocal(prev => prev ? {
       ...prev,
-      fields: { ...prev.fields, [fieldId]: createLoreImageValue(rel, undefined, fullWidth, ignoreEntryCrop) },
+      fields: { ...prev.fields, [fieldId]: createLoreImageValue(rel, undefined, fullWidth, ignoreEntryCrop, undefined, undefined, shouldHideLoreImageInEntry(local, fieldId)) },
     } : prev)
     setCropEditor({
       fieldId,
@@ -813,6 +817,8 @@ export function LoreEntryEditorModal({
       label: activeFields.find(field => field.id === fieldId)?.label ?? 'Image',
       fullWidth,
       ignoreEntryCrop,
+      useAsEntryIcon: local.entryIconFieldId === fieldId,
+      hideInEntry: shouldHideLoreImageInEntry(local, fieldId),
     })
   }
 
@@ -826,6 +832,8 @@ export function LoreEntryEditorModal({
       label,
       fullWidth: getLoreImageFullWidth(current),
       ignoreEntryCrop: getLoreImageIgnoreEntryCrop(current),
+      useAsEntryIcon: local.entryIconFieldId === fieldId,
+      hideInEntry: shouldHideLoreImageInEntry(local, fieldId),
     })
   }
 
@@ -933,6 +941,7 @@ export function LoreEntryEditorModal({
         const path = getLoreImagePath(current) || cropEditor.path
         return {
           ...prev,
+          entryIconFieldId: cropEditor.useAsEntryIcon ? cropEditor.fieldId : prev.entryIconFieldId === cropEditor.fieldId ? undefined : prev.entryIconFieldId,
           fields: {
             ...prev.fields,
             [cropEditor.fieldId]: createLoreImageValue(
@@ -942,6 +951,7 @@ export function LoreEntryEditorModal({
               cropEditor.ignoreEntryCrop,
               croppedPath,
               { x: sourceX, y: sourceY, size: sourceSize },
+              cropEditor.useAsEntryIcon && cropEditor.hideInEntry,
             ),
           },
         }
@@ -1044,9 +1054,12 @@ export function LoreEntryEditorModal({
                   <div className="lore-entry-image-wrap">
                     {displayPath && (
                       <div className="lore-entry-image-crop-preview">
-                        <img
+                        <LoreImageButton
                           src={projectPath ? convertFileSrc(`${projectPath}/${displayPath}`.replace(/\\/g, '/')) : ''}
-                          className="lore-entry-image-preview"
+                          className="lore-entry-image-preview-button"
+                          imageClassName="lore-entry-image-preview"
+                          onOpen={() => openCropEditor(field.id, path, field.label ?? 'Image')}
+                          onReplace={() => handleImagePick(field.id)}
                           alt={field.label ?? 'image'}
                         />
                       </div>
@@ -1329,6 +1342,20 @@ export function LoreEntryEditorModal({
             Crop the square image used for Lore Book cards, pinned entries, and compact previews.
           </div>
           <div className="lore-image-crop-options">
+            <label>
+              <input type="checkbox" checked={cropEditor.useAsEntryIcon} onChange={event => {
+                const useAsEntryIcon = event.currentTarget.checked
+                setCropEditor(editor => editor ? { ...editor, useAsEntryIcon, hideInEntry: useAsEntryIcon && editor.hideInEntry } : editor)
+              }} />
+              <span>Use as entry icon</span>
+            </label>
+            <label title={cropEditor.useAsEntryIcon ? 'Show this image only as the entry icon' : 'Use this image as the entry icon to hide it from the entry'}>
+              <input type="checkbox" checked={cropEditor.useAsEntryIcon && cropEditor.hideInEntry} disabled={!cropEditor.useAsEntryIcon} onChange={event => {
+                const hideInEntry = event.currentTarget.checked
+                setCropEditor(editor => editor ? { ...editor, hideInEntry } : editor)
+              }} />
+              <span>Hide in Entry</span>
+            </label>
             <label>
               <input
                 type="checkbox"

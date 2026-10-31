@@ -46,8 +46,6 @@ export function SceneTabBar({
   onTabDrop,
   focusMode,
   onFocusModeChange,
-  typewriterScrolling,
-  onTypewriterScrollingChange,
 }: {
   tabs: SceneTab[]
   activeIndex: number
@@ -69,8 +67,6 @@ export function SceneTabBar({
   onTabDrop: (targetIndex: number) => void
   focusMode: boolean
   onFocusModeChange: (focusMode: boolean) => void
-  typewriterScrolling: boolean
-  onTypewriterScrollingChange: (enabled: boolean) => void
 }) {
   return (
     <div
@@ -174,26 +170,17 @@ export function SceneTabBar({
       >
         <i className="ti ti-plus" aria-hidden="true" />
       </button>
-      <button
+      {focusMode && <button
         type="button"
-        className={`scene-focus-btn scene-typewriter-btn${typewriterScrolling ? ' active' : ''}`}
-        title={typewriterScrolling ? 'Disable typewriter scrolling' : 'Typewriter scrolling — keep the caret line centered while typing'}
-        aria-label={typewriterScrolling ? 'Disable typewriter scrolling' : 'Enable typewriter scrolling'}
-        aria-pressed={typewriterScrolling}
-        onClick={() => onTypewriterScrollingChange(!typewriterScrolling)}
-      >
-        <i className="ti ti-keyboard" aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        className={`scene-focus-btn${focusMode ? ' active' : ''}`}
+        className="workspace-focus-button focus-exit-button"
         title={focusMode ? 'Exit focus mode' : 'Focus mode'}
         aria-label={focusMode ? 'Exit focus mode' : 'Focus mode'}
         aria-pressed={focusMode}
         onClick={() => onFocusModeChange(!focusMode)}
       >
         <i className={`ti ${focusMode ? 'ti-arrows-minimize' : 'ti-arrows-maximize'}`} aria-hidden="true" />
-      </button>
+        <span>Focus</span>
+      </button>}
     </div>
   )
 }
@@ -202,10 +189,14 @@ export function EditorToolbar({
   editor,
   loreLinksEnabled,
   onLoreLinksEnabledChange,
+  typewriterScrolling,
+  onTypewriterScrollingChange,
 }: {
   editor: Editor | null
   loreLinksEnabled: boolean
   onLoreLinksEnabledChange: (enabled: boolean) => void
+  typewriterScrolling: boolean
+  onTypewriterScrollingChange: (enabled: boolean) => void
 }) {
   const [, setToolbarVersion] = useState(0)
 
@@ -330,14 +321,28 @@ export function EditorToolbar({
           <i className="ti ti-eraser" aria-hidden="true" />
         </button>
       </div>
-      <label className="toolbar-check">
-        <input
-          type="checkbox"
-          checked={loreLinksEnabled}
-          onChange={e => onLoreLinksEnabledChange(e.target.checked)}
-        />
-        Lore links
-      </label>
+      <div className="editor-toolbar-group editor-toolbar-toggles">
+        <button
+          type="button"
+          className={typewriterScrolling ? 'active' : ''}
+          title="Typewriter scrolling — keep the caret line centered while typing"
+          aria-label="Typewriter scrolling"
+          aria-pressed={typewriterScrolling}
+          onClick={() => onTypewriterScrollingChange(!typewriterScrolling)}
+        >
+          <i className="ti ti-keyboard" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className={loreLinksEnabled ? 'active' : ''}
+          title="Lore links"
+          aria-label="Lore links"
+          aria-pressed={loreLinksEnabled}
+          onClick={() => onLoreLinksEnabledChange(!loreLinksEnabled)}
+        >
+          <i className="ti ti-link" aria-hidden="true" />
+        </button>
+      </div>
     </div>
   )
 }

@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { ChecklistItem, Project, SceneMetadata } from '../types'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { ChecklistItem, LoreBook, Project, SceneMetadata } from '../types'
+import { countLoreMentions } from '../loreBacklinks'
+import { htmlToPlainText } from '../wordCount'
+import { getLoreFieldText, getLoreListItems } from '../loreImages'
 
 type MutableRef<T> = {
   current: T
@@ -19,14 +22,16 @@ function InspectorDrawer({
   children: ReactNode
 }) {
   return (
-    <div className="inspector-drawer">
-      <div
+    <div className="inspector-drawer" data-section={id}>
+      <button
+        type="button"
         className="inspector-drawer-header"
+        aria-expanded={Boolean(drawerOpen[id])}
         onClick={() => onToggle(id)}
       >
         <i className={`ti ti-chevron-${drawerOpen[id] ? 'down' : 'right'}`} aria-hidden="true" />
         <span>{label}</span>
-      </div>
+      </button>
       {drawerOpen[id] && (
         <div className="inspector-drawer-body">
           {children}
@@ -37,6 +42,9 @@ function InspectorDrawer({
 }
 
 export function InspectorPanel({
+  loreBook,
+  sceneContent,
+  onOpenLoreEntry,
   open,
   panelLockActive,
   workspace,
@@ -61,6 +69,9 @@ export function InspectorPanel({
   onChecklistDropIndexChange,
   onAddChecklistItem,
 }: {
+  loreBook: LoreBook
+  sceneContent: string
+  onOpenLoreEntry: (categoryId: string, entryId: string) => void
   open: boolean
   panelLockActive: boolean
   workspace: 'editor' | 'revision' | 'outline' | 'lorebook' | 'mindmap' | 'atlas'
@@ -74,7 +85,7 @@ export function InspectorPanel({
   checklistDropIndex: number | null
   checklistDragIdRef: MutableRef<number | null>
   onOpenChange: (open: boolean) => void
-  onSceneMetadataChange: (metadata: SceneMetadata) => void
+  onSceneMetadataChange: (metadata: SceneMetadata, sceneId: number) => void
   onQuickNoteChange: (value: string) => void
   onToggleChecklistItem: (id: number) => void
   onRenameChecklistItem: (id: number, label: string) => void
@@ -85,10 +96,21 @@ export function InspectorPanel({
   onChecklistDropIndexChange: (index: number | null) => void
   onAddChecklistItem: () => void
 }) {
+  const [section, setSection] = useState<'scene' | 'notes'>('scene')
+  const [peekId, setPeekId] = useState<string | null>(null)
+  const mentions = useMemo(() => {
+    if (activeSceneId === null) return []
+    const text = htmlToPlainText(sceneContent)
+    return loreBook.categories.flatMap(category => category.entries.map(entry => ({
+      category, entry, count: countLoreMentions(text, entry.name, entry.keywords),
+    }))).filter(item => item.count > 0).sort((a, b) => b.count - a.count || a.entry.name.localeCompare(b.entry.name))
+  }, [loreBook, sceneContent, activeSceneId])
+  const peek = mentions.find(item => item.entry.id === peekId)
   const drawerOpen = {
-    quickNote: false,
-    sceneMetadata: false,
-    checklist: false,
+    quickNote: true,
+    sceneMetadata: true,
+    checklist: true,
+    sceneLore: true,
   }
 
   return (
@@ -97,7 +119,7 @@ export function InspectorPanel({
         <div style={{ display: 'flex', flexDirection: open ? 'row' : 'column', gap: 2, alignItems: 'center' }}>
           {!open && (
             <button
-              title={panelLockActive ? 'Quick Tools unavailable below 960px' : 'Expand inspector'}
+              title={panelLockActive ? 'Inspector unavailable below 960px' : 'Expand inspector'}
               onClick={() => onOpenChange(true)}
               disabled={panelLockActive}
             >
@@ -113,10 +135,26 @@ export function InspectorPanel({
             </>
           )}
         </div>
-        {open && <span>Quick Tools</span>}
+        {open && <span>Inspector</span>}
       </div>
+      {open && <div className="inspector-sections" role="group" aria-label="Inspector sections">
+        {([['scene', 'Scene'], ['notes', 'Notes']] as const).map(([id, label]) => <button key={id} type="button" aria-pressed={section === id} onClick={() => setSection(id)}>{label}</button>)}
+      </div>}
       {open && (
+        <div className={`inspector-section-body inspector-section-${section}`}>
         <InspectorBody
+          sceneLore={<div className="inspector-lore">
+        <p>Entries detected in the current draft.</p>
+        {mentions.map(({ category, entry, count }) => <button key={`${category.id}:${entry.id}`} className="inspector-lore-entry" aria-expanded={peekId === entry.id} onClick={() => setPeekId(peekId === entry.id ? null : entry.id)}><strong>{entry.name}</strong><span>{category.name} · {count} {count === 1 ? 'mention' : 'mentions'}</span></button>)}
+        {!mentions.length && <p>{activeSceneId === null ? 'Select a scene to see its lore.' : 'No matching Lore entries in this draft.'}</p>}
+        {peek && <section className="inspector-lore-peek"><h3>{peek.entry.name}</h3>
+          {peek.category.template.filter(field => !field.removed && field.type !== 'image' && field.type !== 'divider' && field.type !== 'header' && field.type !== 'derived' && field.type !== 'selection' && field.type !== 'multi-selection' && field.type !== 'child-of').map(field => {
+            const value = field.type === 'list' ? getLoreListItems(peek.entry.fields[field.id]).map(item => `• ${item}`).join('\n') : getLoreFieldText(peek.entry.fields[field.id])
+            return value ? <div key={field.id}><h4>{field.label}</h4><p>{value}</p></div> : null
+          })}
+          <button onClick={() => onOpenLoreEntry(peek.category.id, peek.entry.id)}>Open full Lore entry</button>
+        </section>}
+      </div>}
           project={project}
           activeSceneId={activeSceneId}
           activeSceneMetadata={activeSceneMetadata}
@@ -138,12 +176,14 @@ export function InspectorPanel({
           onChecklistDropIndexChange={onChecklistDropIndexChange}
           onAddChecklistItem={onAddChecklistItem}
         />
+        </div>
       )}
     </div>
   )
 }
 
 function InspectorBody({
+  sceneLore,
   project,
   activeSceneId,
   activeSceneMetadata,
@@ -165,6 +205,7 @@ function InspectorBody({
   onChecklistDropIndexChange,
   onAddChecklistItem,
 }: {
+  sceneLore: ReactNode
   project: Project | null
   activeSceneId: number | null
   activeSceneMetadata: SceneMetadata | null
@@ -176,7 +217,7 @@ function InspectorBody({
   checklistDragIdRef: MutableRef<number | null>
   drawerOpen: Record<string, boolean>
   onQuickNoteChange: (value: string) => void
-  onSceneMetadataChange: (metadata: SceneMetadata) => void
+  onSceneMetadataChange: (metadata: SceneMetadata, sceneId: number) => void
   onToggleChecklistItem: (id: number) => void
   onRenameChecklistItem: (id: number, label: string) => void
   onDeleteChecklistItem: (id: number) => void
@@ -189,6 +230,11 @@ function InspectorBody({
   const [drawerOpen, setDrawerOpen] = useState(initialDrawerOpen)
   const [metadataDraft, setMetadataDraft] = useState<SceneMetadata | null>(activeSceneMetadata)
   const metadataSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingMetadataRef = useRef<{ metadata: SceneMetadata; sceneId: number } | null>(null)
+  const metadataCallbackRef = useRef(onSceneMetadataChange)
+  metadataCallbackRef.current = onSceneMetadataChange
+  const projectPathRef = useRef(project?.path)
+  projectPathRef.current = project?.path
   const toggleDrawer = (id: string) => setDrawerOpen(prev => ({ ...prev, [id]: !prev[id] }))
 
   const unchecked = checklist
@@ -204,28 +250,35 @@ function InspectorBody({
     }
     setMetadataDraft(activeSceneMetadata)
     setTagInput(activeSceneMetadata?.tags.join(', ') ?? '')
-  }, [activeSceneId])
-
-  useEffect(() => () => {
-    if (metadataSaveTimerRef.current) clearTimeout(metadataSaveTimerRef.current)
-  }, [])
+    return () => {
+      if (metadataSaveTimerRef.current) clearTimeout(metadataSaveTimerRef.current)
+      metadataSaveTimerRef.current = null
+      const pending = pendingMetadataRef.current
+      pendingMetadataRef.current = null
+      if (pending && projectPathRef.current === project?.path) metadataCallbackRef.current(pending.metadata, pending.sceneId)
+    }
+  }, [activeSceneId, project?.path])
 
   const scheduleMetadataChange = (metadata: SceneMetadata) => {
+    if (activeSceneId === null) return
     setMetadataDraft(metadata)
+    pendingMetadataRef.current = { metadata, sceneId: activeSceneId }
     if (metadataSaveTimerRef.current) clearTimeout(metadataSaveTimerRef.current)
     metadataSaveTimerRef.current = setTimeout(() => {
-      onSceneMetadataChange(metadata)
+      pendingMetadataRef.current = null
+      onSceneMetadataChange(metadata, activeSceneId)
       metadataSaveTimerRef.current = null
     }, 700)
   }
 
   const flushMetadataChange = (metadata: SceneMetadata | null = metadataDraft) => {
-    if (!metadata) return
+    if (!metadata || activeSceneId === null) return
     if (metadataSaveTimerRef.current) {
       clearTimeout(metadataSaveTimerRef.current)
       metadataSaveTimerRef.current = null
     }
-    onSceneMetadataChange(metadata)
+    pendingMetadataRef.current = null
+    onSceneMetadataChange(metadata, activeSceneId)
   }
 
   const commitTags = () => {
@@ -423,6 +476,9 @@ function InspectorBody({
           </div>
         </InspectorDrawer>
       )}
+      <InspectorDrawer id="sceneLore" label="In This Scene" drawerOpen={drawerOpen} onToggle={toggleDrawer}>
+        {sceneLore}
+      </InspectorDrawer>
       <InspectorDrawer id="quickNote" label="Quick Note" drawerOpen={drawerOpen} onToggle={toggleDrawer}>
         <textarea
           key={project?.path ?? 'none'}

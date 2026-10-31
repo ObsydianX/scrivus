@@ -1,4 +1,9 @@
-import type { LoreFieldValue, LoreImageCrop, LoreImageCropRect, LoreImageValue } from './types'
+import type { LoreCategory, LoreEntry, LoreFieldValue, LoreImageCrop, LoreImageCropRect, LoreImageValue } from './types'
+
+export function getLoreEntryIconPath(category: LoreCategory, entry: LoreEntry) {
+  const field = category.template.find(field => field.id === entry.entryIconFieldId && field.type === 'image' && !field.removed)
+  return field ? getLoreImageDisplayPath(entry.fields[field.id]) : ''
+}
 
 export const DEFAULT_LORE_IMAGE_CROP: LoreImageCrop = {
   zoom: 1,
@@ -60,6 +65,11 @@ export function getLoreImageIgnoreEntryCrop(value: LoreFieldValue | undefined) {
   return isLoreImageValue(value) ? value.ignoreEntryCrop === true : false
 }
 
+export function shouldHideLoreImageInEntry(entry: LoreEntry, fieldId: string) {
+  const value = entry.fields[fieldId]
+  return entry.entryIconFieldId === fieldId && isLoreImageValue(value) && value.hideInEntry === true
+}
+
 export function createLoreImageValue(
   path: string,
   crop: LoreImageCrop = DEFAULT_LORE_IMAGE_CROP,
@@ -67,6 +77,7 @@ export function createLoreImageValue(
   ignoreEntryCrop = false,
   croppedPath?: string,
   cropRect?: LoreImageCropRect | null,
+  hideInEntry = false,
 ): LoreImageValue {
   return {
     path,
@@ -75,5 +86,16 @@ export function createLoreImageValue(
     cropRect: cropRect ?? undefined,
     fullWidth,
     ignoreEntryCrop,
+    hideInEntry,
   }
+}
+
+export function getLoreImageCleanupPaths(entries: LoreEntry[], remaining: LoreEntry[], filenames: string[]) {
+  const paths = (items: LoreEntry[]) => items.flatMap(entry => Object.values(entry.fields).flatMap(value => [getLoreImagePath(value), getLoreImageCroppedPath(value)]))
+  const retained = new Set(paths(remaining))
+  const prefix = (entry: LoreEntry) => (entry.id.replace(/[^a-zA-Z0-9_-]/g, '_') || 'entry') + '_'
+  const owned = entries.map(prefix)
+  const surviving = remaining.map(prefix)
+  const candidates = [...paths(entries), ...filenames.filter(name => owned.some(p => name.startsWith(p)) && !surviving.some(p => name.startsWith(p))).map(name => 'lorebook/images/' + name)]
+  return [...new Set(candidates)].filter(path => /^lorebook\/images\/[^/\\]+$/.test(path) && !path.endsWith('/..') && !path.endsWith('/.') && !retained.has(path))
 }

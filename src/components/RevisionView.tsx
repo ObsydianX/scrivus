@@ -33,6 +33,7 @@ type RevisionViewProps = {
 }
 
 type RevisionCommentsPaneProps = {
+  panelLockActive?: boolean
   activeId: number | null
   comments: RevisionComment[]
   activeCommentId: string | null
@@ -242,6 +243,7 @@ export function RevisionView({
                 <button
                   key={`${tab.name}-${index}`}
                   className={`revision-tab${index === activeTabIndex ? ' active' : ''}${commentCount > 0 ? ' has-comments' : ''}`}
+                  aria-current={index === activeTabIndex ? 'page' : undefined}
                   onClick={() => onSwitchTab(index)}
                   title={commentCount > 0 ? `${tab.name} - ${commentLabel}` : tab.name}
                 >
@@ -256,8 +258,9 @@ export function RevisionView({
             })}
           </div>
         )}
-        <div id="revision-toolbar-placeholder" aria-hidden="true" />
+        <div className="revision-reading-toolbar"><span><i className="ti ti-message-circle" aria-hidden="true" /> Review</span><span>Select text to add a comment <span aria-hidden="true">·</span> Read-only manuscript</span></div>
         <DocumentTitleBar title={titleBarText} bookmarked={bookmarked} />
+        <div className="revision-text-viewport">
         <div id="revision-scroll" ref={scrollRef}>
           <div id="revision-wrap">
             <div
@@ -280,6 +283,7 @@ export function RevisionView({
             />
           </div>
         </div>
+        </div>
         {footer}
       </div>
 
@@ -288,6 +292,7 @@ export function RevisionView({
 }
 
 export function RevisionCommentsPane({
+  panelLockActive = false,
   activeId,
   comments,
   activeCommentId,
@@ -305,15 +310,29 @@ export function RevisionCommentsPane({
   onUnresolveComment,
   onDeleteCommentRequest,
 }: RevisionCommentsPaneProps) {
-  const [commentsOpen, setCommentsOpen] = useState(true)
+  const [commentsExpanded, setCommentsOpen] = useState(true)
+  const [narrowWindow, setNarrowWindow] = useState(() => typeof window !== 'undefined' && window.innerWidth < 960)
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 959px)')
+    const update = () => setNarrowWindow(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  const commentsLocked = panelLockActive || narrowWindow
+  const commentsOpen = commentsExpanded && !commentsLocked
+  const [commentFilter, setCommentFilter] = useState<'all' | 'open' | 'resolved'>('all')
   const activeComments = getActiveComments(comments, activeId, activeTabIndex, tabs)
+  const openCount = activeComments.filter(comment => !comment.resolved).length
+  const resolvedCount = activeComments.length - openCount
+  const visibleComments = activeComments.filter(comment => commentFilter === 'all' || (commentFilter === 'resolved' ? comment.resolved : !comment.resolved))
 
   return (
     <div id="revision-comments-pane" className={commentsOpen ? '' : 'collapsed'}>
       <div id="revision-comments-header">
         <div style={{ display: 'flex', flexDirection: commentsOpen ? 'row' : 'column', gap: 2, alignItems: 'center' }}>
           {!commentsOpen && (
-            <button title="Expand comments" onClick={() => setCommentsOpen(true)}>
+            <button disabled={commentsLocked} title={commentsLocked ? 'Comments unavailable at this window width' : 'Expand comments'} onClick={() => { if (!commentsLocked) setCommentsOpen(true) }}>
               <i className="ti ti-chevrons-left" aria-hidden="true" />
             </button>
           )}
@@ -338,6 +357,9 @@ export function RevisionCommentsPane({
         )}
       </div>
 
+      {commentsOpen && <div className="revision-comment-filters" role="group" aria-label="Filter comments">
+        {([['all', 'All', activeComments.length], ['open', 'Open', openCount], ['resolved', 'Resolved', resolvedCount]] as const).map(([filter, label, count]) => <button key={filter} type="button" aria-pressed={commentFilter === filter} onClick={() => setCommentFilter(filter)}>{label}<span>{count}</span></button>)}
+      </div>}
       {commentsOpen && <div id="revision-comments-list">
         {pendingComment && (
           <div className="revision-comment revision-comment--pending">
@@ -349,6 +371,7 @@ export function RevisionCommentsPane({
             </div>
             <textarea
               className="revision-comment-input"
+              aria-label="New comment"
               placeholder="Add a comment..."
               value={draftText}
               autoFocus
@@ -394,10 +417,19 @@ export function RevisionCommentsPane({
           </div>
         )}
 
-        {activeComments.map(c => (
+        {activeComments.length > 0 && visibleComments.length === 0 && <div className="revision-comments-empty"><p>No {commentFilter === 'resolved' ? 'resolved' : 'open'} comments</p></div>}
+        {visibleComments.map(c => (
           <div
             key={c.id}
             className={`revision-comment${activeCommentId === c.id ? ' revision-comment--active' : ''}${c.resolved ? ' revision-comment--resolved' : ''}`}
+            tabIndex={0}
+            role="group"
+            aria-label={`${c.resolved ? 'Resolved comment' : 'Open comment'}: ${c.text}`}
+            onKeyDown={event => {
+              if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
+              event.preventDefault()
+              onActiveCommentChange(c.id)
+            }}
             onClick={() => {
               if (c.id === activeCommentId) {
                 onActiveCommentChange(null)

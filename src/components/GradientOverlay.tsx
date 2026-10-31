@@ -4,9 +4,16 @@ import { useEffect, useRef } from 'react'
 // data-gradient-exclude, plus every image (lore book, atlas maps, covers).
 const EXCLUDE_SELECTOR = '[data-gradient-exclude], img'
 
-// Elements that float above an excluded region (e.g. the Atlas panels over
-// the map) and should get the gradient back where they overlap its hole.
-const INCLUDE_SELECTOR = '[data-gradient-include]'
+// Elements that float above an excluded region (Atlas panels and menus)
+// should get the gradient back where they overlap its hole.
+const INCLUDE_SELECTOR = [
+  '[data-gradient-include]',
+  '.menu-dropdown',
+  '.theme-menu-dropdown',
+  '.ctx-menu',
+  '.atlas-context-menu',
+  '.mindmap-context-menu',
+].join(', ')
 
 type Rect = { left: number; top: number; right: number; bottom: number }
 
@@ -68,7 +75,7 @@ function isTopmost(node: Element, rect: Rect): boolean {
 // Full-screen, non-interactive gradient tint over the whole app. Excluded
 // regions are punched out of the overlay with a clip-path that is re-measured
 // whenever layout, scrolling, or the DOM changes.
-export function GradientOverlay({ animated = false }: { animated?: boolean }) {
+export function GradientOverlay({ animated = false, intensity = 100 }: { animated?: boolean; intensity?: number }) {
   const overlayRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -177,7 +184,7 @@ export function GradientOverlay({ animated = false }: { animated?: boolean }) {
   }, [])
 
   return (
-    <div id="gradient-overlay" className={animated ? 'animated' : undefined} ref={overlayRef} aria-hidden="true">
+    <div id="gradient-overlay" className={animated ? 'animated' : undefined} style={{ opacity: intensity / 100 }} ref={overlayRef} aria-hidden="true">
       <div className="gradient-overlay-layer" />
       <div className="gradient-overlay-grain" />
     </div>

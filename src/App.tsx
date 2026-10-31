@@ -1,3 +1,6 @@
+import { deleteLoreEntryImages } from './storage'
+import { createLoreImageValue, getLoreImageFullWidth, getLoreImageIgnoreEntryCrop, shouldHideLoreImageInEntry } from './loreImages'
+import { formatSceneTabTitle, getTabIndexAfterRemoval } from './sceneTabs'
 // #region === IMPORTS ===
 // ─────────────────────────────────────────────────────────────────────────────
 // Imports
@@ -234,6 +237,9 @@ import type {
   TreeNode,
 } from './types'
 import './App.css'
+import './facelift.css'
+import { CommandPalette } from './components/CommandPalette'
+import { normalizeBinderWordCountDisplay, type BinderWordCountDisplay, getBinderWordCounts } from './binderWordCounts'
 
 // #endregion
 
@@ -321,6 +327,7 @@ export default function App() {
   // ── Editor stats and trash state ──
   const [wordCount, setWordCount] = useState(0)
   const [, setCharCount] = useState(0)
+  const [, refreshEditorState] = useState(0)
   const [trashItems, setTrashItems] = useState<TrashItem[]>([])
   const [trashOpen, setTrashOpen] = useState(false)
   const [trashExpanded, setTrashExpanded] = useState<Set<string>>(new Set())
@@ -538,14 +545,17 @@ export default function App() {
   const DEFAULT_SETTINGS = {
     zoom: 100,
     theme: 'dark' as ThemeId,
+    binderWordCountDisplay: 'all' as BinderWordCountDisplay,
     incrementNewNodeNumbers: false,
     loreLinksEnabled: true,
     typewriterScrolling: false,
     readingWpm: 240,
     defaultSceneTargetWordCount: 0,
+    reviseGlow: { enabled: true, intensity: 35 },
     gradientOverlay: {
       enabled: true,
       animated: false,
+      intensity: 75,
     },
     goals: {
       monthlyTargetWordCount: 0,
@@ -574,6 +584,7 @@ export default function App() {
       return {
         ...parsed,
         theme: normalizeTheme(parsed.theme),
+        binderWordCountDisplay: normalizeBinderWordCountDisplay(parsed.binderWordCountDisplay),
         incrementNewNodeNumbers: parsed.incrementNewNodeNumbers === true,
         loreLinksEnabled: parsed.loreLinksEnabled !== false,
         typewriterScrolling: parsed.typewriterScrolling === true,
@@ -583,9 +594,18 @@ export default function App() {
         defaultSceneTargetWordCount: Number.isFinite(Number(parsed.defaultSceneTargetWordCount))
           ? Math.min(999999, Math.max(0, Math.round(Number(parsed.defaultSceneTargetWordCount))))
           : DEFAULT_SETTINGS.defaultSceneTargetWordCount,
+        reviseGlow: {
+          enabled: parsed.reviseGlow?.enabled !== false,
+          intensity: typeof parsed.reviseGlow?.intensity === 'number' && Number.isFinite(parsed.reviseGlow.intensity)
+            ? Math.min(100, Math.max(0, Math.round(parsed.reviseGlow.intensity)))
+            : DEFAULT_SETTINGS.reviseGlow.intensity,
+        },
         gradientOverlay: {
           enabled: parsed.gradientOverlay?.enabled !== false,
           animated: parsed.gradientOverlay?.animated === true,
+          intensity: typeof parsed.gradientOverlay?.intensity === 'number' && Number.isFinite(parsed.gradientOverlay.intensity)
+            ? Math.min(100, Math.max(0, Math.round(parsed.gradientOverlay.intensity)))
+            : 100,
         },
         goals: {
           ...DEFAULT_SETTINGS.goals,
@@ -622,6 +642,7 @@ export default function App() {
   // --- ZOOM STATE ---
   const ZOOM_PRESETS = [50, 75, 90, 100, 110, 125, 150, 175, 200, 300];
   const initialSettings = loadSettings()
+  const [binderWordCountDisplay, setBinderWordCountDisplay] = useState(() => initialSettings.binderWordCountDisplay)
   const [compileFrontMatter, setCompileFrontMatter] = useState(() => initialSettings.compile.frontMatter)
   const [compileFormat, setCompileFormat] = useState<CompileFormat>(() => initialSettings.compile.format)
   const [compileIncludeActHeadings, setCompileIncludeActHeadings] = useState(() => initialSettings.compile.includeActHeadings)
@@ -640,16 +661,17 @@ export default function App() {
   const [defaultSceneTargetWordCount, setDefaultSceneTargetWordCount] = useState(() => initialSettings.defaultSceneTargetWordCount)
   const [gradientOverlayEnabled, setGradientOverlayEnabled] = useState(() => initialSettings.gradientOverlay.enabled)
   const [gradientOverlayAnimated, setGradientOverlayAnimated] = useState(() => initialSettings.gradientOverlay.animated)
+  const [gradientOverlayIntensity, setGradientOverlayIntensity] = useState(() => initialSettings.gradientOverlay.intensity)
+  const [reviseGlowEnabled, setReviseGlowEnabled] = useState(() => initialSettings.reviseGlow.enabled)
+  const [reviseGlowIntensity, setReviseGlowIntensity] = useState(() => initialSettings.reviseGlow.intensity)
+  const [reviseGlowPreview, setReviseGlowPreview] = useState<number | null>(null)
+  const [gradientOverlayPreview, setGradientOverlayPreview] = useState<number | null>(null)
   const [goals, setGoals] = useState(() => initialSettings.goals)
   const [showGoalModal, setShowGoalModal] = useState(false)
   const [previewTheme, setPreviewTheme] = useState<ThemeId | null>(null)
   const [themeMenuOpen, setThemeMenuOpen] = useState(false)
   const [zoomOpen, setZoomOpen] = useState(false);
 
-  const formatSceneTabTitle = (sceneTitle: string, tabs: SceneTab[], tabIndex: number) => {
-    const tabName = tabs[tabIndex]?.name
-    return tabs.length > 1 && tabName ? `${sceneTitle} - ${tabName}` : sceneTitle
-  }
 
   const openAncestorFoldersForNode = (nodes: TreeNode[], targetId: number): { nodes: TreeNode[]; found: boolean } => {
     let foundInNodes = false
@@ -824,6 +846,7 @@ export default function App() {
       // const json = editor.getJSON()
       const html = editor.getHTML().replace(/<mark data-fnr="" class="fnr-highlight">(.*?)<\/mark>/g, '$1')
       bodyHtmlRef.current = html
+      refreshEditorState(version => version + 1)
       const tabs = sceneTabsRef.current.map((tab, index) =>
         index === activeTabIndexRef.current ? { ...tab, content: html } : tab)
       setWordCount(countLatestRevisionWords(tabs))
@@ -1627,6 +1650,7 @@ export default function App() {
       const serialized = serializeSceneTabs(updatedTabs, rawFileRef.current)
       rawFileRef.current = serialized
       recordSceneWordDelta(node.file, countLatestRevisionWords(updatedTabs))
+      outlineWordCountsRef.current.set(node.id, countLatestRevisionWords(updatedTabs))
       writeSceneFile(projectRef.current.path, node.file, serialized)
       setLoreBacklinkVersion(version => version + 1)
     }
@@ -1926,9 +1950,9 @@ export default function App() {
   // Saves the lorebook to disk.
   const saveLoreBook = async (data: LoreBook) => {
     if (!projectRef.current) return
+    await writeLoreBookFile(projectRef.current.path, data)
     loreBookRef.current = data
     setLoreBook(data)
-    await writeLoreBookFile(projectRef.current.path, data)
   }
 
   // Returns the active lore category or null.
@@ -2065,6 +2089,7 @@ export default function App() {
     )
     sceneTabsRef.current = updatedTabs
     setSceneTabs(updatedTabs)
+    if (activeIdRef.current !== null) outlineWordCountsRef.current.set(activeIdRef.current, countLatestRevisionWords(updatedTabs))
     // Serialize and save immediately
     if (activeIdRef.current !== null && projectRef.current) {
       const node = findNode(treeRef.current, activeIdRef.current)
@@ -2078,6 +2103,7 @@ export default function App() {
     }
     // Load new tab
     setActiveTabIndex(index)
+    activeTabIndexRef.current = index
     if (activeIdRef.current !== null) {
       sceneActiveTabRef.current[activeIdRef.current] = index
     }
@@ -2108,6 +2134,8 @@ export default function App() {
     if (activeIdRef.current !== null) {
       sceneActiveTabRef.current[activeIdRef.current] = newIndex
     }
+    setWordCount(countLatestRevisionWords(newTabs))
+    setCharCount(0)
     bodyHtmlRef.current = ''
     editor?.commands.setContent('', { emitUpdate: false })
     if (activeIdRef.current !== null && projectRef.current) {
@@ -2183,7 +2211,7 @@ export default function App() {
     setRenamingTabIndex(null)
     const node = findNode(treeRef.current, activeIdRef.current ?? -1)
     if (node && node.type === 'doc') {
-      setTitleValue(formatSceneTabTitle(node.title, updatedTabs, index))
+      setTitleValue(formatSceneTabTitle(node.title, updatedTabs, activeTabIndexRef.current))
       if (projectRef.current) {
         const serialized = serializeSceneTabs(updatedTabs, rawFileRef.current)
         rawFileRef.current = serialized
@@ -2194,14 +2222,17 @@ export default function App() {
 
   // Soft-deletes a tab, preserving its content in the file.
   const deleteTab = (index: number) => {
-    const tabs = sceneTabsRef.current
-    if (tabs.length <= 1) return
+    if (sceneTabsRef.current.length <= 1 || index < 0 || index >= sceneTabsRef.current.length) return
+    // Capture pending edits before preserving surviving and deleted revisions.
+    const cleanHtml = bodyHtmlRef.current.replace(/<mark data-fnr="" class="fnr-highlight">(.*?)<\/mark>/g, '$1')
+    const tabs = sceneTabsRef.current.map((tab, tabIndex) =>
+      tabIndex === activeTabIndexRef.current ? { ...tab, content: cleanHtml } : tab)
     const newRaw = softDeleteTab(tabs, index, rawFileRef.current)
     const newTabs = tabs.filter((_, i) => i !== index)
     rawFileRef.current = newRaw
     sceneTabsRef.current = newTabs
     setSceneTabs(newTabs)
-    const newIndex = Math.min(activeTabIndex, newTabs.length - 1)
+    const newIndex = getTabIndexAfterRemoval(activeTabIndexRef.current, index, newTabs.length)
     const splitWasOpen = editorSplitTabIndex !== null
     let nextSplitIndex = editorSplitTabIndex === null ? null
       : editorSplitTabIndex === index ? null
@@ -2223,11 +2254,16 @@ export default function App() {
     if (activeIdRef.current !== null && projectRef.current) {
       const node = findNode(treeRef.current, activeIdRef.current)
       if (node && node.type === 'doc') {
+        setTitleValue(formatSceneTabTitle(node.title, newTabs, newIndex))
+        outlineWordCountsRef.current.set(node.id, countLatestRevisionWords(newTabs))
         writeSceneFile(projectRef.current.path, node.file, newRaw)
         saveProjectState({ ...projectRef.current, tree: treeRef.current }, activeIdRef.current, newIndex)
       }
     }
     setWordCount(countLatestRevisionWords(newTabs))
+    setCharCount(htmlFragmentText(content).length)
+    setRenamingTabIndex(null)
+    setTabContextMenu(null)
     setConfirmDeleteTab(null)
   }
 
@@ -2252,6 +2288,7 @@ export default function App() {
     // Track where the active tab ended up
     const newActiveIndex = reordered.findIndex(t => t === savedTabs[activeTabIndex])
     const newSplitIndex = splitTab ? reordered.findIndex(t => t === splitTab) : null
+    setWordCount(countLatestRevisionWords(reordered))
     sceneTabsRef.current = reordered
     setSceneTabs(reordered)
     setActiveTabIndex(newActiveIndex)
@@ -2266,6 +2303,8 @@ export default function App() {
     if (activeIdRef.current !== null && projectRef.current) {
       const node = findNode(treeRef.current, activeIdRef.current)
       if (node && node.type === 'doc') {
+        setTitleValue(formatSceneTabTitle(node.title, reordered, newActiveIndex))
+        outlineWordCountsRef.current.set(node.id, countLatestRevisionWords(reordered))
         const serialized = serializeSceneTabs(reordered, rawFileRef.current)
         rawFileRef.current = serialized
         writeSceneFile(projectRef.current.path, node.file, serialized)
@@ -2410,20 +2449,15 @@ export default function App() {
   // Deletes a category and all its entries.
   const deleteLoreCategory = async (categoryId: string) => {
     const category = loreBookRef.current.categories.find(c => c.id === categoryId)
-    if (projectRef.current && category) {
-      const imagePaths = category.entries
-        .flatMap(entry => Object.values(entry.fields))
-        .flatMap(value => [getLoreImagePath(value), getLoreImageCroppedPath(value)])
-        .filter(Boolean)
-      for (const imagePath of imagePaths) {
-        await deleteLoreImage(projectRef.current.path, imagePath)
-      }
-    }
     const updated = {
       ...loreBookRef.current,
       categories: loreBookRef.current.categories.filter(c => c.id !== categoryId),
     }
     await saveLoreBook(updated)
+    if (projectRef.current && category) {
+      try { await deleteLoreEntryImages(projectRef.current.path, category.entries, updated.categories.flatMap(c => c.entries)) }
+      catch (error) { showMessage('Image cleanup incomplete', String(error)) }
+    }
     if (activeLoreCategoryId === categoryId) {
       setActiveLoreCategoryId(null)
       setLoreView('home')
@@ -2627,6 +2661,28 @@ export default function App() {
     setLoreEntryEditor(null)
   }
 
+  const replaceMissingLoreImage = async (categoryId: string, entryId: string, fieldId: string) => {
+    const projectPath = projectRef.current?.path
+    if (!projectPath) return
+    const selected = await open({ title: 'Replace missing image', filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }] })
+    if (!selected || Array.isArray(selected) || projectRef.current?.path !== projectPath) return
+    try {
+      const path = await copyLoreImage(projectPath, selected, entryId, fieldId)
+      if (projectRef.current?.path !== projectPath) return
+      const book = loreBookRef.current
+      const entry = book.categories.find(c => c.id === categoryId)?.entries.find(e => e.id === entryId)
+      if (!entry) return
+      const previous = entry.fields[fieldId]
+      const replacement = createLoreImageValue(path, undefined, getLoreImageFullWidth(previous), getLoreImageIgnoreEntryCrop(previous), undefined, undefined, shouldHideLoreImageInEntry(entry, fieldId))
+      const updated = { ...book, categories: book.categories.map(c => c.id !== categoryId ? c : { ...c, entries: c.entries.map(e => e.id !== entryId ? e : { ...e, fields: { ...e.fields, [fieldId]: replacement } }) }) }
+      await saveLoreBook(updated)
+      const retained = new Set(updated.categories.flatMap(c => c.entries).flatMap(e => Object.values(e.fields).flatMap(value => [getLoreImagePath(value), getLoreImageCroppedPath(value)])))
+      for (const oldPath of [getLoreImagePath(previous), getLoreImageCroppedPath(previous)]) {
+        if (oldPath && !retained.has(oldPath)) await deleteLoreImage(projectPath, oldPath)
+      }
+    } catch (error) { showMessage('Could not replace image', String(error)) }
+  }
+
   const toggleLoreEntryPinned = async (categoryId: string, entryId: string, pinned: boolean) => {
     const updated = {
       ...loreBookRef.current,
@@ -2798,14 +2854,6 @@ export default function App() {
     const entry = loreBookRef.current.categories
       .find(c => c.id === categoryId)
       ?.entries.find(e => e.id === entryId)
-    if (projectRef.current && entry) {
-      const imagePaths = Object.values(entry.fields)
-        .flatMap(value => [getLoreImagePath(value), getLoreImageCroppedPath(value)])
-        .filter(Boolean)
-      for (const imagePath of imagePaths) {
-        await deleteLoreImage(projectRef.current.path, imagePath)
-      }
-    }
     const updated = { ...loreBookRef.current }
     updated.categories = updated.categories.map(c => {
       if (c.id !== categoryId) return c
@@ -2817,6 +2865,10 @@ export default function App() {
       }
     })
     await saveLoreBook(updated)
+    if (projectRef.current && entry) {
+      try { await deleteLoreEntryImages(projectRef.current.path, [entry], updated.categories.flatMap(c => c.entries)) }
+      catch (error) { showMessage('Image cleanup incomplete', String(error)) }
+    }
     setConfirmDeleteLoreEntry(null)
   }
 
@@ -4858,24 +4910,37 @@ export default function App() {
     nextDefaultSceneTargetWordCount: number,
     nextGradientOverlayEnabled: boolean,
     nextGradientOverlayAnimated: boolean,
+    nextGradientOverlayIntensity: number,
+    nextBinderWordCountDisplay: BinderWordCountDisplay,
+    nextReviseGlowEnabled: boolean,
+    nextReviseGlowIntensity: number,
   ) => {
     const normalizedReadingWpm = Math.min(1000, Math.max(50, Math.round(nextReadingWpm)))
     const normalizedDefaultSceneTargetWordCount = Math.min(999999, Math.max(0, Math.round(nextDefaultSceneTargetWordCount)))
     setAppTheme(theme)
     setIncrementNewNodeNumbers(shouldIncrementNewNodeNumbers)
+    setBinderWordCountDisplay(nextBinderWordCountDisplay)
     setReadingWpm(normalizedReadingWpm)
     setDefaultSceneTargetWordCount(normalizedDefaultSceneTargetWordCount)
     setGradientOverlayEnabled(nextGradientOverlayEnabled)
     setGradientOverlayAnimated(nextGradientOverlayAnimated)
+    const normalizedIntensity = Math.min(100, Math.max(0, Math.round(nextGradientOverlayIntensity)))
+    setGradientOverlayIntensity(normalizedIntensity)
+    const normalizedGlowIntensity = Math.min(100, Math.max(0, Math.round(nextReviseGlowIntensity)))
+    setReviseGlowEnabled(nextReviseGlowEnabled)
+    setReviseGlowIntensity(normalizedGlowIntensity)
     saveSettings({
       ...loadSettings(),
       theme,
+      reviseGlow: { enabled: nextReviseGlowEnabled, intensity: normalizedGlowIntensity },
+      binderWordCountDisplay: nextBinderWordCountDisplay,
       incrementNewNodeNumbers: shouldIncrementNewNodeNumbers,
       readingWpm: normalizedReadingWpm,
       defaultSceneTargetWordCount: normalizedDefaultSceneTargetWordCount,
       gradientOverlay: {
         enabled: nextGradientOverlayEnabled,
         animated: nextGradientOverlayAnimated,
+        intensity: normalizedIntensity,
       },
     })
     setShowPreferences(false)
@@ -6818,7 +6883,7 @@ export default function App() {
         saveLabelTimer.current = null
       }, 1200)
     }
-    if (nextWorkspace === 'revision' && revisionActiveId !== null) {
+    if (nextWorkspace === 'revision' && revisionActiveId !== null && revisionActiveId === activeIdRef.current) {
       const tabs = sceneTabsRef.current
       const updatedTabs = tabs.map((t, i) =>
         i === activeTabIndex ? { ...t, content: bodyHtmlRef.current } : t
@@ -7216,12 +7281,18 @@ export default function App() {
       />
       {showPreferences && (
         <PreferencesModal
+          binderWordCountDisplay={binderWordCountDisplay}
           theme={appTheme}
           incrementNewNodeNumbers={incrementNewNodeNumbers}
           readingWpm={readingWpm}
           defaultSceneTargetWordCount={defaultSceneTargetWordCount}
           gradientOverlayEnabled={gradientOverlayEnabled}
           gradientOverlayAnimated={gradientOverlayAnimated}
+          gradientOverlayIntensity={gradientOverlayIntensity}
+          reviseGlowEnabled={reviseGlowEnabled}
+          reviseGlowIntensity={reviseGlowIntensity}
+          onPreviewReviseGlowIntensity={setReviseGlowPreview}
+          onPreviewIntensity={setGradientOverlayPreview}
           onCancel={() => setShowPreferences(false)}
           onSave={savePreferences}
         />
@@ -7337,7 +7408,7 @@ export default function App() {
     return (
       <div id="app" className="app-startup" aria-label="Loading Scrivus">
         <i className="ti ti-feather welcome-icon" aria-hidden="true" />
-        {gradientOverlayEnabled && <GradientOverlay animated={gradientOverlayAnimated} />}
+        {(gradientOverlayEnabled || (gradientOverlayPreview !== null && gradientOverlayPreview > 0)) && <GradientOverlay animated={gradientOverlayAnimated} intensity={gradientOverlayPreview ?? gradientOverlayIntensity} />}
       </div>
     )
   }
@@ -7389,7 +7460,7 @@ export default function App() {
           )}
           <WelcomeUpdateNotice />
         </div>
-        {gradientOverlayEnabled && <GradientOverlay animated={gradientOverlayAnimated} />}
+        {(gradientOverlayEnabled || (gradientOverlayPreview !== null && gradientOverlayPreview > 0)) && <GradientOverlay animated={gradientOverlayAnimated} intensity={gradientOverlayPreview ?? gradientOverlayIntensity} />}
       </div>
     )
   }
@@ -7400,18 +7471,65 @@ export default function App() {
   // ───────────────────────────────────────────────────────────────────────────
   // Render: main editor workspace
   // ───────────────────────────────────────────────────────────────────────────
+  // Use the same live revision counts for every manuscript surface. Separate
+  // async recounts can lag behind an edit or revision change.
+  const liveWordCounts = getBinderWordCounts(outlineRows, isTrashPreview ? null : activeId, wordCount, outlineWordCountsRef.current)
+  const liveOutlineRows = outlineRows.map(row => ({ ...row, wordCount: liveWordCounts[row.id] ?? row.wordCount }))
+  const liveManuscriptWordCount = outlineRows.length
+    ? liveOutlineRows.reduce((total, row) => total + (row.type === 'scene' ? row.wordCount : 0), 0)
+    : manuscriptWordCount
+  const activeParent = activeId === null ? null : findParentFolder(tree, activeId)
+  const liveChapterWordCount = activeParent && liveWordCounts[activeParent.id] !== undefined
+    ? liveWordCounts[activeParent.id]
+    : chapterWordCount
+
   return (
-    <div id="app" className={focusMode ? 'editor-focus-mode' : undefined} style={{ position: 'relative' }}>
-      <div id="menubar">
-        <MenuBarMenus />
-        <span className="project-title">{reviewPackage ? `${project.name} - Review Mode` : project.name}</span>
+    <div id="app" className={focusMode ? 'app-workspace editor-focus-mode' : 'app-workspace'} style={{ position: 'relative', ['--revise-glow-opacity' as string]: (reviseGlowPreview ?? (reviseGlowEnabled ? reviseGlowIntensity : 0)) / 100 }}>
+      <div id="menubar" className="workspace-header">
+        <span className="project-title" title={project.name}><i className="ti ti-feather" aria-hidden="true" />{project.name}{reviewPackage && <span className="review-mode-label">Review</span>}</span>
+        <div className="app-menus"><MenuBarMenus /></div>
+        <nav className="workspace-navigation" aria-label="Workspaces">
+          {([
+            ['editor', 'Write', 'ti-pencil'],
+            ['revision', 'Revise', 'ti-message-circle'],
+            ['outline', 'Outline', 'ti-list-details'],
+            ['lorebook', 'Lore', 'ti-book-2'],
+            ['mindmap', 'Canvas', 'ti-git-fork'],
+            ['atlas', 'Atlas', 'ti-map-2'],
+          ] as const).filter(([id]) => !reviewPackage || id === 'outline' || id === 'revision').map(([id, label, icon]) => (
+            <button key={id} type="button" className={workspace === id ? 'active' : ''} aria-label={label} aria-current={workspace === id ? 'page' : undefined} onClick={() => handleWorkspaceChange(id)} title={label}>
+              <i className={`ti ${icon}`} aria-hidden="true" /><span>{label}</span>
+            </button>
+          ))}
+        </nav>
+        <CommandPalette items={[
+          ...(['editor', 'revision', 'outline', 'lorebook', 'mindmap', 'atlas'] as const).filter(id => !reviewPackage || id === 'revision' || id === 'outline').map(id => ({ id: `workspace-${id}`, label: ({ editor: 'Write', revision: 'Revise', outline: 'Outline', lorebook: 'Lore', mindmap: 'Canvas', atlas: 'Atlas' })[id], detail: 'Workspace', icon: 'ti-layout', run: () => handleWorkspaceChange(id) })),
+          ...outlineRows.filter(row => row.type === 'scene').map(row => ({ id: `scene-${row.id}`, label: row.title, detail: `${row.chapter} · Scene · ${row.metadata?.synopsis || ''}`, icon: 'ti-file-text', run: () => { if (reviewPackage) { setWorkspace('revision'); void selectRevisionDoc(row.id) } else { void openOutlineScene(row.id) } } })),
+          ...(!reviewPackage ? loreBook.categories.flatMap(category => category.entries.map(entry => ({ id: `lore-${category.id}-${entry.id}`, label: entry.name, detail: `${category.name} · Lore · ${entry.keywords?.join(' ') || ''}`, icon: 'ti-book-2', run: () => openLoreEntryById(category.id, entry.id) }))) : []),
+        ]} />
         <span style={{ fontSize: 11, color: 'var(--text-muted)', paddingRight: 8 }}>
           {reviewPackage ? (reviewPackageBusy ? 'working...' : '') : saveLabel}
         </span>
+        <div className="workspace-focus-slot">
+          {workspace === 'editor' && (
+            <button
+              type="button"
+              className="workspace-focus-button"
+              title="Focus mode"
+              aria-pressed={focusMode}
+              onClick={() => setFocusMode(true)}
+            >
+              <i className="ti ti-arrows-maximize" aria-hidden="true" />
+              <span>Focus</span>
+            </button>
+          )}
+        </div>
         <ThemeMenu />
       </div>
 
       <BinderSidebar
+        wordCountDisplay={binderWordCountDisplay}
+        sceneWordCounts={liveWordCounts}
         binderOpen={binderOpen}
         workspace={workspace}
         projectOpen={!!project}
@@ -7531,7 +7649,6 @@ export default function App() {
       />
       <WorkspaceShell
         workspace={workspace}
-        onWorkspaceChange={handleWorkspaceChange}
         reviewMode={Boolean(reviewPackage)}
         editorState={{
           showEditor,
@@ -7578,8 +7695,8 @@ export default function App() {
           wordCount,
           targetWordCount: activeSceneMetadata?.targetWordCount,
           onGoalClick: () => setShowGoalModal(true),
-          chapterWordCount,
-          manuscriptWordCount,
+          chapterWordCount: liveChapterWordCount,
+          manuscriptWordCount: liveManuscriptWordCount,
           readingWpm,
           sprint,
           sprintWords,
@@ -7592,8 +7709,8 @@ export default function App() {
           onZoomChange: setZoom,
         }}
         outlineState={{
-          rows: outlineRows,
-          manuscriptWordCount,
+          rows: liveOutlineRows,
+          manuscriptWordCount: liveManuscriptWordCount,
           readingWpm,
           sceneCommentCounts: outlineSceneCommentCounts,
           collapsedFolderIds: outlineCollapsedFolderIds,
@@ -7638,6 +7755,7 @@ export default function App() {
           onDeleteCategoryRequest: setConfirmDeleteLoreCategory,
           onNewEntry: openNewEntryEditor,
           onEditEntry: openEditEntryEditor,
+          onReplaceImage: replaceMissingLoreImage,
           onExportEntry: exportLoreEntry,
           onDeleteEntryRequest: setConfirmDeleteLoreEntry,
           onToggleEntryPinned: toggleLoreEntryPinned,
@@ -7679,6 +7797,7 @@ export default function App() {
       />
       {workspace === 'revision' && revisionActiveId !== null && (
         <RevisionCommentsPane
+          panelLockActive={sidePanelsLocked}
           activeId={revisionActiveId}
           comments={revisionComments}
           activeCommentId={revisionActiveCommentId}
@@ -7701,6 +7820,9 @@ export default function App() {
         />
       )}
       <InspectorPanel
+        loreBook={loreBook}
+        sceneContent={editor?.getHTML() ?? ''}
+        onOpenLoreEntry={openLoreEntryById}
         open={inspectorOpen && !reviewPackage}
         panelLockActive={sidePanelsLocked}
         workspace={workspace}
@@ -7717,7 +7839,7 @@ export default function App() {
           if (open && sidePanelsLocked) return
           setInspectorOpen(open)
         }}
-        onSceneMetadataChange={updateActiveSceneMetadata}
+        onSceneMetadataChange={(metadata, sceneId) => updateSceneMetadata(sceneId, metadata)}
         onQuickNoteChange={val => {
           quickNoteRef.current = val
           if (quickNoteTimerRef.current) clearTimeout(quickNoteTimerRef.current)
@@ -7811,7 +7933,7 @@ export default function App() {
       />
       {renderSharedModals()}
 
-      {gradientOverlayEnabled && <GradientOverlay animated={gradientOverlayAnimated} />}
+      {(gradientOverlayEnabled || (gradientOverlayPreview !== null && gradientOverlayPreview > 0)) && <GradientOverlay animated={gradientOverlayAnimated} intensity={gradientOverlayPreview ?? gradientOverlayIntensity} />}
     </div>
   )
 

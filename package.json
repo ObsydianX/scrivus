@@ -17,6 +17,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "check:facelift": "node scripts/check-facelift.cjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

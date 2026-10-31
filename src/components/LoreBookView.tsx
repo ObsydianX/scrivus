@@ -1,7 +1,10 @@
+import { LoreImageButton } from './LoreImageButton'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import {
   getLoreFieldText,
+  getLoreEntryIconPath,
+  shouldHideLoreImageInEntry,
   getLoreImageDisplayPath,
   getLoreImageFullWidth,
   getLoreImageIgnoreEntryCrop,
@@ -16,6 +19,13 @@ import { formatLoreEntryName } from '../loreEntryNames'
 import { getDerivedLoreValue } from '../loreDerived'
 import { orderLoreEntriesByParent } from '../loreEntryParents'
 import { getLoreCategoryIconClass } from '../loreCategoryIcons'
+import { LoreEntryIcon } from './LoreEntryIcon'
+
+function LorePinIcon({ pinned = true }: { pinned?: boolean }) {
+  return <svg className="lore-pin-icon" viewBox="0 0 24 24" fill={pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="m12 3 2.78 5.63L21 9.54l-4.5 4.39 1.06 6.2L12 17.2l-5.56 2.93 1.06-6.2L3 9.54l6.22-.91L12 3Z" />
+  </svg>
+}
 
 const BACKLINK_PAGE_SIZE = 24
 
@@ -36,6 +46,7 @@ type LoreBookViewProps = {
   onDeleteCategoryRequest: (category: LoreCategory) => void
   onNewEntry: () => void
   onEditEntry: (entry: LoreEntry) => void
+  onReplaceImage?: (categoryId: string, entryId: string, fieldId: string) => void
   onExportEntry: (category: LoreCategory, entry: LoreEntry) => void
   onDeleteEntryRequest: (entry: LoreEntry) => void
   onToggleEntryPinned: (categoryId: string, entryId: string, pinned: boolean) => void
@@ -43,7 +54,143 @@ type LoreBookViewProps = {
   onOpenPresence: () => void
 }
 
-export function LoreBookView({
+export function LoreBookView(props: LoreBookViewProps) {
+  const [hierarchyCategoryId, setHierarchyCategoryId] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('scrivus-lore-collapsed-categories') ?? '{}')
+      return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}
+    } catch { return {} }
+  })
+  const collapseKey = (id: string) => JSON.stringify([props.projectPath, id])
+  const toggleCategory = (id: string) => {
+    const key = collapseKey(id)
+    setCollapsedCategories(previous => {
+      const next = { ...previous, [key]: previous[key] !== true }
+      try { localStorage.setItem('scrivus-lore-collapsed-categories', JSON.stringify(next)) } catch { /* Keep session state if storage is unavailable. */ }
+      return next
+    })
+  }
+  const [subcategoryFilter, setSubcategoryFilter] = useState<{ categoryId: string; id: string } | null>(null)
+  const categories = [...props.loreBook.categories].sort((a, b) => a.name.localeCompare(b.name))
+  const category = categories.find(item => item.id === props.activeCategoryId) ?? categories[0]
+  const hierarchyCategory = categories.find(item => item.id === hierarchyCategoryId)
+  const canShowHierarchy = Boolean(category?.subcategories?.some(sub => sub.parentId && category.subcategories?.some(parent => parent.id === sub.parentId)))
+  const subcategoryId = subcategoryFilter?.categoryId === category?.id ? subcategoryFilter?.id : null
+  const search = query.trim().toLocaleLowerCase()
+
+  // Keep creation and template actions scoped to the category shown on first opening.
+  useEffect(() => {
+    if (category && props.activeCategoryId !== category.id) props.onActiveCategoryChange(category.id)
+  }, [category?.id, props.activeCategoryId, props.onActiveCategoryChange])
+
+  const selectEntry = (cat: LoreCategory, entry: LoreEntry) => {
+    props.onActiveCategoryChange(cat.id)
+    props.onExpandedEntryChange(entry.id)
+    props.onLoreViewChange('entry')
+  }
+  const selectCategory = (cat: LoreCategory, subcategory: string | null = null) => {
+    setQuery('')
+    setSubcategoryFilter(subcategory ? { categoryId: cat.id, id: subcategory } : null)
+    props.onActiveCategoryChange(cat.id)
+    const entry = [...cat.entries].sort((a, b) => a.name.localeCompare(b.name))
+      .find(item => !subcategory || item.subcategoryId === subcategory)
+    props.onExpandedEntryChange(entry?.id ?? null)
+    props.onLoreViewChange(entry ? 'entry' : 'category')
+  }
+  const pinned = categories.flatMap(cat => cat.entries.filter(entry => entry.pinned).map(entry => ({ cat, entry })))
+  const groups = (search ? categories : category ? [category] : []).flatMap(cat => {
+    const subcategories = orderLoreSubcategories(cat.subcategories ?? [])
+    return [...subcategories.map(sub => ({ id: sub.id, name: sub.name, depth: sub.depth, color: sub.color ?? 'default' })),
+      { id: '', name: 'Uncategorized', depth: 0, color: 'default' }].map(sub => ({
+      ...sub,
+      cat,
+      entries: [...cat.entries].filter(entry => {
+        const groupId = subcategories.some(item => item.id === entry.subcategoryId) ? entry.subcategoryId : ''
+        return groupId === sub.id && (search
+          ? `${formatLoreEntryName(entry)} ${entry.keywords?.join(' ') ?? ''}`.toLocaleLowerCase().includes(search)
+          : !subcategoryId || entry.subcategoryId === subcategoryId)
+      }).sort((a, b) => a.name.localeCompare(b.name)),
+    })).filter(group => group.entries.length)
+  })
+  const selectedEntry = category?.entries.find(entry => entry.id === props.expandedEntryId)
+    ?? category?.entries[0]
+
+  return (
+    <div className="lore-workspace">
+      <nav className="lore-category-rail" aria-label="Lore Book categories">
+        <div className="lore-category-rail-scroll">
+        <label className="lore-search"><i className="ti ti-search" aria-hidden="true" />
+          <input aria-label="Search all lore by name or keyword" placeholder="Search all lore…" value={query} onChange={event => setQuery(event.target.value)} />
+        </label>
+        {pinned.length > 0 && <section><h2>Pinned</h2>{pinned.map(({ cat, entry }) => (
+          <button key={`${cat.id}:${entry.id}`} className="lore-nav-row" onClick={() => selectEntry(cat, entry)}>
+            <LoreEntryIcon category={cat} entry={entry} projectPath={props.projectPath} /><span>{formatLoreEntryName(entry)}</span>
+          </button>
+        ))}</section>}
+        <section><h2>Categories</h2>{categories.map(cat => (
+          <div key={cat.id}>
+            <div className="lore-category-nav-row">
+              {!!cat.subcategories?.length ? <button type="button" className="lore-category-toggle"
+                aria-label={`${collapsedCategories[collapseKey(cat.id)] === true ? 'Expand' : 'Collapse'} ${cat.name || 'Unnamed category'}`}
+                aria-expanded={collapsedCategories[collapseKey(cat.id)] !== true}
+                onClick={() => toggleCategory(cat.id)}>
+                <i className={`ti ti-chevron-${collapsedCategories[collapseKey(cat.id)] === true ? 'right' : 'down'}`} aria-hidden="true" />
+              </button> : <span className="lore-category-toggle-spacer" />}
+            <button className={`lore-nav-row${cat.id === category?.id && !subcategoryId ? ' active' : ''}`} aria-current={cat.id === category?.id && !subcategoryId ? 'true' : undefined} onClick={() => selectCategory(cat)}>
+              <i className={`ti ${getLoreCategoryIconClass(cat.icon) || 'ti-folder'}`} aria-hidden="true" /><span>{cat.name || 'Unnamed category'}</span><small>{cat.entries.length}</small>
+            </button>
+            </div>
+            {collapsedCategories[collapseKey(cat.id)] !== true && orderLoreSubcategories(cat.subcategories ?? []).map(sub => (
+              <button key={sub.id} className={`lore-nav-row lore-subcategory lore-subcategory-color-${sub.color ?? 'default'}${cat.id === category?.id && subcategoryId === sub.id ? ' active' : ''}`} style={{ paddingLeft: 28 + sub.depth * 12 }} aria-current={cat.id === category?.id && subcategoryId === sub.id ? 'true' : undefined} onClick={() => selectCategory(cat, sub.id)}>
+                <span className="lore-subcategory-dot" aria-hidden="true" />
+                <span>{sub.name || 'Unnamed subcategory'}</span><small>{cat.entries.filter(entry => entry.subcategoryId === sub.id).length}</small>
+              </button>
+            ))}
+          </div>
+        ))}
+          <button className="lore-nav-row lore-add" onClick={props.onNewCategory}><i className="ti ti-plus" aria-hidden="true" />New category</button>
+        </section>
+        </div>
+        <footer className="lore-presence-footer"><button className="lore-nav-row" onClick={props.onOpenPresence}><i className="ti ti-chart-bar" aria-hidden="true" />Presence chart</button></footer>
+      </nav>
+      <section className="lore-entry-browser" aria-label="Lore entries">
+        <header><h2>{search ? 'Search results' : category?.name || 'Entries'}</h2>{category && <>
+          <button title="Edit category" aria-label="Edit category" onClick={() => props.onEditCategory(category)}><i className="ti ti-edit" aria-hidden="true" /></button>
+          <button title={canShowHierarchy ? 'Show hierarchy' : 'Hierarchy requires nested subcategories'} aria-label="Show hierarchy" disabled={!canShowHierarchy} onClick={() => setHierarchyCategoryId(category.id)}><i className="ti ti-hierarchy" aria-hidden="true" /></button>
+          <button className="lore-add-entry" title="Add entry" aria-label="Add entry" onClick={props.onNewEntry}><i className="ti ti-plus" aria-hidden="true" /></button>
+        </>}</header>
+        <div className="lore-entry-browser-scroll">
+          {groups.map(group => <section key={`${group.cat.id}:${group.id}`} className={`lorebook-entry-group-${group.color}`}>
+            <h3><span className="lore-subcategory-dot" aria-hidden="true" />{search ? `${group.cat.name} / ` : ''}{group.name}</h3>
+            {group.entries.map(entry => <button key={entry.id} className={`lore-entry-row${entry.id === selectedEntry?.id && group.cat.id === category?.id ? ' active' : ''}`} aria-current={entry.id === selectedEntry?.id && group.cat.id === category?.id ? 'true' : undefined} onClick={() => selectEntry(group.cat, entry)}>
+              <LoreEntryIcon category={group.cat} entry={entry} projectPath={props.projectPath} />
+              <span><strong>{formatLoreEntryName(entry)}</strong><small>{entry.keywords?.join(' · ') || group.name}</small></span>
+              {entry.pinned && <span role="img" aria-label="Pinned"><LorePinIcon /></span>}
+            </button>)}
+          </section>)}
+          {!groups.length && <p className="lore-browser-empty">{search ? 'No entries match this search.' : 'No entries here yet. Add an entry to get started.'}</p>}
+        </div>
+        {category && <footer className="lore-category-footer">
+          <button type="button" className="lore-delete-category" onClick={() => props.onDeleteCategoryRequest(category)}>
+            <i className="ti ti-trash" aria-hidden="true" />Delete category
+          </button>
+        </footer>}
+      </section>
+      <div className="lore-detail-pane">
+        {category && selectedEntry ? <LoreBookContent {...props} activeCategoryId={category.id} expandedEntryId={selectedEntry.id} loreView="entry" /> : <div className="lore-detail-empty"><h2>{category ? category.name : 'Lore Book'}</h2><p>{category ? 'Add an entry to begin building this category.' : 'Create a category to begin your Lore Book.'}</p><button className="lorebook-add-entry-btn" onClick={category ? props.onNewEntry : props.onNewCategory}>{category ? 'Add entry' : 'New category'}</button></div>}
+      </div>
+      {hierarchyCategory && <LoreHierarchyModal category={hierarchyCategory} projectPath={props.projectPath} onOpenEntry={entryId => {
+        const entry = hierarchyCategory.entries.find(entry => entry.id === entryId)
+        if (entry) selectEntry(hierarchyCategory, entry)
+        setHierarchyCategoryId(null)
+      }} onSaveCategory={props.onUpdateCategory} onClose={() => setHierarchyCategoryId(null)} />}
+    </div>
+  )
+}
+
+function LoreBookContent({
   loreBook,
   loreView,
   activeCategoryId,
@@ -60,6 +207,7 @@ export function LoreBookView({
   onDeleteCategoryRequest,
   onNewEntry,
   onEditEntry,
+  onReplaceImage,
   onExportEntry,
   onDeleteEntryRequest,
   onToggleEntryPinned,
@@ -67,7 +215,7 @@ export function LoreBookView({
   onOpenPresence,
 }: LoreBookViewProps) {
   const [visibleBacklinkCounts, setVisibleBacklinkCounts] = useState<Record<string, number>>({})
-  const [imageViewer, setImageViewer] = useState<{ src: string; alt: string } | null>(null)
+  const [imageViewer, setImageViewer] = useState<{ src: string; alt: string; fieldId?: string } | null>(null)
   const [viewerZoom, setViewerZoom] = useState(1)
   const [viewerPan, setViewerPan] = useState({ x: 0, y: 0 })
   const [hierarchyCategory, setHierarchyCategory] = useState<LoreCategory | null>(null)
@@ -110,8 +258,8 @@ export function LoreBookView({
   const getProjectImageSrc = (relativePath: string) =>
     projectPath ? convertFileSrc(`${projectPath}/${relativePath}`.replace(/\\/g, '/')) : ''
 
-  const openImageViewer = (src: string, alt: string) => {
-    setImageViewer({ src, alt })
+  const openImageViewer = (src: string, alt: string, fieldId?: string) => {
+    setImageViewer({ src, alt, fieldId })
     setViewerZoom(1)
     setViewerPan({ x: 0, y: 0 })
   }
@@ -168,12 +316,15 @@ export function LoreBookView({
             setViewerZoom(zoom => Math.min(4, Math.max(0.25, zoom + (event.deltaY < 0 ? 0.1 : -0.1))))
           }}
         >
-          <img
-            src={imageViewer.src}
-            alt={imageViewer.alt}
-            draggable={false}
-            onDragStart={event => event.preventDefault()}
-            style={{
+          <LoreImageButton
+            src={imageViewer.src} alt={imageViewer.alt} className="lore-viewer-image-button"
+            onReplace={() => {
+              if (activeCategoryId && expandedEntryId && imageViewer.fieldId) {
+                onReplaceImage?.(activeCategoryId, expandedEntryId, imageViewer.fieldId)
+                setImageViewer(null)
+              }
+            }}
+            imageStyle={{
               '--lore-viewer-zoom': viewerZoom,
               '--lore-viewer-pan-x': `${viewerPan.x}px`,
               '--lore-viewer-pan-y': `${viewerPan.y}px`,
@@ -260,12 +411,15 @@ export function LoreBookView({
       }
 
       const entryBacklinks = backlinks[activeEntry.id] ?? []
+      const mentionCount = entryBacklinks.reduce((total, link) => total + link.matchCount, 0)
       const visibleBacklinkCount = Math.min(
         entryBacklinks.length,
         visibleBacklinkCounts[activeEntry.id] ?? BACKLINK_PAGE_SIZE
       )
       const visibleBacklinks = entryBacklinks.slice(0, visibleBacklinkCount)
       const hiddenBacklinkCount = entryBacklinks.length - visibleBacklinkCount
+      const iconImagePath = getLoreEntryIconPath(cat, activeEntry)
+        ? getLoreImagePath(activeEntry.fields[activeEntry.entryIconFieldId!]) : ''
       const activeEntryIndex = categoryEntryOrder.findIndex(entry => entry.id === activeEntry.id)
       const previousEntry = activeEntryIndex >= 0 && categoryEntryOrder.length > 1
         ? categoryEntryOrder[(activeEntryIndex - 1 + categoryEntryOrder.length) % categoryEntryOrder.length]
@@ -277,76 +431,33 @@ export function LoreBookView({
       return (
         <>
         <div id="lorebook-view">
-          <div id="lorebook-category-header">
-            <button className="lorebook-back-btn" onClick={() => onLoreViewChange('category')}>
-              <i className="ti ti-arrow-left" aria-hidden="true" />
-            </button>
-            {renderCategoryBreadcrumb(true)}
-            <div className="lorebook-entry-nav" aria-label="Entry navigation">
-              <button
-                type="button"
-                className="lorebook-entry-nav-btn"
-                disabled={!previousEntry}
-                onClick={() => previousEntry && openEntry(previousEntry.id)}
-                title={previousEntry ? `Previous entry: ${formatLoreEntryName(previousEntry)}` : 'Previous entry'}
-                aria-label={previousEntry ? `Previous entry: ${formatLoreEntryName(previousEntry)}` : 'Previous entry'}
-              >
-                <i className="ti ti-chevron-left" aria-hidden="true" />
-                <span>{previousEntry ? formatLoreEntryName(previousEntry) : 'Previous'}</span>
-              </button>
-              <button
-                type="button"
-                className="lorebook-entry-nav-btn"
-                disabled={!nextEntry}
-                onClick={() => nextEntry && openEntry(nextEntry.id)}
-                title={nextEntry ? `Next entry: ${formatLoreEntryName(nextEntry)}` : 'Next entry'}
-                aria-label={nextEntry ? `Next entry: ${formatLoreEntryName(nextEntry)}` : 'Next entry'}
-              >
-                <span>{nextEntry ? formatLoreEntryName(nextEntry) : 'Next'}</span>
-                <i className="ti ti-chevron-right" aria-hidden="true" />
-              </button>
-            </div>
-            <button
-              className={`lorebook-edit-btn${activeEntry.pinned ? ' active' : ''}`}
-              title={activeEntry.pinned ? 'Unpin entry' : 'Pin entry'}
-              aria-label={activeEntry.pinned ? 'Unpin entry' : 'Pin entry'}
-              aria-pressed={activeEntry.pinned === true}
-              onClick={() => onToggleEntryPinned(cat.id, activeEntry.id, !activeEntry.pinned)}
-            >
-              <i className={`ti ${activeEntry.pinned ? 'ti-star-filled' : 'ti-star'}`} aria-hidden="true" />
-            </button>
-            <button className="lorebook-edit-btn" onClick={() => onEditEntry(activeEntry)}>
-              <i className="ti ti-pencil" aria-hidden="true" />
-            </button>
-            <button
-              className="lorebook-edit-btn"
-              title="Export entry"
-              aria-label="Export entry"
-              onClick={() => onExportEntry(cat, activeEntry)}
-            >
-              <i className="ti ti-file-export" aria-hidden="true" />
-            </button>
-            <button className="lorebook-delete-btn" onClick={() => onDeleteEntryRequest(activeEntry)}>
-              <i className="ti ti-trash" aria-hidden="true" />
-            </button>
-          </div>
           <div id="lorebook-entry-view-scroll">
             <div id="lorebook-entry-view">
-              <div className="lorebook-entry-view-title">{formatLoreEntryName(activeEntry)}</div>
-              {activeEntry.subcategoryId && subcategoryIds.has(activeEntry.subcategoryId) && (
-                <div className="lorebook-entry-field">
-                  <span className="lorebook-field-label">Subcategory</span>
-                  <span className="lorebook-field-value">
-                    {subcategories.find(subcategory => subcategory.id === activeEntry.subcategoryId)?.name ?? 'Uncategorized'}
-                  </span>
+              <header className="lore-entry-hero">
+                {iconImagePath && projectPath ? <button
+                  type="button" className="lore-entry-icon-button"
+                  title="View full image" aria-label={`View full image for ${formatLoreEntryName(activeEntry)}`}
+                  onClick={() => openImageViewer(getProjectImageSrc(iconImagePath), formatLoreEntryName(activeEntry), activeEntry.entryIconFieldId)}
+                ><LoreEntryIcon category={cat} entry={activeEntry} projectPath={projectPath} large /></button>
+                  : <LoreEntryIcon category={cat} entry={activeEntry} projectPath={projectPath} large />}
+                <div className="lore-entry-heading">
+                  <div className="lore-entry-location">{cat.name}{activeEntry.subcategoryId && subcategoryIds.has(activeEntry.subcategoryId) ? ` / ${subcategories.find(subcategory => subcategory.id === activeEntry.subcategoryId)?.name}` : ''}</div>
+                  <h1 className="lorebook-entry-view-title">{formatLoreEntryName(activeEntry)}</h1>
+                  <div className="lore-entry-chips">
+                    {!!activeEntry.keywords?.length && <span title="Keywords">{activeEntry.keywords.join(' · ')}</span>}
+                  </div>
                 </div>
-              )}
-              {activeEntry.keywords && activeEntry.keywords.length > 0 && (
-                <div className="lorebook-entry-field">
-                  <span className="lorebook-field-label">Keywords</span>
-                  <span className="lorebook-field-value">{activeEntry.keywords.join(', ')}</span>
+                <div className="lore-entry-actions" role="group" aria-label="Entry actions">
+                  <button type="button" className={activeEntry.pinned ? 'active' : ''} title={activeEntry.pinned ? 'Unpin entry' : 'Pin entry'} aria-label={activeEntry.pinned ? 'Unpin entry' : 'Pin entry'} aria-pressed={activeEntry.pinned === true} onClick={() => onToggleEntryPinned(cat.id, activeEntry.id, !activeEntry.pinned)}><LorePinIcon pinned={activeEntry.pinned === true} /></button>
+                  <button type="button" onClick={() => onEditEntry(activeEntry)}>Edit</button>
+                  <button type="button" disabled={!previousEntry} title={previousEntry ? `Previous entry: ${formatLoreEntryName(previousEntry)}` : 'Previous entry'} aria-label="Previous entry" onClick={() => previousEntry && openEntry(previousEntry.id)}><i className="ti ti-chevron-left" aria-hidden="true" /></button>
+                  <button type="button" disabled={!nextEntry} title={nextEntry ? `Next entry: ${formatLoreEntryName(nextEntry)}` : 'Next entry'} aria-label="Next entry" onClick={() => nextEntry && openEntry(nextEntry.id)}><i className="ti ti-chevron-right" aria-hidden="true" /></button>
+                  <button type="button" title="Export entry" aria-label="Export entry" onClick={() => onExportEntry(cat, activeEntry)}><i className="ti ti-file-export" aria-hidden="true" /></button>
+                  <button type="button" className="lore-entry-delete" title="Delete entry" aria-label="Delete entry" onClick={() => onDeleteEntryRequest(activeEntry)}><i className="ti ti-trash" aria-hidden="true" /></button>
                 </div>
-              )}
+              </header>
+              <div className="lore-entry-columns">
+              <div className="lore-entry-fields">
               {activeFields.map(field => {
                 if (field.type === 'divider') {
                   return <div key={field.id} className="lorebook-entry-divider" />
@@ -367,6 +478,7 @@ export function LoreBookView({
                 const value = activeEntry.fields[field.id] ?? ''
                 if (!value) return null
                 if (field.type === 'image') {
+                  if (shouldHideLoreImageInEntry(activeEntry, field.id)) return null
                   const path = getLoreImagePath(value)
                   if (!path) return null
                   const fullWidth = getLoreImageFullWidth(value)
@@ -376,17 +488,13 @@ export function LoreBookView({
                   return (
                     <div key={field.id} className="lorebook-entry-field">
                       {field.label && <span className="lorebook-field-label">{field.label}</span>}
-                      <button
-                        type="button"
+                      <LoreImageButton
+                        src={src} alt={field.label ?? 'image'}
                         className={`lorebook-entry-image-button${fullWidth ? ' full-width' : ''}`}
-                        onClick={() => openImageViewer(src, field.label ?? activeEntry.name ?? 'image')}
-                      >
-                        <img
-                          src={src}
-                          className="lorebook-entry-image"
-                          alt={field.label ?? 'image'}
-                        />
-                      </button>
+                        imageClassName="lorebook-entry-image"
+                        onOpen={() => openImageViewer(getProjectImageSrc(path), field.label ?? activeEntry.name ?? 'image', field.id)}
+                        onReplace={() => onReplaceImage?.(cat.id, activeEntry.id, field.id)}
+                      />
                     </div>
                   )
                 }
@@ -437,11 +545,16 @@ export function LoreBookView({
                   </div>
                 )
               })}
+              </div>
+              <aside className="lore-entry-mentions" aria-label="Scene mentions">
+              <div className="lore-mentions-stat">
+                <strong>{mentionCount.toLocaleString()}</strong>
+                <span>{`${mentionCount === 1 ? 'mention' : 'mentions'} · in ${entryBacklinks.length.toLocaleString()} ${entryBacklinks.length === 1 ? 'scene' : 'scenes'}`}</span>
+              </div>
               <div className="lorebook-backlinks">
                 <div className="lorebook-backlinks-heading">
                   <i className="ti ti-link" aria-hidden="true" />
                   <span>Scene mentions</span>
-                  <span className="lorebook-backlinks-count">{entryBacklinks.length}</span>
                 </div>
                 {entryBacklinks.length > 0 ? (
                   <div className="lorebook-backlinks-list">
@@ -479,6 +592,8 @@ export function LoreBookView({
                 ) : (
                   <div className="lorebook-backlinks-empty">No scene mentions found.</div>
                 )}
+              </div>
+              </aside>
               </div>
             </div>
           </div>
@@ -570,7 +685,7 @@ export function LoreBookView({
                           aria-pressed={entry.pinned === true}
                           onClick={() => onToggleEntryPinned(cat.id, entry.id, !entry.pinned)}
                         >
-                          <i className={`ti ${entry.pinned ? 'ti-star-filled' : 'ti-star'}`} aria-hidden="true" />
+                          <LorePinIcon pinned={entry.pinned === true} />
                         </button>
                         <button type="button" onClick={() => onEditEntry(entry)}>
                           <i className="ti ti-pencil" aria-hidden="true" />
@@ -630,7 +745,7 @@ export function LoreBookView({
           {pinnedEntries.length > 0 && (
             <div className="lorebook-pinned-section">
               <div className="lorebook-pinned-heading">
-                <i className="ti ti-star-filled" aria-hidden="true" />
+                <LorePinIcon />
                 <span>Pinned</span>
               </div>
               <div className="lorebook-pinned-strip">
@@ -683,7 +798,7 @@ export function LoreBookView({
                           onToggleEntryPinned(category.id, entry.id, false)
                         }}
                       >
-                        <i className="ti ti-star-filled" aria-hidden="true" />
+                        <LorePinIcon />
                       </button>
                     </div>
                   )

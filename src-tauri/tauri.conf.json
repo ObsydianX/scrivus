@@ -15,7 +15,7 @@
         "title": "Scrivus",
         "width": 1280,
         "height": 720,
-        "minWidth": 600,
+        "minWidth": 750,
         "minHeight": 400,
         "dragDropEnabled": false
       }

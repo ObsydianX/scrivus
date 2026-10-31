@@ -1,0 +1,285 @@
+// Bundle TypeScript in memory; no generated test files or browser runtime needed.
+const { build } = require('esbuild')
+
+async function main() {
+  const result = await build({
+    stdin: {
+      resolveDir: process.cwd(),
+      loader: 'tsx',
+      contents: String.raw`
+        import assert from 'node:assert/strict'
+        import React from 'react'
+        import { renderToStaticMarkup } from 'react-dom/server'
+        import { getBinderWordCounts, normalizeBinderWordCountDisplay, showBinderWordCount } from './src/binderWordCounts'
+        import { getFolderProgress, getFolderProgressDisplay, getOutlineFolderProgress } from './src/folderProgress'
+        import { LoreImageButton } from './src/components/LoreImageButton'
+        import { FolderProgressIcon } from './src/components/FolderProgressIcon'
+        import { countLoreMentions } from './src/loreBacklinks'
+        import { getLoreEntryIconPath, createLoreImageValue, shouldHideLoreImageInEntry, getLoreImageCleanupPaths } from './src/loreImages'
+        import { orderLoreSubcategories } from './src/loreSubcategories'
+        import { countLatestRevisionWords } from './src/wordCount'
+        import { parseSceneTabs, formatSceneTabTitle, getTabIndexAfterRemoval } from './src/sceneTabs'
+        import { getActiveComments, RevisionCommentsPane } from './src/components/RevisionView'
+        import { OutlineView } from './src/components/OutlineView'
+        import { LoreBookView } from './src/components/LoreBookView'
+        import { MindMapView, getNodeSidePort } from './src/components/MindMapView'
+        import { CanvasMinimap, getCanvasBounds, fitCanvasBounds } from './src/components/CanvasMinimap'
+        import { AtlasView, fitAtlasMap } from './src/components/AtlasView'
+        import atlasFixture from './src/defaultProject/atlas.json'
+        import { normalizeMindMap } from './src/constants'
+
+        const rows = [
+          { id: 1, type: 'chapter', role: 'act', title: 'Act 1', depth: 0, wordCount: 1000, status: 'inProgress' },
+          { id: 2, type: 'chapter', title: 'Chapter 1', depth: 1, wordCount: 1000, status: 'inProgress' },
+          { id: 3, type: 'scene', title: 'Arrival', chapter: 'Chapter 1', depth: 2, wordCount: 750, status: 'draft', metadata: { synopsis: 'A difficult arrival', pov: 'Adam', tags: [] } },
+          { id: 4, type: 'scene', title: 'Departure', chapter: 'Chapter 1', depth: 2, wordCount: 250, status: 'complete' },
+          { id: 5, type: 'chapter', title: 'Chapter 2', depth: 1, wordCount: 100, status: 'complete' },
+          { id: 6, type: 'scene', title: 'Return', chapter: 'Chapter 2', depth: 2, wordCount: 100, status: 'complete' },
+        ]
+        assert.deepEqual(getBinderWordCounts(rows, 3, 900), { 1: 1250, 2: 1150, 3: 900, 4: 250, 5: 100, 6: 100 })
+        const saved = new Map([[3, 900]])
+        assert.equal(getBinderWordCounts(rows, 4, 300, saved)[2], 1200)
+        assert.equal(getBinderWordCounts(rows, null, 9999, saved)[1], 1250)
+        assert.deepEqual(getBinderWordCounts([], null, 0), {})
+        assert.equal(normalizeBinderWordCountDisplay(undefined), 'all')
+        assert.equal(normalizeBinderWordCountDisplay('invalid'), 'all')
+        for (const [mode, expected] of Object.entries({ off: [false, false, false, false], acts: [true, false, false, false], chapters: [true, true, false, false], selectedScene: [true, true, true, false], all: [true, true, true, true] })) {
+          assert.equal(normalizeBinderWordCountDisplay(mode), mode)
+          assert.deepEqual([showBinderWordCount(mode, 'act', false), showBinderWordCount(mode, 'chapter', false), showBinderWordCount(mode, 'scene', true), showBinderWordCount(mode, 'scene', false)], expected)
+        }
+        const outlineProgress = getOutlineFolderProgress(rows)
+        assert.equal(getFolderProgressDisplay(outlineProgress.get(2)).fill, .25)
+        assert.equal(getFolderProgressDisplay(outlineProgress.get(1)).fill, 350 / 1100)
+
+        const progressTree = [{ id: 10, type: 'folder', children: [
+          { id: 11, type: 'folder', children: [
+            { id: 1, type: 'doc', metadata: { status: 'complete' } },
+            { id: 2, type: 'doc', metadata: { status: 'needsWork' } },
+          ] },
+          { id: 12, type: 'folder', children: [{ id: 3, type: 'doc', metadata: { status: 'complete' } }] },
+          { id: 13, type: 'folder', children: [] },
+        ] }]
+        const progress = getFolderProgress(progressTree, { 1: 200, 2: 800, 3: 1000 })
+        assert.equal(getFolderProgressDisplay(progress.get(11)).fill, .2)
+        assert.equal(getFolderProgressDisplay(progress.get(10)).fill, .6) // Aggregate words, not chapter averages.
+        assert.equal(progress.get(10).needsWork, 1)
+        assert.equal(getFolderProgressDisplay(progress.get(12)).done, true)
+        assert.equal(getFolderProgressDisplay(progress.get(13)).label, 'No scenes')
+        const emptyScenes = getFolderProgress(progressTree, {})
+        assert.equal(getFolderProgressDisplay(emptyScenes.get(11)).fill, .5)
+        assert.equal(getFolderProgressDisplay(emptyScenes.get(12)).done, true)
+        const zeroUnfinished = getFolderProgress(progressTree, { 1: 200, 3: 1000 })
+        assert.equal(getFolderProgressDisplay(zeroUnfinished.get(11)).fill, .95)
+        assert.equal(getFolderProgressDisplay(zeroUnfinished.get(11)).done, false)
+        assert.ok(renderToStaticMarkup(<FolderProgressIcon progress={progress.get(10)} />).includes('binder-progress-warning'))
+        assert.ok(renderToStaticMarkup(<FolderProgressIcon progress={progress.get(12)} />).includes('binder-progress-check'))
+
+        const subcategories = [
+          { id: 'normal', name: 'Normal Creature' },
+          { id: 'mini', name: 'Mini-boss Creature' },
+          { id: 'boss', name: 'Boss Creature' },
+          { id: 'zchild', name: 'Z child', parentId: 'normal' },
+          { id: 'achild', name: 'A child', parentId: 'normal' },
+        ]
+        assert.deepEqual(orderLoreSubcategories(subcategories).map(s => [s.id, s.depth]), [['normal', 0], ['zchild', 1], ['achild', 1], ['mini', 0], ['boss', 0]])
+        assert.deepEqual(orderLoreSubcategories([subcategories[2], subcategories[1], subcategories[0]]).map(s => s.id), ['boss', 'mini', 'normal'])
+        assert.deepEqual(subcategories.map(s => s.id), ['normal', 'mini', 'boss', 'zchild', 'achild'])
+        assert.equal(getBinderWordCounts(rows, 3, 0)[2], 250)
+        // Reproduce the screenshot: cached scene count was 1, live count is 894.
+        const staleRows = [
+          { id: 11, type: 'chapter', depth: 0, wordCount: 3059 },
+          { id: 64, type: 'scene', depth: 1, wordCount: 3058 },
+          { id: 65, type: 'scene', depth: 1, wordCount: 1 },
+        ]
+        const liveCounts = getBinderWordCounts(staleRows, 65, 894)
+        assert.equal(liveCounts[11], 3952)
+        assert.equal(staleRows.filter(row => row.type === 'scene').reduce((sum, row) => sum + liveCounts[row.id], 0), 3952)
+        assert.equal(getBinderWordCounts(staleRows, 65, 0)[11], 3058)
+
+        assert.equal(countLoreMentions("Adam met Adam's ally. Madam left.", 'Adam'), 2)
+        assert.equal(countLoreMentions('Goreclaw saw a kobold lord.', 'Goreclaw', ['kobold lord']), 2)
+        assert.equal(countLoreMentions('Adam', 'Adam'), 1)
+        assert.equal(countLoreMentions('Amin', 'Adam'), 0) // equal-length edit
+        assert.equal(countLoreMentions('ab ab', 'ab'), 0)
+
+        const category = { template: [{ id: 'portrait', type: 'image' }, { id: 'other', type: 'image' }, { id: 'text', type: 'text' }] }
+        const entry = { fields: { portrait: { path: 'portrait.png', croppedPath: 'portrait-crop.png', ignoreEntryCrop: true }, other: { path: 'other.png', croppedPath: 'other-crop.png' }, text: 'not-an-image' } }
+        assert.equal(getLoreEntryIconPath(category, entry), '')
+        assert.equal(getLoreEntryIconPath(category, { ...entry, entryIconFieldId: 'portrait' }), 'portrait-crop.png')
+        assert.equal(getLoreEntryIconPath(category, { ...entry, entryIconFieldId: 'other' }), 'other-crop.png')
+        assert.equal(getLoreEntryIconPath(category, { ...entry, entryIconFieldId: 'missing' }), '')
+        assert.equal(getLoreEntryIconPath(category, { ...entry, entryIconFieldId: 'text' }), '')
+        assert.equal(getLoreEntryIconPath({ template: [{ id: 'portrait', type: 'image', removed: true }] }, { ...entry, entryIconFieldId: 'portrait' }), '')
+        assert.equal(getLoreEntryIconPath(category, { fields: {}, entryIconFieldId: 'portrait' }), '')
+
+        const hiddenPortrait = createLoreImageValue('full.png', undefined, false, false, 'crop.png', null, true)
+        const hiddenEntry = JSON.parse(JSON.stringify({ entryIconFieldId: 'portrait', fields: { portrait: hiddenPortrait } }))
+        assert.equal(shouldHideLoreImageInEntry(hiddenEntry, 'portrait'), true)
+        assert.equal(getLoreEntryIconPath(category, hiddenEntry), 'crop.png')
+        assert.equal(shouldHideLoreImageInEntry({ ...hiddenEntry, entryIconFieldId: 'other' }, 'portrait'), false)
+        assert.equal(shouldHideLoreImageInEntry({ fields: { portrait: 'legacy.png' }, entryIconFieldId: 'portrait' }, 'portrait'), false)
+        assert.equal(shouldHideLoreImageInEntry({ fields: {}, entryIconFieldId: 'portrait' }, 'portrait'), false)
+        assert.equal(createLoreImageValue('visible.png').hideInEntry, false)
+
+        const deletedEntry = { id: 'deleted', fields: {
+          image: { path: 'lorebook/images/deleted_image_original.png', croppedPath: 'lorebook/images/deleted_image_crop.png' },
+          legacy: 'lorebook/images/legacy.png',
+          unsafe: { path: 'lorebook/images/../../project.json' },
+        } }
+        const survivingEntry = { id: 'kept', fields: { image: { path: 'lorebook/images/kept_image.png', croppedPath: 'lorebook/images/shared_crop.png' } } }
+        const cleanup = getLoreImageCleanupPaths([deletedEntry], [survivingEntry], [
+          'deleted_image_original.png', 'deleted_image_crop.png', 'deleted_image_old_crop.png',
+          'kept_image.png', 'shared_crop.png', 'unrelated.png', '../escape.png',
+        ])
+        assert.deepEqual(cleanup.sort(), ['lorebook/images/deleted_image_original.png', 'lorebook/images/deleted_image_crop.png', 'lorebook/images/deleted_image_old_crop.png', 'lorebook/images/legacy.png'].sort())
+        assert.deepEqual(getLoreImageCleanupPaths([{ ...deletedEntry, fields: { shared: { path: 'lorebook/images/shared_crop.png' } } }], [survivingEntry], []), [])
+        assert.deepEqual(getLoreImageCleanupPaths([], [survivingEntry], ['kept_image.png']), [])
+        const missingImageHtml = renderToStaticMarkup(<LoreImageButton src="" alt="Portrait" onReplace={() => {}} />)
+        assert.ok(missingImageHtml.includes('Image not found'))
+        assert.ok(missingImageHtml.includes('Click to replace image'))
+        assert.ok(!missingImageHtml.includes('<img'))
+
+        const tabs = parseSceneTabs('<!--TAB:First Draft-->\n<p>Original</p>\n<!--TAB:Revision-->\n<p>Rewritten</p>\n<!--DELETED:Removed:123-->\n<p>Old</p>')
+        assert.equal(tabs.length, 2)
+        assert.equal(tabs[0].content, '<p>Original</p>')
+        assert.equal(tabs[1].name, 'Revision')
+        assert.equal(tabs[1].content, '<p>Rewritten</p>')
+        // Isolate revision selection from the browser HTML parser: these fixtures are plain text.
+        const previousParser = globalThis.DOMParser
+        globalThis.DOMParser = class { parseFromString(text) { return { body: { textContent: text } } } }
+        try {
+          const revisions = parseSceneTabs('<!--TAB:First Draft-->\nOld\n<!--TAB:New Revision-->\n' + Array(894).fill('word').join(' '))
+          assert.equal(countLatestRevisionWords(revisions), 894)
+          assert.equal(getBinderWordCounts([{ id: 11, type: 'chapter', depth: 0 }, { id: 65, type: 'scene', depth: 1, wordCount: countLatestRevisionWords(revisions) }], null, 0)[11], 894)
+          assert.equal(countLatestRevisionWords([]), 0)
+        } finally {
+          globalThis.DOMParser = previousParser
+        }
+
+        const firstDraft = { name: 'First Draft', content: 'Original scene' }
+        const newRevision = { name: 'New Revision', content: '' }
+        assert.equal(formatSceneTabTitle('Scene 65', [firstDraft], 0), 'Scene 65')
+        assert.equal(formatSceneTabTitle('Scene 65', [firstDraft, newRevision], 1), 'Scene 65 - New Revision')
+        const restoredIndex = getTabIndexAfterRemoval(1, 1, 1)
+        assert.equal(formatSceneTabTitle('Scene 65', [firstDraft], restoredIndex), 'Scene 65')
+        // Removing an earlier tab must preserve the active revision's identity.
+        assert.equal(getTabIndexAfterRemoval(1, 0, 2), 0)
+        assert.equal(getTabIndexAfterRemoval(2, 0, 2), 1)
+        assert.equal(getTabIndexAfterRemoval(0, 2, 2), 0)
+        assert.equal(getTabIndexAfterRemoval(1, 1, 2), 1)
+        assert.equal(formatSceneTabTitle('Scene 65', [newRevision, firstDraft], 1), 'Scene 65 - First Draft')
+
+        const comment = { id: 'one', sceneId: 3, tabIndex: 0, quote: 'Original', text: 'Check this', createdAt: 0, resolved: false }
+        const comments = [comment, { ...comment, id: 'two', tabIndex: 1 }, { ...comment, id: 'other', sceneId: 4 }]
+        assert.deepEqual(getActiveComments(comments, 3, 0, tabs).map(c => c.id), ['one'])
+        assert.deepEqual(getActiveComments(comments, 3, 1, tabs).map(c => c.id), ['two'])
+
+        const noop = () => {}
+        const canvasNode = { id: 'idea', x: 0, y: 0, title: '', text: 'An arrival changes everything.', kind: 'idea', color: 'violet' }
+        assert.deepEqual(getNodeSidePort(canvasNode, { x: 400, y: 64 }), { x: 192, y: 64 })
+        assert.deepEqual(getNodeSidePort(canvasNode, { x: -100, y: 64 }), { x: 0, y: 64 })
+        assert.deepEqual(getNodeSidePort(canvasNode, { x: 96, y: -100 }), { x: 96, y: 0 })
+        assert.deepEqual(getNodeSidePort(canvasNode, { x: 96, y: 400 }), { x: 96, y: 128 })
+        assert.deepEqual(getNodeSidePort(canvasNode, { ...canvasNode, x: 384, y: 0 }), { x: 192, y: 64 })
+        const tallNode = { ...canvasNode, text: Array(20).fill('line').join('\n') }
+        const tallRight = getNodeSidePort(tallNode, { ...tallNode, x: 384 })
+        assert.equal(tallRight.x, 192)
+        assert.ok(tallRight.y > 64)
+
+        const canvasProps = { map: { nodes: [canvasNode], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }, scenes: [], onChange: noop, onOpenScene: noop, onCreateSceneFromNode: async () => null }
+        let canvasHtml = renderToStaticMarkup(<MindMapView {...canvasProps} />)
+        assert.ok(canvasHtml.includes('mindmap-node-text-primary'))
+        assert.ok(canvasHtml.includes('An arrival changes everything.'))
+        assert.ok(canvasHtml.includes('Canvas minimap'))
+        assert.ok(canvasHtml.includes('canvas-minimap-viewport'))
+        assert.ok(canvasHtml.includes('Fit all nodes'))
+        assert.ok(!canvasHtml.includes('class="mindmap-node-title"'))
+        canvasHtml = renderToStaticMarkup(<MindMapView {...canvasProps} map={{ ...canvasProps.map, nodes: [{ ...canvasNode, title: 'A long title that wraps over several lines', linkedSceneId: 3, kind: 'scene' }] }} scenes={[{ id: 3, title: 'Scene 3', chapter: 'Chapter 1' }]} />)
+        assert.ok(canvasHtml.includes('class="mindmap-node-title"'))
+        assert.ok(!canvasHtml.includes('Scene / Scene 3'))
+        assert.ok(canvasHtml.includes('Chapter 1 / Scene 3'))
+        canvasHtml = renderToStaticMarkup(<MindMapView {...canvasProps} map={{ ...canvasProps.map, nodes: [{ ...canvasNode, text: '' }] }} />)
+        assert.ok(canvasHtml.includes('Add title…'))
+        const bounds = getCanvasBounds([{ id: 'left', x: -500, y: -200, width: 192, height: 128 }, { id: 'right', x: 900, y: 400, width: 192, height: 256 }])
+        assert.deepEqual(bounds, { x: -500, y: -200, width: 1592, height: 856 })
+        const fit = fitCanvasBounds(bounds, 1200, 800)
+        assert.equal(fit.x, 296)
+        assert.equal(fit.y, 228)
+        assert.ok(bounds.width * fit.zoom <= 1200 - 128)
+        assert.ok(bounds.height * fit.zoom <= 800 - 128)
+        assert.ok(Number.isFinite(fitCanvasBounds(getCanvasBounds([]), 1, 1).zoom))
+        assert.ok(fitCanvasBounds({ x: 0, y: 0, width: 10, height: 10 }, 1200, 800).zoom <= 3)
+        for (const zoom of [.05, .15, .35, 1, 2.5, 3]) {
+          assert.equal(normalizeMindMap({ viewport: { x: 100, y: -200, zoom } }).viewport.zoom, zoom)
+        }
+        assert.equal(normalizeMindMap({ viewport: { x: 0, y: 0, zoom: .001 } }).viewport.zoom, .05)
+        const mapFit = fitAtlasMap(4096, 2048, 1200, 800)
+        assert.equal(mapFit.x, 2048)
+        assert.equal(mapFit.y, 1024)
+        assert.ok(4096 * mapFit.zoom <= 1136)
+        assert.ok(2048 * mapFit.zoom <= 736)
+        assert.ok(Number.isFinite(fitAtlasMap(0, 0, 1, 1).zoom))
+        const overview = renderToStaticMarkup(<CanvasMinimap label='Atlas minimap' storageKey='scrivus-atlas-minimap-collapsed' nodes={[]} edges={[]} selectedId={null} viewport={{x: 2048,y: 1024,zoom: .4}} view={{x: 0,y: 0,width: 4096,height: 2048}} mapImage={{src: 'map.png',width: 4096,height: 2048}} onNavigate={noop} />)
+        assert.ok(overview.includes('Atlas minimap'))
+        assert.ok(overview.includes('href="map.png"'))
+        assert.ok(overview.includes('canvas-minimap-viewport'))
+        const atlasHtml = renderToStaticMarkup(<AtlasView atlas={atlasFixture} projectPath={null} loreBook={{categories:[]}} onChange={noop} />)
+        assert.ok(atlasHtml.includes('Fit map'))
+        assert.ok(!atlasHtml.includes('atlas-scale-readout'))
+        const loreEntry = { id: 'adam', name: 'Adam', fields: { bio: 'Freeform biography' } }
+        const loreCategory = { id: 'characters', name: 'Characters', template: [{ id: 'bio', type: 'textarea', label: 'Biography', removed: false }], entries: [loreEntry] }
+        const loreProps = { loreBook: { categories: [loreCategory] }, loreView: 'entry', activeCategoryId: 'characters', expandedEntryId: 'adam', projectPath: null, variables: {}, onLoreViewChange: noop, onActiveCategoryChange: noop, onExpandedEntryChange: noop, backlinks: { adam: [{ sceneId: 1, sceneTitle: 'Arrival', tabName: 'First Draft', excerpt: 'Adam arrives.', matchCount: 5 }, { sceneId: 2, sceneTitle: 'Departure', tabName: 'First Draft', excerpt: 'Adam leaves.', matchCount: 3 }] } }
+        let loreHtml = renderToStaticMarkup(<LoreBookView {...loreProps} />)
+        assert.ok(loreHtml.includes('lore-entry-fields'))
+        assert.ok(loreHtml.includes('Freeform biography'))
+        assert.ok(loreHtml.includes('lore-entry-mentions'))
+        assert.ok(loreHtml.includes('<strong>8</strong>'))
+        assert.ok(loreHtml.includes('mentions · in 2 scenes'))
+        assert.ok(!loreHtml.includes('lorebook-backlinks-count'))
+        assert.ok(!loreHtml.includes('2 scene mentions'))
+        assert.ok(loreHtml.includes('Adam arrives.'))
+        assert.ok(!loreHtml.includes('id="lorebook-category-header"'))
+        assert.ok(!loreHtml.includes('Category overview and hierarchy'))
+        assert.ok(loreHtml.includes('aria-label="Edit category"'))
+        assert.ok(loreHtml.includes('aria-label="Show hierarchy"'))
+        assert.ok(loreHtml.includes('aria-label="Entry actions"'))
+        assert.ok(loreHtml.includes('aria-label="Previous entry"'))
+        assert.ok(loreHtml.includes('aria-label="Delete entry"'))
+        assert.ok(loreHtml.includes('aria-label="Export entry"'))
+        loreHtml = renderToStaticMarkup(<LoreBookView {...loreProps} backlinks={{}} />)
+        assert.ok(loreHtml.includes('<strong>0</strong>'))
+        assert.ok(loreHtml.includes('No scene mentions found.'))
+        loreHtml = renderToStaticMarkup(<LoreBookView {...loreProps} loreBook={{ categories: [{ ...loreCategory, entries: [] }] }} />)
+        assert.ok(loreHtml.includes('Add an entry to begin building this category.'))
+        assert.ok(!loreHtml.includes('id="lorebook-category-header"'))
+        const props = { rows, manuscriptWordCount: 1100, readingWpm: 250, collapsedFolderIds: new Set([2]), onCollapsedFolderIdsChange: noop, onOpenScene: noop, onOpenCommentsScene: noop, onSceneStatusChange: noop }
+        let html = renderToStaticMarkup(<OutlineView {...props} />)
+        assert.ok(!html.includes('A difficult arrival'))
+        assert.ok(html.includes('pacing-strip-track'))
+        assert.ok(html.includes('25% of words complete · 1 of 2 scenes complete · 0 needs work'))
+        assert.ok(!html.includes('outline-status-summary'))
+        html = renderToStaticMarkup(<OutlineView {...props} collapsedFolderIds={new Set()} />)
+        assert.ok(html.includes('A difficult arrival'))
+        assert.ok(html.includes('<th>POV</th>'))
+        assert.ok(!html.includes('<th>Location</th>'))
+        const lockedComments = renderToStaticMarkup(<RevisionCommentsPane panelLockActive activeId={3} comments={comments} activeTabIndex={0} tabs={tabs} activeCommentId={null} pendingComment={null} content='' draftText='' />)
+        assert(lockedComments.includes('class="collapsed"'))
+        assert(lockedComments.includes('disabled=""'))
+        assert(!lockedComments.includes('revision-comment-filters'))
+        html = renderToStaticMarkup(<RevisionCommentsPane activeId={3} comments={comments} activeTabIndex={0} tabs={tabs} activeCommentId={null} pendingComment={null} content='' draftText='' />)
+        assert.ok(html.includes('Filter comments'))
+        assert.ok(html.includes('Check this'))
+        assert.ok(html.includes('tabindex="0"'))
+        console.log('Facelift checks passed: live counts, nested totals, Lore matching and icon crops/fallbacks, draft parsing, comment scoping, Outline columns and pacing, comment rendering.')
+      `,
+    },
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    jsx: 'automatic',
+    write: false,
+  })
+  const target = { exports: {} }
+  new Function('require', 'module', 'exports', result.outputFiles[0].text)(require, target, target.exports)
+}
+main().catch(error => { console.error(error); process.exitCode = 1 })

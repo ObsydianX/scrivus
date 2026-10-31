@@ -120,3 +120,13 @@ export function softDeleteTab(tabs: SceneTab[], tabIndex: number, raw: string): 
   const newDeleted = `\n${DELETED_DELIMITER(tab.name, Date.now())}\n${formatSceneHtmlForStorage(tab.content)}`
   return activePart + existingDeleted + newDeleted
 }
+
+export function formatSceneTabTitle(sceneTitle: string, tabs: SceneTab[], tabIndex: number) {
+  const tabName = tabs[tabIndex]?.name
+  return tabs.length > 1 && tabName ? `${sceneTitle} - ${tabName}` : sceneTitle
+}
+
+// Preserve the selected revision when an earlier tab is removed.
+export function getTabIndexAfterRemoval(activeIndex: number, removedIndex: number, remainingCount: number) {
+  return Math.max(0, Math.min(activeIndex > removedIndex ? activeIndex - 1 : activeIndex, remainingCount - 1))
+}
