@@ -12,9 +12,10 @@ async function main() {
         import { renderToStaticMarkup } from 'react-dom/server'
         import { getBinderWordCounts, normalizeBinderWordCountDisplay, showBinderWordCount } from './src/binderWordCounts'
         import { getFolderProgress, getFolderProgressDisplay, getOutlineFolderProgress } from './src/folderProgress'
+        import { LoreImageButton } from './src/components/LoreImageButton'
         import { FolderProgressIcon } from './src/components/FolderProgressIcon'
         import { countLoreMentions } from './src/loreBacklinks'
-        import { getLoreEntryIconPath, createLoreImageValue, shouldHideLoreImageInEntry } from './src/loreImages'
+        import { getLoreEntryIconPath, createLoreImageValue, shouldHideLoreImageInEntry, getLoreImageCleanupPaths } from './src/loreImages'
         import { orderLoreSubcategories } from './src/loreSubcategories'
         import { countLatestRevisionWords } from './src/wordCount'
         import { parseSceneTabs, formatSceneTabTitle, getTabIndexAfterRemoval } from './src/sceneTabs'
@@ -119,6 +120,24 @@ async function main() {
         assert.equal(shouldHideLoreImageInEntry({ fields: { portrait: 'legacy.png' }, entryIconFieldId: 'portrait' }, 'portrait'), false)
         assert.equal(shouldHideLoreImageInEntry({ fields: {}, entryIconFieldId: 'portrait' }, 'portrait'), false)
         assert.equal(createLoreImageValue('visible.png').hideInEntry, false)
+
+        const deletedEntry = { id: 'deleted', fields: {
+          image: { path: 'lorebook/images/deleted_image_original.png', croppedPath: 'lorebook/images/deleted_image_crop.png' },
+          legacy: 'lorebook/images/legacy.png',
+          unsafe: { path: 'lorebook/images/../../project.json' },
+        } }
+        const survivingEntry = { id: 'kept', fields: { image: { path: 'lorebook/images/kept_image.png', croppedPath: 'lorebook/images/shared_crop.png' } } }
+        const cleanup = getLoreImageCleanupPaths([deletedEntry], [survivingEntry], [
+          'deleted_image_original.png', 'deleted_image_crop.png', 'deleted_image_old_crop.png',
+          'kept_image.png', 'shared_crop.png', 'unrelated.png', '../escape.png',
+        ])
+        assert.deepEqual(cleanup.sort(), ['lorebook/images/deleted_image_original.png', 'lorebook/images/deleted_image_crop.png', 'lorebook/images/deleted_image_old_crop.png', 'lorebook/images/legacy.png'].sort())
+        assert.deepEqual(getLoreImageCleanupPaths([{ ...deletedEntry, fields: { shared: { path: 'lorebook/images/shared_crop.png' } } }], [survivingEntry], []), [])
+        assert.deepEqual(getLoreImageCleanupPaths([], [survivingEntry], ['kept_image.png']), [])
+        const missingImageHtml = renderToStaticMarkup(<LoreImageButton src="" alt="Portrait" onReplace={() => {}} />)
+        assert.ok(missingImageHtml.includes('Image not found'))
+        assert.ok(missingImageHtml.includes('Click to replace image'))
+        assert.ok(!missingImageHtml.includes('<img'))
 
         const tabs = parseSceneTabs('<!--TAB:First Draft-->\n<p>Original</p>\n<!--TAB:Revision-->\n<p>Rewritten</p>\n<!--DELETED:Removed:123-->\n<p>Old</p>')
         assert.equal(tabs.length, 2)

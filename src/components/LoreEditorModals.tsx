@@ -1,3 +1,4 @@
+import { LoreImageButton } from './LoreImageButton'
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { readFile } from '@tauri-apps/plugin-fs'
@@ -1053,9 +1054,12 @@ export function LoreEntryEditorModal({
                   <div className="lore-entry-image-wrap">
                     {displayPath && (
                       <div className="lore-entry-image-crop-preview">
-                        <img
+                        <LoreImageButton
                           src={projectPath ? convertFileSrc(`${projectPath}/${displayPath}`.replace(/\\/g, '/')) : ''}
-                          className="lore-entry-image-preview"
+                          className="lore-entry-image-preview-button"
+                          imageClassName="lore-entry-image-preview"
+                          onOpen={() => openCropEditor(field.id, path, field.label ?? 'Image')}
+                          onReplace={() => handleImagePick(field.id)}
                           alt={field.label ?? 'image'}
                         />
                       </div>

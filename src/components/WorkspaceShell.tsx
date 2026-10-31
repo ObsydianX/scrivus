@@ -119,6 +119,7 @@ type LoreWorkspaceState = {
   onDeleteCategoryRequest: (category: LoreCategory) => void
   onNewEntry: () => void
   onEditEntry: (entry: LoreEntry) => void
+  onReplaceImage: (categoryId: string, entryId: string, fieldId: string) => void
   onExportEntry: (category: LoreCategory, entry: LoreEntry) => void
   onDeleteEntryRequest: (entry: LoreEntry) => void
   onToggleEntryPinned: (categoryId: string, entryId: string, pinned: boolean) => void
@@ -402,6 +403,7 @@ export function WorkspaceShell({
   onDeleteCategoryRequest,
   onNewEntry,
   onEditEntry,
+  onReplaceImage,
   onExportEntry,
   onDeleteEntryRequest,
   onToggleEntryPinned,
@@ -481,6 +483,7 @@ export function WorkspaceShell({
           onDeleteCategoryRequest={onDeleteCategoryRequest}
           onNewEntry={onNewEntry}
           onEditEntry={onEditEntry}
+          onReplaceImage={onReplaceImage}
           onExportEntry={onExportEntry}
           onDeleteEntryRequest={onDeleteEntryRequest}
           onToggleEntryPinned={onToggleEntryPinned}

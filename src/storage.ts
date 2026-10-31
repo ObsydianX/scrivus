@@ -1,4 +1,6 @@
-import { writeTextFile, readTextFile, mkdir, exists, writeFile, readFile, rename, remove } from '@tauri-apps/plugin-fs'
+import { getLoreImageCleanupPaths } from './loreImages'
+import type { LoreEntry } from './types'
+import { writeTextFile, readTextFile, mkdir, exists, writeFile, readFile, rename, remove, readDir } from '@tauri-apps/plugin-fs'
 import { join, appDataDir } from '@tauri-apps/api/path'
 import {
   DEFAULT_ATLAS,
@@ -421,6 +423,20 @@ export async function saveLoreCroppedImage(projectPath: string, bytes: Uint8Arra
   const destPath = await join(imagesDir, destName)
   await writeFile(destPath, bytes)
   return `lorebook/images/${destName}`.replace(/\\/g, '/')
+}
+
+export async function deleteLoreEntryImages(projectPath: string, entries: LoreEntry[], remaining: LoreEntry[]) {
+  const imagesDir = await join(projectPath, 'lorebook', 'images')
+  const files = await exists(imagesDir) ? await readDir(imagesDir) : []
+  const paths = getLoreImageCleanupPaths(entries, remaining, files.filter(file => file.isFile).map(file => file.name))
+  const failures: string[] = []
+  for (const path of paths) {
+    try {
+      const absolute = await join(projectPath, path)
+      if (await exists(absolute)) await remove(absolute)
+    } catch { failures.push(path) }
+  }
+  if (failures.length) throw new Error('Could not remove Lore image files: ' + failures.join(', '))
 }
 
 export async function deleteLoreImage(projectPath: string, imagePath: string) {

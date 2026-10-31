@@ -1,3 +1,5 @@
+import { deleteLoreEntryImages } from './storage'
+import { createLoreImageValue, getLoreImageFullWidth, getLoreImageIgnoreEntryCrop, shouldHideLoreImageInEntry } from './loreImages'
 import { formatSceneTabTitle, getTabIndexAfterRemoval } from './sceneTabs'
 // #region === IMPORTS ===
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1948,9 +1950,9 @@ export default function App() {
   // Saves the lorebook to disk.
   const saveLoreBook = async (data: LoreBook) => {
     if (!projectRef.current) return
+    await writeLoreBookFile(projectRef.current.path, data)
     loreBookRef.current = data
     setLoreBook(data)
-    await writeLoreBookFile(projectRef.current.path, data)
   }
 
   // Returns the active lore category or null.
@@ -2447,20 +2449,15 @@ export default function App() {
   // Deletes a category and all its entries.
   const deleteLoreCategory = async (categoryId: string) => {
     const category = loreBookRef.current.categories.find(c => c.id === categoryId)
-    if (projectRef.current && category) {
-      const imagePaths = category.entries
-        .flatMap(entry => Object.values(entry.fields))
-        .flatMap(value => [getLoreImagePath(value), getLoreImageCroppedPath(value)])
-        .filter(Boolean)
-      for (const imagePath of imagePaths) {
-        await deleteLoreImage(projectRef.current.path, imagePath)
-      }
-    }
     const updated = {
       ...loreBookRef.current,
       categories: loreBookRef.current.categories.filter(c => c.id !== categoryId),
     }
     await saveLoreBook(updated)
+    if (projectRef.current && category) {
+      try { await deleteLoreEntryImages(projectRef.current.path, category.entries, updated.categories.flatMap(c => c.entries)) }
+      catch (error) { showMessage('Image cleanup incomplete', String(error)) }
+    }
     if (activeLoreCategoryId === categoryId) {
       setActiveLoreCategoryId(null)
       setLoreView('home')
@@ -2664,6 +2661,28 @@ export default function App() {
     setLoreEntryEditor(null)
   }
 
+  const replaceMissingLoreImage = async (categoryId: string, entryId: string, fieldId: string) => {
+    const projectPath = projectRef.current?.path
+    if (!projectPath) return
+    const selected = await open({ title: 'Replace missing image', filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }] })
+    if (!selected || Array.isArray(selected) || projectRef.current?.path !== projectPath) return
+    try {
+      const path = await copyLoreImage(projectPath, selected, entryId, fieldId)
+      if (projectRef.current?.path !== projectPath) return
+      const book = loreBookRef.current
+      const entry = book.categories.find(c => c.id === categoryId)?.entries.find(e => e.id === entryId)
+      if (!entry) return
+      const previous = entry.fields[fieldId]
+      const replacement = createLoreImageValue(path, undefined, getLoreImageFullWidth(previous), getLoreImageIgnoreEntryCrop(previous), undefined, undefined, shouldHideLoreImageInEntry(entry, fieldId))
+      const updated = { ...book, categories: book.categories.map(c => c.id !== categoryId ? c : { ...c, entries: c.entries.map(e => e.id !== entryId ? e : { ...e, fields: { ...e.fields, [fieldId]: replacement } }) }) }
+      await saveLoreBook(updated)
+      const retained = new Set(updated.categories.flatMap(c => c.entries).flatMap(e => Object.values(e.fields).flatMap(value => [getLoreImagePath(value), getLoreImageCroppedPath(value)])))
+      for (const oldPath of [getLoreImagePath(previous), getLoreImageCroppedPath(previous)]) {
+        if (oldPath && !retained.has(oldPath)) await deleteLoreImage(projectPath, oldPath)
+      }
+    } catch (error) { showMessage('Could not replace image', String(error)) }
+  }
+
   const toggleLoreEntryPinned = async (categoryId: string, entryId: string, pinned: boolean) => {
     const updated = {
       ...loreBookRef.current,
@@ -2835,14 +2854,6 @@ export default function App() {
     const entry = loreBookRef.current.categories
       .find(c => c.id === categoryId)
       ?.entries.find(e => e.id === entryId)
-    if (projectRef.current && entry) {
-      const imagePaths = Object.values(entry.fields)
-        .flatMap(value => [getLoreImagePath(value), getLoreImageCroppedPath(value)])
-        .filter(Boolean)
-      for (const imagePath of imagePaths) {
-        await deleteLoreImage(projectRef.current.path, imagePath)
-      }
-    }
     const updated = { ...loreBookRef.current }
     updated.categories = updated.categories.map(c => {
       if (c.id !== categoryId) return c
@@ -2854,6 +2865,10 @@ export default function App() {
       }
     })
     await saveLoreBook(updated)
+    if (projectRef.current && entry) {
+      try { await deleteLoreEntryImages(projectRef.current.path, [entry], updated.categories.flatMap(c => c.entries)) }
+      catch (error) { showMessage('Image cleanup incomplete', String(error)) }
+    }
     setConfirmDeleteLoreEntry(null)
   }
 
@@ -7740,6 +7755,7 @@ export default function App() {
           onDeleteCategoryRequest: setConfirmDeleteLoreCategory,
           onNewEntry: openNewEntryEditor,
           onEditEntry: openEditEntryEditor,
+          onReplaceImage: replaceMissingLoreImage,
           onExportEntry: exportLoreEntry,
           onDeleteEntryRequest: setConfirmDeleteLoreEntry,
           onToggleEntryPinned: toggleLoreEntryPinned,

@@ -1,3 +1,4 @@
+import { LoreImageButton } from './LoreImageButton'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
 import {
@@ -45,6 +46,7 @@ type LoreBookViewProps = {
   onDeleteCategoryRequest: (category: LoreCategory) => void
   onNewEntry: () => void
   onEditEntry: (entry: LoreEntry) => void
+  onReplaceImage?: (categoryId: string, entryId: string, fieldId: string) => void
   onExportEntry: (category: LoreCategory, entry: LoreEntry) => void
   onDeleteEntryRequest: (entry: LoreEntry) => void
   onToggleEntryPinned: (categoryId: string, entryId: string, pinned: boolean) => void
@@ -55,6 +57,21 @@ type LoreBookViewProps = {
 export function LoreBookView(props: LoreBookViewProps) {
   const [hierarchyCategoryId, setHierarchyCategoryId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('scrivus-lore-collapsed-categories') ?? '{}')
+      return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}
+    } catch { return {} }
+  })
+  const collapseKey = (id: string) => JSON.stringify([props.projectPath, id])
+  const toggleCategory = (id: string) => {
+    const key = collapseKey(id)
+    setCollapsedCategories(previous => {
+      const next = { ...previous, [key]: previous[key] !== true }
+      try { localStorage.setItem('scrivus-lore-collapsed-categories', JSON.stringify(next)) } catch { /* Keep session state if storage is unavailable. */ }
+      return next
+    })
+  }
   const [subcategoryFilter, setSubcategoryFilter] = useState<{ categoryId: string; id: string } | null>(null)
   const categories = [...props.loreBook.categories].sort((a, b) => a.name.localeCompare(b.name))
   const category = categories.find(item => item.id === props.activeCategoryId) ?? categories[0]
@@ -103,6 +120,7 @@ export function LoreBookView(props: LoreBookViewProps) {
   return (
     <div className="lore-workspace">
       <nav className="lore-category-rail" aria-label="Lore Book categories">
+        <div className="lore-category-rail-scroll">
         <label className="lore-search"><i className="ti ti-search" aria-hidden="true" />
           <input aria-label="Search all lore by name or keyword" placeholder="Search all lore…" value={query} onChange={event => setQuery(event.target.value)} />
         </label>
@@ -113,11 +131,19 @@ export function LoreBookView(props: LoreBookViewProps) {
         ))}</section>}
         <section><h2>Categories</h2>{categories.map(cat => (
           <div key={cat.id}>
+            <div className="lore-category-nav-row">
+              {!!cat.subcategories?.length ? <button type="button" className="lore-category-toggle"
+                aria-label={`${collapsedCategories[collapseKey(cat.id)] === true ? 'Expand' : 'Collapse'} ${cat.name || 'Unnamed category'}`}
+                aria-expanded={collapsedCategories[collapseKey(cat.id)] !== true}
+                onClick={() => toggleCategory(cat.id)}>
+                <i className={`ti ti-chevron-${collapsedCategories[collapseKey(cat.id)] === true ? 'right' : 'down'}`} aria-hidden="true" />
+              </button> : <span className="lore-category-toggle-spacer" />}
             <button className={`lore-nav-row${cat.id === category?.id && !subcategoryId ? ' active' : ''}`} aria-current={cat.id === category?.id && !subcategoryId ? 'true' : undefined} onClick={() => selectCategory(cat)}>
               <i className={`ti ${getLoreCategoryIconClass(cat.icon) || 'ti-folder'}`} aria-hidden="true" /><span>{cat.name || 'Unnamed category'}</span><small>{cat.entries.length}</small>
             </button>
-            {cat.id === category?.id && orderLoreSubcategories(cat.subcategories ?? []).map(sub => (
-              <button key={sub.id} className={`lore-nav-row lore-subcategory lore-subcategory-color-${sub.color ?? 'default'}${subcategoryId === sub.id ? ' active' : ''}`} style={{ paddingLeft: 28 + sub.depth * 12 }} aria-current={subcategoryId === sub.id ? 'true' : undefined} onClick={() => selectCategory(cat, sub.id)}>
+            </div>
+            {collapsedCategories[collapseKey(cat.id)] !== true && orderLoreSubcategories(cat.subcategories ?? []).map(sub => (
+              <button key={sub.id} className={`lore-nav-row lore-subcategory lore-subcategory-color-${sub.color ?? 'default'}${cat.id === category?.id && subcategoryId === sub.id ? ' active' : ''}`} style={{ paddingLeft: 28 + sub.depth * 12 }} aria-current={cat.id === category?.id && subcategoryId === sub.id ? 'true' : undefined} onClick={() => selectCategory(cat, sub.id)}>
                 <span className="lore-subcategory-dot" aria-hidden="true" />
                 <span>{sub.name || 'Unnamed subcategory'}</span><small>{cat.entries.filter(entry => entry.subcategoryId === sub.id).length}</small>
               </button>
@@ -126,7 +152,8 @@ export function LoreBookView(props: LoreBookViewProps) {
         ))}
           <button className="lore-nav-row lore-add" onClick={props.onNewCategory}><i className="ti ti-plus" aria-hidden="true" />New category</button>
         </section>
-        <section><h2>Views</h2><button className="lore-nav-row" onClick={props.onOpenPresence}><i className="ti ti-chart-bar" aria-hidden="true" />Presence chart</button></section>
+        </div>
+        <footer className="lore-presence-footer"><button className="lore-nav-row" onClick={props.onOpenPresence}><i className="ti ti-chart-bar" aria-hidden="true" />Presence chart</button></footer>
       </nav>
       <section className="lore-entry-browser" aria-label="Lore entries">
         <header><h2>{search ? 'Search results' : category?.name || 'Entries'}</h2>{category && <>
@@ -180,6 +207,7 @@ function LoreBookContent({
   onDeleteCategoryRequest,
   onNewEntry,
   onEditEntry,
+  onReplaceImage,
   onExportEntry,
   onDeleteEntryRequest,
   onToggleEntryPinned,
@@ -187,7 +215,7 @@ function LoreBookContent({
   onOpenPresence,
 }: LoreBookViewProps) {
   const [visibleBacklinkCounts, setVisibleBacklinkCounts] = useState<Record<string, number>>({})
-  const [imageViewer, setImageViewer] = useState<{ src: string; alt: string } | null>(null)
+  const [imageViewer, setImageViewer] = useState<{ src: string; alt: string; fieldId?: string } | null>(null)
   const [viewerZoom, setViewerZoom] = useState(1)
   const [viewerPan, setViewerPan] = useState({ x: 0, y: 0 })
   const [hierarchyCategory, setHierarchyCategory] = useState<LoreCategory | null>(null)
@@ -230,8 +258,8 @@ function LoreBookContent({
   const getProjectImageSrc = (relativePath: string) =>
     projectPath ? convertFileSrc(`${projectPath}/${relativePath}`.replace(/\\/g, '/')) : ''
 
-  const openImageViewer = (src: string, alt: string) => {
-    setImageViewer({ src, alt })
+  const openImageViewer = (src: string, alt: string, fieldId?: string) => {
+    setImageViewer({ src, alt, fieldId })
     setViewerZoom(1)
     setViewerPan({ x: 0, y: 0 })
   }
@@ -288,12 +316,15 @@ function LoreBookContent({
             setViewerZoom(zoom => Math.min(4, Math.max(0.25, zoom + (event.deltaY < 0 ? 0.1 : -0.1))))
           }}
         >
-          <img
-            src={imageViewer.src}
-            alt={imageViewer.alt}
-            draggable={false}
-            onDragStart={event => event.preventDefault()}
-            style={{
+          <LoreImageButton
+            src={imageViewer.src} alt={imageViewer.alt} className="lore-viewer-image-button"
+            onReplace={() => {
+              if (activeCategoryId && expandedEntryId && imageViewer.fieldId) {
+                onReplaceImage?.(activeCategoryId, expandedEntryId, imageViewer.fieldId)
+                setImageViewer(null)
+              }
+            }}
+            imageStyle={{
               '--lore-viewer-zoom': viewerZoom,
               '--lore-viewer-pan-x': `${viewerPan.x}px`,
               '--lore-viewer-pan-y': `${viewerPan.y}px`,
@@ -406,7 +437,7 @@ function LoreBookContent({
                 {iconImagePath && projectPath ? <button
                   type="button" className="lore-entry-icon-button"
                   title="View full image" aria-label={`View full image for ${formatLoreEntryName(activeEntry)}`}
-                  onClick={() => openImageViewer(getProjectImageSrc(iconImagePath), formatLoreEntryName(activeEntry))}
+                  onClick={() => openImageViewer(getProjectImageSrc(iconImagePath), formatLoreEntryName(activeEntry), activeEntry.entryIconFieldId)}
                 ><LoreEntryIcon category={cat} entry={activeEntry} projectPath={projectPath} large /></button>
                   : <LoreEntryIcon category={cat} entry={activeEntry} projectPath={projectPath} large />}
                 <div className="lore-entry-heading">
@@ -457,17 +488,13 @@ function LoreBookContent({
                   return (
                     <div key={field.id} className="lorebook-entry-field">
                       {field.label && <span className="lorebook-field-label">{field.label}</span>}
-                      <button
-                        type="button"
+                      <LoreImageButton
+                        src={src} alt={field.label ?? 'image'}
                         className={`lorebook-entry-image-button${fullWidth ? ' full-width' : ''}`}
-                        onClick={() => openImageViewer(getProjectImageSrc(path), field.label ?? activeEntry.name ?? 'image')}
-                      >
-                        <img
-                          src={src}
-                          className="lorebook-entry-image"
-                          alt={field.label ?? 'image'}
-                        />
-                      </button>
+                        imageClassName="lorebook-entry-image"
+                        onOpen={() => openImageViewer(getProjectImageSrc(path), field.label ?? activeEntry.name ?? 'image', field.id)}
+                        onReplace={() => onReplaceImage?.(cat.id, activeEntry.id, field.id)}
+                      />
                     </div>
                   )
                 }
