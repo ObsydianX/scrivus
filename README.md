@@ -138,18 +138,18 @@ Open **Edit > Project Settings > Variables** to define categorized numbers and e
 
 ![Project variables organized by character, with expressions and resolved values](docs/screenshots/variables.png)
 
-For example, keep a character's age consistent as the story's year changes:
+For example, keep a character's age fixed while the story's year changes (useful for writers like myself who want their story to be current yet take forever to finish writing). Set the year to 2026 and Mara's age to 28, then calculate her birth year:
 
 1. Create a category named `Basic` and add `Year` with the value `2026`.
-2. Create a category named `Mara` and add `BirthYear` with the value `1998`.
-3. In `Mara`, add `Age` with the expression `Basic:Year - Mara:BirthYear`.
+2. Create a category named `Mara` and add `Age` with the value `28`.
+3. In `Mara`, add `BirthYear` with the expression `Basic:Year - Mara:Age`.
 4. Save, then write this in a scene:
 
 ```text
-It was {{Basic:Year}}, and Mara was {{Mara:Age}} years old.
+In {{Basic:Year}}, Mara was {{Mara:Age}} years old, born in {{Mara:BirthYear}}.
 ```
 
-Scrivus displays and exports: “It was 2026, and Mara was 28 years old.” Change `Basic:Year` to `2027`, and the calculated age becomes `29` wherever the reference is used.
+Scrivus displays and exports: “In 2026, Mara was 28 years old, born in 1998.” Change `Basic:Year` to `2027`, and her calculated birth year becomes `1999` while her age stays `28`. Update the year manually when you want to move the story forward.
 
 Use `+`, `-`, `*`, `/`, and parentheses in expressions. In the Variables settings, enter a number or expression without braces; use double braces when inserting it into prose. Category and variable names must start with a letter or underscore and contain only letters, numbers, and underscores.
 

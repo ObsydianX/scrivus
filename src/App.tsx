@@ -236,7 +236,6 @@ import type {
   TreeNode,
 } from './types'
 import './App.css'
-import './facelift.css'
 import { CommandPalette } from './components/CommandPalette'
 import { normalizeBinderWordCountDisplay, type BinderWordCountDisplay, getBinderWordCounts } from './binderWordCounts'
 

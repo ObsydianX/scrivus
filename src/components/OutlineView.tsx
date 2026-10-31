@@ -74,7 +74,14 @@ function PacingStrip({
 
   return (
     <div className="pacing-strip">
-      <div className="pacing-strip-header">
+      <button
+        type="button"
+        className="pacing-strip-header"
+        onClick={toggleCollapsed}
+        title={collapsed ? 'Show pacing strip' : 'Hide pacing strip'}
+        aria-label={collapsed ? 'Show pacing strip' : 'Hide pacing strip'}
+        aria-expanded={!collapsed}
+      >
         <span className="pacing-strip-title">Pacing</span>
         {!collapsed && (
           <span className="pacing-strip-average-label">
@@ -90,15 +97,10 @@ function PacingStrip({
             ))}
           </span>
         )}
-        <button
-          className="outline-tool-btn"
-          onClick={toggleCollapsed}
-          title={collapsed ? 'Show pacing strip' : 'Hide pacing strip'}
-          aria-label={collapsed ? 'Show pacing strip' : 'Hide pacing strip'}
-        >
+        <span className="pacing-strip-toggle" aria-hidden="true">
           <i className={`ti ti-chevron-${collapsed ? 'up' : 'down'}`} aria-hidden="true" />
-        </button>
-      </div>
+        </span>
+      </button>
       {!collapsed && (
         <div className="pacing-strip-scroll">
           <div className={`pacing-strip-track${compact ? ' pacing-strip-track-compact' : ''}`}>
