@@ -4,6 +4,7 @@ All notable Scrivus changes are tracked here.
 
 ## 0.3.4
 
+- Changed: Sped up Compile preparation with concurrent scene loading and a per-scene revision cache reused during export. Changed scenes refresh automatically, and project backup files copy concurrently while preserving the pre-compile backup.
 - Changed: Introduced a cohesive visual facelift across Write, Revise, Outline, Lore, Canvas, and Atlas, with shared workspace navigation, quieter toolbars, and layouts that adapt to smaller windows.
 - New Feature: Added a Ctrl+K command palette for jumping to scenes, Lore entries, and workspaces.
 - Changed: Redesigned the Lore Book around a category binder, grouped entry list, and entry details with a dedicated scene-mentions column. Image fields can now be selected as entry icons using their saved crops, while entries without an icon retain their letter fallback.

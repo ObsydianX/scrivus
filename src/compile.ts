@@ -1,5 +1,6 @@
-import { parseSceneTabs } from './sceneTabs'
-import { readSceneFile } from './storage'
+import { mapConcurrent } from './asyncPool'
+import { readCompileTabs } from './compileCache'
+import { collectDocs } from './tree'
 import type { CompileChapterEntry, CompileSceneEntry, DocNode, FolderNode, TreeNode } from './types'
 
 type CompileNode =
@@ -14,9 +15,7 @@ function folderRole(folder: FolderNode): 'act' | 'chapter' {
   return folder.role ?? 'chapter'
 }
 
-async function buildSceneEntry(doc: DocNode, projectPath: string): Promise<CompileSceneEntry> {
-  const raw = await readSceneFile(projectPath, doc.file)
-  const tabs = parseSceneTabs(raw)
+function buildSceneEntry(doc: DocNode, tabs: Awaited<ReturnType<typeof readCompileTabs>>): CompileSceneEntry {
   const tabNames = tabs.map(t => t.name)
   return {
     docId: doc.id,
@@ -47,13 +46,17 @@ export async function buildCompileChapters(
   if (!manuscript || manuscript.type !== 'folder') return []
 
   const entries: CompileChapterEntry[] = []
+  const docs = collectDocs(manuscript)
+  const scenes = await mapConcurrent(docs, async doc =>
+    buildSceneEntry(doc, await readCompileTabs(projectPath, doc.file)))
+  const scenesById = new Map(scenes.map(scene => [scene.docId, scene]))
 
   const visit = async (nodes: TreeNode[], depth: number) => {
     for (const node of nodes) {
       if (node.type === 'folder') {
         const directScenes: CompileSceneEntry[] = []
         for (const child of node.children) {
-          if (child.type === 'doc') directScenes.push(await buildSceneEntry(child, projectPath))
+          if (child.type === 'doc') directScenes.push(scenesById.get(child.id)!)
         }
 
         entries.push({
@@ -69,7 +72,7 @@ export async function buildCompileChapters(
         continue
       }
 
-      const scene = await buildSceneEntry(node, projectPath)
+      const scene = scenesById.get(node.id)!
       entries.push({
         folderId: node.id,
         label: node.label,
@@ -92,6 +95,10 @@ export async function collectCompileNodesFromSelection(
 ): Promise<CompileNode[]> {
   const result: CompileNode[] = []
   const includeActHeadings = options.includeActHeadings ?? true
+  const selectedScenes = chapters.filter(chapter => chapter.included)
+    .flatMap(chapter => chapter.scenes.filter(scene => scene.included))
+  const sceneTabs = await mapConcurrent(selectedScenes, scene => readCompileTabs(projectPath, scene.fileId))
+  const tabsByFile = new Map(selectedScenes.map((scene, index) => [scene.fileId, sceneTabs[index]]))
 
   const hasIncludedDescendant = (index: number) => {
     const parentDepth = chapters[index].depth ?? 0
@@ -121,8 +128,7 @@ export async function collectCompileNodesFromSelection(
     }
 
     for (const scene of includedScenes) {
-      const raw = await readSceneFile(projectPath, scene.fileId)
-      const tabs = parseSceneTabs(raw)
+      const tabs = tabsByFile.get(scene.fileId)!
       const tab = scene.selectedTab === '__last__'
         ? tabs[tabs.length - 1]
         : (tabs.find(t => t.name === scene.selectedTab) ?? tabs[tabs.length - 1])

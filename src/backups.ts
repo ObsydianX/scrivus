@@ -1,5 +1,6 @@
 import { appDataDir, join } from '@tauri-apps/api/path'
 import { copyFile, exists, mkdir, readDir, remove, writeTextFile } from '@tauri-apps/plugin-fs'
+import { mapConcurrent } from './asyncPool'
 
 export type BackupReason = 'open' | 'auto' | 'manual' | 'pre-restore' | 'compile' | 'close'
 
@@ -57,25 +58,36 @@ export async function getProjectBackupRoot(projectPath: string, projectName: str
 }
 
 async function copyDirectoryContents(source: string, target: string) {
-  await mkdir(target, { recursive: true })
-  const entries = await readDir(source)
+  const files: { source: string; target: string }[] = []
+  const collect = async (source: string, target: string) => {
+    await mkdir(target, { recursive: true })
+    const entries = await readDir(source)
 
-  for (const entry of entries) {
-    if (SKIP_NAMES.has(entry.name)) continue
-    const sourcePath = await join(source, entry.name)
-    const targetPath = await join(target, entry.name)
+    for (const entry of entries) {
+      if (SKIP_NAMES.has(entry.name)) continue
+      const sourcePath = await join(source, entry.name)
+      const targetPath = await join(target, entry.name)
 
-    try {
-      if (entry.isSymlink) continue
-      if (entry.isDirectory) {
-        await copyDirectoryContents(sourcePath, targetPath)
-      } else if (entry.isFile) {
-        await copyFile(sourcePath, targetPath)
+      try {
+        if (entry.isSymlink) continue
+        if (entry.isDirectory) {
+          await collect(sourcePath, targetPath)
+        } else if (entry.isFile) {
+          files.push({ source: sourcePath, target: targetPath })
+        }
+      } catch (error) {
+        throw new Error(`Could not back up "${sourcePath}": ${String(error)}`)
       }
-    } catch (error) {
-      throw new Error(`Could not back up "${sourcePath}": ${String(error)}`)
     }
   }
+  await collect(source, target)
+  await mapConcurrent(files, async file => {
+    try {
+      await copyFile(file.source, file.target)
+    } catch (error) {
+      throw new Error(`Could not back up "${file.source}": ${String(error)}`)
+    }
+  })
 }
 
 async function pruneBackups(root: string, retentionCount: number, preserveName?: string) {

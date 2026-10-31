@@ -1,4 +1,5 @@
 import { getLoreImageCleanupPaths } from './loreImages'
+import { invalidateCompileScene } from './compileCache'
 import type { LoreEntry } from './types'
 import { writeTextFile, readTextFile, mkdir, exists, writeFile, readFile, rename, remove, readDir } from '@tauri-apps/plugin-fs'
 import { join, appDataDir } from '@tauri-apps/api/path'
@@ -172,10 +173,12 @@ export function generateFileId(): string {
 }
 
 export async function writeSceneFile(projectPath: string, fileId: string, content: string) {
+  invalidateCompileScene(projectPath, fileId)
   const scenesDir = await join(projectPath, 'scenes')
   await mkdir(scenesDir, { recursive: true })
   const filePath = await join(scenesDir, `${fileId}.md`)
   await atomicWriteTextFile(filePath, content)
+  invalidateCompileScene(projectPath, fileId)
   invalidateSceneSearchCache(projectPath, fileId)
 }
 
