@@ -4702,16 +4702,16 @@ button.lore-hierarchy-person {
 }
 
 .spellcheck-misspelled {
-  background-image: url("data:image/svg+xml,%3Csvg width='12' height='4' viewBox='0 0 12 4' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 3 Q3 0 6 3 T12 3' fill='none' stroke='%23e05252' stroke-width='1.3'/%3E%3C/svg%3E");
-  background-repeat: repeat-x;
-  background-position: 0 100%;
-  background-size: 12px 4px;
-  padding-bottom: 2px;
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: #e05252;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 
 .lore-link-highlight {
-  color: var(--accent);
-  text-decoration: underline;
+  color: inherit;
+  text-decoration: underline dotted;
   text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
@@ -4719,6 +4719,11 @@ button.lore-hierarchy-person {
 
 .lore-link-highlight:hover {
   text-decoration-color: var(--accent);
+}
+
+/* A spelling alert takes precedence when both decorations share a span. */
+.lore-link-highlight.spellcheck-misspelled {
+  text-decoration-color: #e05252;
 }
 
 .lore-link-choice-layer {
@@ -10809,7 +10814,7 @@ button.welcome-update-notice:focus-visible {
 
 #revision-tab-bar {
   background: var(--panel-bg) !important;
-  border-color: var(--border-main) !important;
+  border-color: var(--border-main);
 }
 
 #empty-state p:first-of-type {

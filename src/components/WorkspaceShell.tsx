@@ -449,13 +449,13 @@ export function WorkspaceShell({
           onTabDrop={onTabDrop}
           focusMode={focusMode}
           onFocusModeChange={onFocusModeChange}
-          typewriterScrolling={typewriterScrolling}
-          onTypewriterScrollingChange={onTypewriterScrollingChange}
         />
       )}
       {workspace === 'editor' && (
         <EditorToolbar
           editor={editor}
+          typewriterScrolling={typewriterScrolling}
+          onTypewriterScrollingChange={onTypewriterScrollingChange}
           loreLinksEnabled={loreLinksEnabled}
           onLoreLinksEnabledChange={onLoreLinksEnabledChange}
         />

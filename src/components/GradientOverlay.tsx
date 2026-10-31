@@ -68,7 +68,7 @@ function isTopmost(node: Element, rect: Rect): boolean {
 // Full-screen, non-interactive gradient tint over the whole app. Excluded
 // regions are punched out of the overlay with a clip-path that is re-measured
 // whenever layout, scrolling, or the DOM changes.
-export function GradientOverlay({ animated = false }: { animated?: boolean }) {
+export function GradientOverlay({ animated = false, intensity = 100 }: { animated?: boolean; intensity?: number }) {
   const overlayRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -177,7 +177,7 @@ export function GradientOverlay({ animated = false }: { animated?: boolean }) {
   }, [])
 
   return (
-    <div id="gradient-overlay" className={animated ? 'animated' : undefined} ref={overlayRef} aria-hidden="true">
+    <div id="gradient-overlay" className={animated ? 'animated' : undefined} style={{ opacity: intensity / 100 }} ref={overlayRef} aria-hidden="true">
       <div className="gradient-overlay-layer" />
       <div className="gradient-overlay-grain" />
     </div>

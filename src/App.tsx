@@ -551,6 +551,7 @@ export default function App() {
     gradientOverlay: {
       enabled: true,
       animated: false,
+      intensity: 75,
     },
     goals: {
       monthlyTargetWordCount: 0,
@@ -592,6 +593,9 @@ export default function App() {
         gradientOverlay: {
           enabled: parsed.gradientOverlay?.enabled !== false,
           animated: parsed.gradientOverlay?.animated === true,
+          intensity: typeof parsed.gradientOverlay?.intensity === 'number' && Number.isFinite(parsed.gradientOverlay.intensity)
+            ? Math.min(100, Math.max(0, Math.round(parsed.gradientOverlay.intensity)))
+            : 100,
         },
         goals: {
           ...DEFAULT_SETTINGS.goals,
@@ -647,6 +651,8 @@ export default function App() {
   const [defaultSceneTargetWordCount, setDefaultSceneTargetWordCount] = useState(() => initialSettings.defaultSceneTargetWordCount)
   const [gradientOverlayEnabled, setGradientOverlayEnabled] = useState(() => initialSettings.gradientOverlay.enabled)
   const [gradientOverlayAnimated, setGradientOverlayAnimated] = useState(() => initialSettings.gradientOverlay.animated)
+  const [gradientOverlayIntensity, setGradientOverlayIntensity] = useState(() => initialSettings.gradientOverlay.intensity)
+  const [gradientOverlayPreview, setGradientOverlayPreview] = useState<number | null>(null)
   const [goals, setGoals] = useState(() => initialSettings.goals)
   const [showGoalModal, setShowGoalModal] = useState(false)
   const [previewTheme, setPreviewTheme] = useState<ThemeId | null>(null)
@@ -4869,6 +4875,7 @@ export default function App() {
     nextDefaultSceneTargetWordCount: number,
     nextGradientOverlayEnabled: boolean,
     nextGradientOverlayAnimated: boolean,
+    nextGradientOverlayIntensity: number,
     nextBinderWordCountDisplay: BinderWordCountDisplay,
   ) => {
     const normalizedReadingWpm = Math.min(1000, Math.max(50, Math.round(nextReadingWpm)))
@@ -4880,6 +4887,8 @@ export default function App() {
     setDefaultSceneTargetWordCount(normalizedDefaultSceneTargetWordCount)
     setGradientOverlayEnabled(nextGradientOverlayEnabled)
     setGradientOverlayAnimated(nextGradientOverlayAnimated)
+    const normalizedIntensity = Math.min(100, Math.max(0, Math.round(nextGradientOverlayIntensity)))
+    setGradientOverlayIntensity(normalizedIntensity)
     saveSettings({
       ...loadSettings(),
       theme,
@@ -4890,6 +4899,7 @@ export default function App() {
       gradientOverlay: {
         enabled: nextGradientOverlayEnabled,
         animated: nextGradientOverlayAnimated,
+        intensity: normalizedIntensity,
       },
     })
     setShowPreferences(false)
@@ -7237,6 +7247,8 @@ export default function App() {
           defaultSceneTargetWordCount={defaultSceneTargetWordCount}
           gradientOverlayEnabled={gradientOverlayEnabled}
           gradientOverlayAnimated={gradientOverlayAnimated}
+          gradientOverlayIntensity={gradientOverlayIntensity}
+          onPreviewIntensity={setGradientOverlayPreview}
           onCancel={() => setShowPreferences(false)}
           onSave={savePreferences}
         />
@@ -7352,7 +7364,7 @@ export default function App() {
     return (
       <div id="app" className="app-startup" aria-label="Loading Scrivus">
         <i className="ti ti-feather welcome-icon" aria-hidden="true" />
-        {gradientOverlayEnabled && <GradientOverlay animated={gradientOverlayAnimated} />}
+        {(gradientOverlayEnabled || (gradientOverlayPreview !== null && gradientOverlayPreview > 0)) && <GradientOverlay animated={gradientOverlayAnimated} intensity={gradientOverlayPreview ?? gradientOverlayIntensity} />}
       </div>
     )
   }
@@ -7404,7 +7416,7 @@ export default function App() {
           )}
           <WelcomeUpdateNotice />
         </div>
-        {gradientOverlayEnabled && <GradientOverlay animated={gradientOverlayAnimated} />}
+        {(gradientOverlayEnabled || (gradientOverlayPreview !== null && gradientOverlayPreview > 0)) && <GradientOverlay animated={gradientOverlayAnimated} intensity={gradientOverlayPreview ?? gradientOverlayIntensity} />}
       </div>
     )
   }
@@ -7442,6 +7454,20 @@ export default function App() {
         <span style={{ fontSize: 11, color: 'var(--text-muted)', paddingRight: 8 }}>
           {reviewPackage ? (reviewPackageBusy ? 'working...' : '') : saveLabel}
         </span>
+        <div className="workspace-focus-slot">
+          {workspace === 'editor' && (
+            <button
+              type="button"
+              className="workspace-focus-button"
+              title="Focus mode"
+              aria-pressed={focusMode}
+              onClick={() => setFocusMode(true)}
+            >
+              <i className="ti ti-arrows-maximize" aria-hidden="true" />
+              <span>Focus</span>
+            </button>
+          )}
+        </div>
         <ThemeMenu />
       </div>
 
@@ -7850,7 +7876,7 @@ export default function App() {
       />
       {renderSharedModals()}
 
-      {gradientOverlayEnabled && <GradientOverlay animated={gradientOverlayAnimated} />}
+      {(gradientOverlayEnabled || (gradientOverlayPreview !== null && gradientOverlayPreview > 0)) && <GradientOverlay animated={gradientOverlayAnimated} intensity={gradientOverlayPreview ?? gradientOverlayIntensity} />}
     </div>
   )
 

@@ -962,6 +962,8 @@ export function PreferencesModal({
   defaultSceneTargetWordCount,
   gradientOverlayEnabled,
   gradientOverlayAnimated,
+  gradientOverlayIntensity,
+  onPreviewIntensity,
   onCancel,
   onSave,
 }: {
@@ -972,6 +974,8 @@ export function PreferencesModal({
   defaultSceneTargetWordCount: number
   gradientOverlayEnabled: boolean
   gradientOverlayAnimated: boolean
+  gradientOverlayIntensity: number
+  onPreviewIntensity: (intensity: number | null) => void
   onCancel: () => void
   onSave: (
     theme: ThemeId,
@@ -980,6 +984,7 @@ export function PreferencesModal({
     defaultSceneTargetWordCount: number,
     gradientOverlayEnabled: boolean,
     gradientOverlayAnimated: boolean,
+    gradientOverlayIntensity: number,
     binderWordCountDisplay: BinderWordCountDisplay,
   ) => void
 }) {
@@ -990,6 +995,7 @@ export function PreferencesModal({
   const [localDefaultSceneTargetWordCount, setLocalDefaultSceneTargetWordCount] = useState(String(defaultSceneTargetWordCount || ''))
   const [localGradientOverlayEnabled, setLocalGradientOverlayEnabled] = useState(gradientOverlayEnabled)
   const [localGradientOverlayAnimated, setLocalGradientOverlayAnimated] = useState(gradientOverlayAnimated)
+  const [localGradientOverlayIntensity, setLocalGradientOverlayIntensity] = useState(gradientOverlayIntensity)
   const [activeTab, setActiveTab] = useState<'general' | 'themes'>('general')
 
   useEffect(() => {
@@ -1000,7 +1006,13 @@ export function PreferencesModal({
     setLocalDefaultSceneTargetWordCount(String(defaultSceneTargetWordCount || ''))
     setLocalGradientOverlayEnabled(gradientOverlayEnabled)
     setLocalGradientOverlayAnimated(gradientOverlayAnimated)
-  }, [binderWordCountDisplay, theme, incrementNewNodeNumbers, readingWpm, defaultSceneTargetWordCount, gradientOverlayEnabled, gradientOverlayAnimated])
+    setLocalGradientOverlayIntensity(gradientOverlayIntensity)
+  }, [binderWordCountDisplay, theme, incrementNewNodeNumbers, readingWpm, defaultSceneTargetWordCount, gradientOverlayEnabled, gradientOverlayAnimated, gradientOverlayIntensity])
+
+  useEffect(() => {
+    onPreviewIntensity(localGradientOverlayEnabled ? localGradientOverlayIntensity : 0)
+    return () => onPreviewIntensity(null)
+  }, [localGradientOverlayEnabled, localGradientOverlayIntensity, onPreviewIntensity])
 
   const MIN_READING_WPM = 50
   const MAX_READING_WPM = 1000
@@ -1129,6 +1141,18 @@ export function PreferencesModal({
                     />
                     Tint the app with a subtle gradient (always off in high-contrast themes)
                   </label>
+                  <label className="gradient-intensity-control">
+                    <span>Intensity <output>{localGradientOverlayIntensity}%</output></span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={localGradientOverlayIntensity}
+                      disabled={!localGradientOverlayEnabled}
+                      onChange={e => setLocalGradientOverlayIntensity(Number(e.target.value))}
+                    />
+                  </label>
                   <label className="modal-checkbox-label">
                     <input
                       type="checkbox"
@@ -1145,7 +1169,7 @@ export function PreferencesModal({
         </div>
         <div className="modal-footer">
           <button className="welcome-btn" onClick={onCancel}>Cancel</button>
-          <button className="welcome-btn" onClick={() => onSave(localTheme, localIncrementNewNodeNumbers, normalizeReadingWpmInput(), normalizeDefaultSceneTargetInput(), localGradientOverlayEnabled, localGradientOverlayAnimated, localBinderWordCountDisplay)}>Save</button>
+          <button className="welcome-btn" onClick={() => onSave(localTheme, localIncrementNewNodeNumbers, normalizeReadingWpmInput(), normalizeDefaultSceneTargetInput(), localGradientOverlayEnabled, localGradientOverlayAnimated, localGradientOverlayIntensity, localBinderWordCountDisplay)}>Save</button>
         </div>
       </div>
     </div>
